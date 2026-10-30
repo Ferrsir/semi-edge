@@ -74,6 +74,19 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Impact:** `ruff format --check .` in CI would fail once specs are merged; specs lost alignment.
 - **Fix (implemented):** `extend-exclude = ["*.md"]`.
 
+### F-007 · Confirmed · P2 · Bar schema accepted invalid index units and optional dtypes
+- **Where:** `semiedge.data.schema.validate_bar_frame`.
+- **Reproduction:** `f = empty_bar_frame(); f.index = f.index.as_unit("us");
+  f["vwap"] = pd.Series(dtype="str"); validate_bar_frame(f)` returned successfully.
+  Duplicate `close` columns instead raised an incidental `AttributeError` at `.dtype`.
+- **Impact:** adapters could pass frames violating the documented nanosecond index and
+  float64 optional-column contract, causing downstream failures outside the explicit
+  `DataSchemaError` rejection path. Missing (`NaT`) session labels were also not explicitly rejected.
+- **Fix:** require nanosecond session labels without NaT, unique columns, and float64
+  optional columns when present. No signatures or safety limits changed.
+- **Test evidence:** `tests/unit/data/test_schema_audit.py` (five regression cases), run with
+  `.venv/Scripts/python -m pytest -q tests/unit/data/test_schema_audit.py`.
+
 ### F-008 · P2 · Missing app configuration sections silently selected defaults (Codex, #37)
 - **Where:** `semiedge.config.loader.load_app_config`.
 - **Reproduce:** replace `app.yaml` with `{}`, `data: {}`, or `scanner: {}` and run
