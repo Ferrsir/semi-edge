@@ -7,6 +7,7 @@ separate, human-approved implementation (EPIC 12 is research only).
 
 from __future__ import annotations
 
+from alpaca.common.enums import BaseURL
 from alpaca.trading.client import TradingClient
 
 from semiedge.safety.modes import SafetyViolation
@@ -47,7 +48,10 @@ def create_paper_trading_client(api_key: str, secret_key: str) -> TradingClient:
 def assert_paper_client(client: object) -> None:
     """Raise unless ``client`` resolves to the Alpaca PAPER trading endpoint."""
     raw = getattr(client, "_base_url", None)
-    # BaseURL is a str-Enum: prefer its .value so "BaseURL.TRADING_PAPER" reprs never leak in.
-    value = str(getattr(raw, "value", raw or ""))
-    if value.rstrip("/") != PAPER_TRADING_BASE_URL:
-        raise SafetyViolation(f"Refusing trading client: only {PAPER_TRADING_BASE_URL} is allowed.")
+    # Never trust __str__, .value or equality on arbitrary objects: a string subclass
+    # can display the paper URL while the SDK concatenates its underlying live URL.
+    if raw is BaseURL.TRADING_PAPER:
+        return
+    if type(raw) is str and raw.rstrip("/") == PAPER_TRADING_BASE_URL:
+        return
+    raise SafetyViolation(f"Refusing trading client: only {PAPER_TRADING_BASE_URL} is allowed.")
