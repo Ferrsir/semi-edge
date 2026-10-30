@@ -1,0 +1,189 @@
+# RESTRICTED (.github/**): changes require explicit human approval.
+#
+# DISABLED PROTOTYPE; not an authoritative review integration.
+# Proposed AI review orchestration: two independent reviews of the exact PR head commit
+#   Review A - software engineering        (OpenAI Codex CLI, read-only sandbox)
+#   Review B - quant/security/fin. safety  (Anthropic Claude Code CLI, read-only tools)
+# then a gate that publishes the commit status `semi-edge/ai-review-gate` on the head SHA.
+#
+# Security model (see docs/governance/REVIEW_PROTOCOL.md):
+# * pull_request_target / issue_comment run THIS file from the base/default branch, so a PR
+#   cannot redefine its own gate. Scripts run from the `trusted/` checkout of the default branch.
+# * PR code is checked out to `pr/` as DATA ONLY: nothing from it is installed or executed.
+# * Reviewer CLIs get no write tools/shell (Claude) or a read-only, network-less sandbox
+#   (Codex). Model secrets are only present in the review jobs; the gate job never sees them.
+# * The gate recomputes verdicts from findings and requires both reports to name the head SHA.
+name: ai-review
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  activation-blocked:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: |
+          echo 'Trusted review issuer and protected main are not configured. See activation runbook.'
+          exit 1
+  context:
+    if: ${{ false }} # Activation requires a separately reviewed trusted integration.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      pr: ${{ steps.ctx.outputs.pr }}
+      head: ${{ steps.ctx.outputs.head }}
+      base: ${{ steps.ctx.outputs.base }}
+      draft: ${{ steps.ctx.outputs.draft }}
+      authorized: ${{ steps.ctx.outputs.authorized }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: trusted
+          persist-credentials: false
+      - id: ctx
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          COMMENTER: ${{ github.event.comment.user.login }}
+        run: |
+          set -euo pipefail
+          info=$(gh pr view "$PR_NUMBER" -R "$REPO" --json headRefOid,baseRefOid,isDraft,headRepository,headRepositoryOwner,baseRefName)
+          head=$(jq -r .headRefOid <<<"$info")
+          base=$(jq -r .baseRefOid <<<"$info")
+          draft=$(jq -r .isDraft <<<"$info")
+          head_repo="$(jq -r '.headRepositoryOwner.login + "/" + .headRepository.name' <<<"$info")"
+          authorized=true
+          if [ "$head_repo" != "$REPO" ]; then
+            echo "::warning::PR from another repository ($head_repo); AI review refused."
+            authorized=false
+          fi
+          if [ "$EVENT" = "issue_comment" ]; then
+            if ! python3 -c 'import json,os,sys; p=json.load(open("trusted/.github/review/policy.json")); sys.exit(0 if os.environ["COMMENTER"].lower() in [h.lower() for h in p["human_maintainers"]] else 1)'; then
+              echo "::warning::Command from non-maintainer $COMMENTER ignored."
+              authorized=false
+            fi
+          fi
+          {
+            echo "pr=$PR_NUMBER"; echo "head=$head"; echo "base=$base"
+            echo "draft=$draft"; echo "authorized=$authorized"
+          } >> "$GITHUB_OUTPUT"
+
+  review:
+    needs: context
+    if: needs.context.outputs.authorized == 'true' && needs.context.outputs.draft == 'false'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - role: A
+            provider: openai-codex
+            npm_package: "@openai/codex@0.166.0"
+          - role: B
+            provider: anthropic-claude
+            npm_package: "@anthropic-ai/claude-code@2.1.314"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: trusted
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.context.outputs.head }}
+          path: pr
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: Install reviewer CLI (pinned)
+        env:
+          NPM_PACKAGE: ${{ matrix.npm_package }}
+        run: npm install -g --ignore-scripts "$NPM_PACKAGE"
+      - name: Run Review ${{ matrix.role }}
+        env:
+          ROLE: ${{ matrix.role }}
+          PROVIDER: ${{ matrix.provider }}
+          PR: ${{ needs.context.outputs.pr }}
+          HEAD_SHA: ${{ needs.context.outputs.head }}
+          BASE_SHA: ${{ needs.context.outputs.base }}
+          REPO: ${{ github.repository }}
+          OPENAI_API_KEY: ${{ matrix.role == 'A' && secrets.OPENAI_API_KEY || '' }}
+          CODEX_API_KEY: ${{ matrix.role == 'A' && secrets.OPENAI_API_KEY || '' }}
+          ANTHROPIC_API_KEY: ${{ matrix.role == 'B' && secrets.ANTHROPIC_API_KEY || '' }}
+        run: |
+          set -euo pipefail
+          out="review-$(echo "$ROLE" | tr '[:upper:]' '[:lower:]').json"
+          if [ "$PROVIDER" = "openai-codex" ] && [ -z "$OPENAI_API_KEY" ]; then
+            missing="OPENAI_API_KEY"
+          elif [ "$PROVIDER" = "anthropic-claude" ] && [ -z "$ANTHROPIC_API_KEY" ]; then
+            missing="ANTHROPIC_API_KEY"
+          else
+            missing=""
+          fi
+          if [ -n "$missing" ]; then
+            python3 trusted/scripts/governance/ai_review.py error --role "$ROLE" --pr "$PR" \
+              --repository "$REPO" --base "$BASE_SHA" --head "$HEAD_SHA" --out "$out" \
+              --message "reviewer not configured: repository secret $missing is missing (see issue #6)"
+          else
+            python3 trusted/scripts/governance/ai_review.py run --role "$ROLE" --provider "$PROVIDER" \
+              --repo-dir pr --base "$BASE_SHA" --head "$HEAD_SHA" --pr "$PR" --repository "$REPO" \
+              --execution github-actions --trusted-root trusted --out "$out"
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: review-${{ matrix.role }}
+          path: review-*.json
+          retention-days: 90
+          if-no-files-found: error
+
+  gate:
+    needs: [context, review]
+    if: always() && needs.context.outputs.authorized == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      statuses: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: trusted
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true # missing reports are handled by the gate (fail closed)
+        with:
+          pattern: review-*
+          path: reports
+          merge-multiple: true
+      - name: Evaluate gate and publish status
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ needs.context.outputs.pr }}
+          HEAD_SHA: ${{ needs.context.outputs.head }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          mkdir -p reports
+          python3 trusted/scripts/governance/review_gate.py github --reports-dir reports \
+            --repository "$REPO" --pr "$PR" --head "$HEAD_SHA" --run-url "$RUN_URL" \
+            --trusted-root trusted

@@ -1,0 +1,72 @@
+# RESTRICTED (.github/**): changes require explicit human approval.
+# Trading-safety invariants: paper-only enforcement, risk limits, look-ahead, sizing,
+# duplicate orders, broker failure handling. Tests are selected with `-m safety`.
+name: trading-safety
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trading-safety-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  safety-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.12"
+      - run: uv sync --locked
+      # Exit code 5 (no tests collected) fails the job.
+      - run: uv run pytest -m safety -p no:cacheprovider -v
+      - name: Safety test count must not decrease relative to the base branch
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          count() { uv run --directory "$1" pytest --collect-only -q -m safety -p no:cacheprovider 2>/dev/null | grep -c '::' || true; }
+          head_count=$(count .)
+          git worktree add --detach ../base "$BASE_SHA"
+          (cd ../base && uv sync --locked >/dev/null 2>&1) || true
+          base_count=$(count ../base)
+          echo "safety tests: base=${base_count:-0} head=${head_count}"
+          if [ "${head_count}" -lt "${base_count:-0}" ]; then
+            echo "::error::Safety test count decreased (${base_count} -> ${head_count}). Removing safety tests requires a human-approved change."
+            exit 1
+          fi
+
+  unsafe-config:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: python3 scripts/governance/check_unsafe_config.py --root .
+
+  trading-safety-required:
+    if: always()
+    needs: [safety-tests, unsafe-config]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          needs = json.loads(os.environ["NEEDS"])
+          bad = {k: v["result"] for k, v in needs.items() if v["result"] != "success"}
+          sys.exit(f"required jobs not successful: {bad}" if bad else 0)
+          PY

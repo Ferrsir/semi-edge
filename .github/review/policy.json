@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "status_context": "semi-edge/ai-review-gate",
+  "required_reviews": [
+    {
+      "role": "A",
+      "name": "Review A - Software Engineering",
+      "provider": "openai-codex",
+      "prompt": ".github/review/prompts/review-a.md"
+    },
+    {
+      "role": "B",
+      "name": "Review B - Quantitative, Security & Financial Safety",
+      "provider": "anthropic-claude",
+      "prompt": ".github/review/prompts/review-b.md"
+    }
+  ],
+  "blocking_severities": [
+    "P0",
+    "P1"
+  ],
+  "p2_requires_tracked_issue": true,
+  "max_review_cycles": 3,
+  "human_maintainers": [
+    "Ferrsir"
+  ],
+  "agent_identities": [],
+  "restricted_paths": [
+    ".github/**",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "docs/governance/**",
+    "scripts/governance/**",
+    "config/risk.yaml",
+    "src/semiedge/safety/**",
+    ".claude/**",
+    ".codex/**"
+  ],
+  "commands": {
+    "recheck": "/semi-edge recheck",
+    "reset_cycles": "/semi-edge reset-review-cycles"
+  }
+}

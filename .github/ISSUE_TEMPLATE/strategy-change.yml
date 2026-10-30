@@ -1,0 +1,20 @@
+name: Strategy change
+description: New strategy or change to signal / sizing / exit logic
+labels: ["type:feature", "area:signals", "risk:high", "status:backlog"]
+body:
+  - type: textarea
+    id: hypothesis
+    attributes: {label: Documented hypothesis}
+    validations: {required: true}
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Required evidence plan
+      description: Unit tests, historical backtest, out-of-sample analysis, transaction-cost sensitivity, risk analysis, comparison with the existing baseline.
+    validations: {required: true}
+  - type: textarea
+    id: params
+    attributes: {label: Parameters and configuration changes}
+  - type: markdown
+    attributes:
+      value: "A high backtest return alone is never sufficient for merging (ENGINEERING_POLICY.md §9)."

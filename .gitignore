@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.python-version
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Runtime data (market data cache, operational DBs, reports, logs)
+data/
+!data/.gitkeep
+logs/
+*.sqlite
+*.sqlite3
+*.duckdb
+*.db
+
+# Local AI review artifacts (published to PRs, not committed)
+.review/
+
+# Agent worktrees
+.claude/worktrees/
+.worktrees/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

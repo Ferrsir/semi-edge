@@ -1,0 +1,85 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "semi-edge"
+version = "0.1.0.dev0"
+description = "SEMI-EDGE: quantitative research and PAPER-trading platform for semiconductor and AI-infrastructure equities."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Proprietary - all rights reserved" }
+authors = [{ name = "Ferrsir" }]
+classifiers = ["Private :: Do Not Upload"]
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "bandit>=1.8",
+    "pip-audit>=2.7",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/semiedge"]
+
+# ---------------------------------------------------------------- ruff
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF", "PT", "N", "C4", "DTZ", "T20", "PL"]
+ignore = [
+    "PLR0913",  # many-argument functions are acceptable for explicit financial parameters
+    "PLR2004",  # magic values are acceptable in tests and thresholds documented in config
+    "RUF001",   # allow typographic characters in strings (documentation output)
+    "RUF002",
+    "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106", "PLR2004", "S603", "S607", "PLC0415"]
+"scripts/**" = ["T201", "S603", "S607"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+# ---------------------------------------------------------------- mypy
+[tool.mypy]
+python_version = "3.12"
+files = ["src", "scripts/governance"]
+strict = true
+warn_unreachable = true
+pretty = true
+
+[[tool.mypy.overrides]]
+module = ["alpaca.*", "exchange_calendars.*", "pyarrow.*"]
+ignore_missing_imports = true
+
+# ---------------------------------------------------------------- pytest
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+xfail_strict = true
+markers = [
+    "integration: exercises adapters/persistence with mocked network (no real credentials)",
+    "safety: trading-safety invariant (paper-only, risk limits, look-ahead, sizing, duplicate orders)",
+    "governance: tests for repository governance tooling (review gate, policy checks)",
+    "slow: slower deterministic simulations",
+]
+filterwarnings = ["error::FutureWarning"]
+
+# ---------------------------------------------------------------- coverage
+[tool.coverage.run]
+source = ["semiedge"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", "@overload"]

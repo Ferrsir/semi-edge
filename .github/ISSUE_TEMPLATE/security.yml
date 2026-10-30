@@ -1,0 +1,14 @@
+name: Security issue (non-sensitive)
+description: Security hardening work. Do NOT paste secrets or exploit details for live vulnerabilities; contact the maintainer privately (SECURITY.md).
+labels: ["type:security", "area:security", "status:backlog"]
+body:
+  - type: textarea
+    id: issue
+    attributes: {label: Description}
+    validations: {required: true}
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options: ["P0 critical", "P1 high", "P2 medium", "P3 low"]
+    validations: {required: true}
