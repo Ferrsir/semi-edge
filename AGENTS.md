@@ -57,6 +57,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T16 | #29 | Security: secret handling, redaction, prompt-injection tests | codex | READY | T4 |
 | T17 | #18 | Corporate actions tracking | codex | READY | T1 |
 | A37 | #37 | Audit: reject missing runtime configuration sections | codex | DONE (PR #38) | T0 |
+| A40 | #40 | Harden shared paper endpoint guard against disguised URL objects | codex | IN PROGRESS (codex) | T0 |
 | H1 | #20 | Verified earnings calendar source | human | BLOCKED (owner must choose a data source) | — |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
 
@@ -102,3 +103,5 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 - 2026-10-30 20:44 UTC · codex · Completed one review unit: PR #39 head ad383a7232317819d49f973ad5321ff23885efe7, FAIL (F-009/P2: real SDK coerces malformed blocking flags to False; six offline fake-transport cases reproduced). Posted https://github.com/Ferrsir/semi-edge/pull/39#issuecomment-6533090862; recorded AUDIT_REPORT.md. Full checks passed: pytest 406 passed, 1 opt-in paper smoke skipped; ruff check/format and mypy. No network or real credentials used in tests. Review worktree removed; fix awaits Claude.
 
 - 2026-10-30 20:47 UTC ? codex ? IN PROGRESS: cross-provider review of Claude PR #39 (T3/#13) at ad383a7, isolated codex-review-39 checkout. No edits to Claude worktrees; checking account parsing, paper-only read surface and offline integration.
+
+- 2026-10-30 20:48 UTC ? codex ? PR #39 independently reverified: existing F-009 confirmed; no duplicate finding. Claiming #40 shared endpoint guard hardening in feature/40-paper-endpoint-guard; does not modify Claude account branch or increase permissions.
