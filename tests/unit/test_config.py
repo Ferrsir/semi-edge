@@ -158,3 +158,12 @@ def test_empty_credentials_count_as_missing(monkeypatch: pytest.MonkeyPatch) -> 
 def test_dotenv_file_is_read(tmp_path: Path) -> None:
     (tmp_path / ".env").write_text("TRADING_MODE=backtest\n")
     assert AppSettings().trading_mode == "backtest"
+
+
+@pytest.mark.safety
+@pytest.mark.parametrize("text", ["{}", "data: {}", "scanner: {}"])
+def test_missing_app_sections_fail_closed(config_dir: Path, tmp_path: Path, text: str) -> None:
+    cfg_dir = _copy_config(config_dir, tmp_path)
+    (cfg_dir / "app.yaml").write_text(text, encoding="utf-8")
+    with pytest.raises(ConfigError, match="missing sections"):
+        load_app_config(cfg_dir)
