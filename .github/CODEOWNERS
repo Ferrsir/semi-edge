@@ -1,0 +1,24 @@
+# CODEOWNERS — paths whose changes require review from the human maintainer.
+# Enforced only when the main-branch ruleset has "Require review from Code Owners" enabled
+# (requires GitHub Pro or a public repository; see docs/governance/BRANCH_PROTECTION.md).
+# The trusted review gate independently requires a human APPROVE of the exact head commit for
+# the restricted paths listed in .github/review/policy.json.
+
+# Governance and CI/CD
+/.github/                     @Ferrsir
+/AGENTS.md                    @Ferrsir
+/CLAUDE.md                    @Ferrsir
+/docs/governance/             @Ferrsir
+/scripts/governance/          @Ferrsir
+/.claude/                     @Ferrsir
+/.codex/                      @Ferrsir
+
+# Trading permissions and risk ceilings
+/config/risk.yaml             @Ferrsir
+/src/semiedge/safety/         @Ferrsir
+
+# Financially sensitive code (human review requested; see ENGINEERING_POLICY.md §6)
+/src/semiedge/risk/           @Ferrsir
+/src/semiedge/execution/      @Ferrsir
+/src/semiedge/backtest/       @Ferrsir
+/src/semiedge/ai/             @Ferrsir

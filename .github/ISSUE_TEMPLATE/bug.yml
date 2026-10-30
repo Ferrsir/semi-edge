@@ -1,0 +1,25 @@
+name: Bug
+description: Incorrect behaviour. Every significant bug gets a permanent regression test.
+labels: ["type:bug", "status:backlog"]
+body:
+  - type: textarea
+    id: what
+    attributes: {label: What happened, description: "Observed vs expected behaviour"}
+    validations: {required: true}
+  - type: textarea
+    id: repro
+    attributes: {label: Reproduction, description: "Commands, inputs, commit SHA, mode (scanner/backtest/paper)"}
+    validations: {required: true}
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options: ["P0 critical", "P1 high", "P2 medium", "P3 low"]
+    validations: {required: true}
+  - type: checkboxes
+    id: trading
+    attributes:
+      label: Trading impact
+      options:
+        - label: Could affect orders, positions, sizing, risk limits or P&L
+        - label: Could expose credentials

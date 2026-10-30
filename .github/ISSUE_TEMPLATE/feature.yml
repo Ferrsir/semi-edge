@@ -1,0 +1,34 @@
+name: Feature / task
+description: A unit of planned engineering work
+labels: ["type:feature", "status:backlog"]
+body:
+  - type: textarea
+    id: objective
+    attributes: {label: Problem or objective}
+    validations: {required: true}
+  - type: textarea
+    id: value
+    attributes: {label: Business / technical value}
+    validations: {required: true}
+  - type: textarea
+    id: acceptance
+    attributes: {label: Acceptance criteria, description: "Checklist of verifiable outcomes"}
+    validations: {required: true}
+  - type: input
+    id: deps
+    attributes: {label: Dependencies, placeholder: "#12, #15"}
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Risk level
+      options: [low, medium, high, critical]
+    validations: {required: true}
+  - type: textarea
+    id: tests
+    attributes: {label: Test requirements}
+    validations: {required: true}
+  - type: dropdown
+    id: owner
+    attributes:
+      label: Proposed owner
+      options: [Claude Code, OpenAI Codex, Human maintainer, Unassigned]
