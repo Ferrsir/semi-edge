@@ -69,12 +69,15 @@ def load_app_config(config_dir: Path) -> AppConfig:
         unknown = set(app) - {"data", "scanner"}
         if unknown:
             raise ConfigError(f"{APP_FILE}: unknown sections {sorted(unknown)}")
+        missing = {"data", "scanner"} - set(app)
+        if missing:
+            raise ConfigError(f"{APP_FILE}: missing sections {sorted(missing)}")
         return AppConfig(
             universe=UniverseConfig.model_validate(_read_yaml(config_dir / UNIVERSE_FILE)),
             strategy=MomentumV1Params.model_validate(_read_yaml(config_dir / STRATEGY_FILE)),
             risk=RiskLimits.model_validate(_read_yaml(config_dir / RISK_FILE)),
-            data=DataConfig.model_validate(app.get("data", {})),
-            scanner=ScannerConfig.model_validate(app.get("scanner", {})),
+            data=DataConfig.model_validate(app["data"]),
+            scanner=ScannerConfig.model_validate(app["scanner"]),
         )
     except ConfigError:
         raise
