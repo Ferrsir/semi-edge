@@ -30,7 +30,9 @@ import urllib.request
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, override
+from urllib.parse import urlsplit
+from uuid import UUID
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -105,10 +107,67 @@ def count_failed_cycles(
     return len(failed)
 
 
+def has_current_human_approval(
+    approvals: Sequence[Approval], humans: set[str], head_sha: str
+) -> bool:
+    # GitHub returns reviews in chronological order. Comments do not revoke
+    # an opinion, but a later rejection or dismissal does.
+    latest: dict[str, Approval] = {}
+    for approval in approvals:
+        if approval.state in {"APPROVED", "CHANGES_REQUESTED", "DISMISSED"}:
+            latest[approval.login.lower()] = approval
+    return any(
+        a.state == "APPROVED" and a.commit_id == head_sha and login in humans
+        for login, a in latest.items()
+    )
+
+
+def report_metadata_errors(
+    report: Mapping[str, Any],
+    spec: Mapping[str, Any],
+    *,
+    head_sha: str,
+    repository: str,
+    pr_number: int,
+    base_sha: str,
+    seen_executions: set[str],
+) -> list[str]:
+    errors = []
+    expected = {
+        "schema_version": 1,
+        "role": spec["role"],
+        "head_sha": head_sha,
+        "repository": repository,
+        "pr_number": pr_number,
+        "base_sha": base_sha,
+    }
+    for key, value in expected.items():
+        if type(report.get(key)) is not type(value) or report.get(key) != value:
+            errors.append(f"stale or invalid {key}: expected {value!r}")
+    reviewer = report.get("reviewer")
+    if not isinstance(reviewer, dict) or reviewer.get("provider") != spec["provider"]:
+        errors.append("reviewer provider missing or unexpected")
+    execution = report.get("execution_id")
+    try:
+        normalized = str(UUID(execution)) if isinstance(execution, str) else ""
+    except ValueError:
+        normalized = ""
+    if not normalized:
+        errors.append("missing or invalid execution_id")
+    elif normalized in seen_executions:
+        errors.append("review executions must be distinct")
+    else:
+        seen_executions.add(normalized)
+    return errors
+
+
 def decide(
     policy: Mapping[str, Any],
     *,
     head_sha: str,
+    repository: str,
+    pr_number: int,
+    base_sha: str,
     reports: Mapping[str, Mapping[str, Any] | None],
     changed_files: Sequence[str],
     approvals: Sequence[Approval],
@@ -124,6 +183,7 @@ def decide(
             "failure", "Draft PR: AI reviews are not evaluated for drafts.", cycle_failed=False
         )
 
+    seen_executions: set[str] = set()
     for spec in policy["required_reviews"]:
         role = spec["role"]
         report = reports.get(role)
@@ -131,11 +191,15 @@ def decide(
             reasons.append(f"Review {role} missing")
             role_results[role] = {"verdict": "MISSING", "reasons": ["no report"]}
             continue
-        problems: list[str] = []
-        if report.get("role") != role:
-            problems.append(f"report role {report.get('role')!r} != {role!r}")
-        if report.get("head_sha") != head_sha:
-            problems.append(f"stale: reviewed {report.get('head_sha')}, head is {head_sha}")
+        problems = report_metadata_errors(
+            report,
+            spec,
+            head_sha=head_sha,
+            repository=repository,
+            pr_number=pr_number,
+            base_sha=base_sha,
+            seen_executions=seen_executions,
+        )
         verdict = effective_verdict(
             report.get("model_output"),
             policy,
@@ -152,10 +216,7 @@ def decide(
     restricted = restricted_matches(changed_files, policy["restricted_paths"])
     humans = {h.lower() for h in policy["human_maintainers"]}
     if restricted:
-        approved = any(
-            a.state == "APPROVED" and a.commit_id == head_sha and a.login.lower() in humans
-            for a in approvals
-        )
+        approved = has_current_human_approval(approvals, humans, head_sha)
         if not approved:
             reasons.append(
                 "restricted paths changed; a human maintainer must APPROVE this exact head commit: "
@@ -228,24 +289,52 @@ def render_comment(
 # --------------------------------------------------------------------------- GitHub I/O
 
 
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    @override
+    def redirect_request(
+        self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str
+    ) -> None:
+        raise ValueError("GitHub API redirects are forbidden")
+
+
 class GitHub:
     def __init__(self, repository: str, token: str, api: str = "https://api.github.com") -> None:
         self.repository = repository
         self.token = token
+        parsed = urlsplit(api)
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username
+            or parsed.password
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("GitHub API must be an HTTPS origin")
         self.api = api.rstrip("/")
+        self.origin = (parsed.scheme, parsed.hostname, parsed.port or 443)
 
     def _request(self, method: str, path: str, body: Any = None) -> Any:
         url = path if path.startswith("http") else f"{self.api}{path}"
-        if not url.startswith(self.api):
-            raise ValueError(f"refusing request to unexpected host: {url}")
+        parsed = urlsplit(url)
+        if (
+            (parsed.scheme, parsed.hostname, parsed.port or 443) != self.origin
+            or parsed.username
+            or parsed.password
+            or parsed.fragment
+        ):
+            raise ValueError("refusing request to unexpected origin")
         data = json.dumps(body).encode() if body is not None else None
-        req = urllib.request.Request(url, data=data, method=method)  # noqa: S310 - fixed https host
+        req = urllib.request.Request(url, data=data, method=method)  # noqa: S310  # nosec B310
         req.add_header("Authorization", f"Bearer {self.token}")
         req.add_header("Accept", "application/vnd.github+json")
         req.add_header("X-GitHub-Api-Version", "2022-11-28")
         if data is not None:
             req.add_header("Content-Type", "application/json")
-        with urllib.request.urlopen(req, timeout=60) as resp:  # noqa: S310
+        # Exact HTTPS origin validated above; redirect handler rejects all redirects.
+        opener = urllib.request.build_opener(NoRedirect())
+        with opener.open(req, timeout=60) as resp:  # nosec B310
             payload = resp.read()
         return json.loads(payload) if payload else None
 
@@ -325,9 +414,12 @@ def load_reports(reports_dir: Path) -> dict[str, dict[str, Any] | None]:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
+        if not isinstance(data, dict):
+            continue
         role = data.get("role")
-        if isinstance(role, str) and role not in reports:
-            reports[role] = data
+        if isinstance(role, str):
+            # Ambiguous artifacts are invalid, regardless of filename ordering.
+            reports[role] = None if role in reports else data
     return reports
 
 
@@ -362,6 +454,9 @@ def run_github(args: argparse.Namespace) -> int:
     decision = decide(
         policy,
         head_sha=head,
+        repository=args.repository,
+        pr_number=args.pr,
+        base_sha=pr["base"]["sha"],
         reports=reports,
         changed_files=gh.changed_files(args.pr),
         approvals=gh.approvals(args.pr),

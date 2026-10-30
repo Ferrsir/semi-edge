@@ -4,7 +4,7 @@
 name: audit-log
 
 on:
-  pull_request_target:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] -- metadata-only audit; no checkout
     types: [closed]
     branches: [main]
 
@@ -34,7 +34,7 @@ jobs:
           MERGED_AT: ${{ github.event.pull_request.merged_at }}
         run: |
           set -euo pipefail
-          gate=$(gh api "repos/$REPO/commits/$HEAD_SHA/status" --jq '[.statuses[] | select(.context=="semi-edge/ai-review-gate")][0] | "\(.state) — \(.description) (\(.target_url))"' || echo "unavailable")
+          gate=$(gh api "repos/$REPO/commits/$HEAD_SHA/status" --jq '[.statuses[] | select(.context=="semi-edge/ai-review-gate")][0] | "\(.state) â€” \(.description) (\(.target_url))"' || echo "unavailable")
           checks=$(gh api "repos/$REPO/commits/$HEAD_SHA/check-runs?per_page=100" --jq '.check_runs[] | select(.name | endswith("-required")) | "- \(.name): \(.conclusion)"' || echo "- unavailable")
           body=$(printf '### PR #%s merged\n\n- Title: %s\n- Head SHA: `%s`\n- Merge commit: `%s`\n- Merged by: %s at %s\n- AI review gate: %s\n\nRequired checks at head:\n%s\n' \
             "$PR" "$TITLE" "$HEAD_SHA" "$MERGE_SHA" "$MERGED_BY" "$MERGED_AT" "$gate" "$checks")

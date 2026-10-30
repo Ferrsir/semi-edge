@@ -1,20 +1,26 @@
-﻿# Engineering setup checkpoint
+# Engineering setup report
 
-Status: incomplete; automatic merging MUST remain disabled.
+## Implemented, not deployed
+PR #33 contains canonical governance and operating documentation, CI/build/security/integration/safety workflows, review runner and fail-closed evaluator, audit workflow, templates and ownership declarations. A CLI integration test verifies rejection of live configuration and acceptance of safe defaults. Scanner tests do not establish runtime broker safety.
 
-## Verified on 2026-10-29
-- Private repository: https://github.com/Ferrsir/semi-edge.
-- Both rulesets and main branch protection API reads return HTTP 403 with: Upgrade to GitHub Pro or make this repository public to enable this feature.
-- Existing governance implementation: 65 tests pass; Ruff passes for scripts and governance tests; mypy passes for governance scripts.
-- No end-to-end review or protected merge demonstration has completed.
-- T3 history, orchestration capability, and PR-link tools are unavailable in this session.
+Two independent local reviews of f1b70014c97548e884207f29d8633d0f0cc2456c returned FAIL. Findings drove fixes for superseded approvals, unresolved required changes, malformed/duplicate artifacts, dirty reviewer checkouts and unsafe Claude configuration fallback. These historical reviews do not approve later revisions.
 
-## Remaining work
-1. Owner must enable a GitHub plan supporting protection for this private repository. Do not change repository visibility automatically.
-2. Independently review this implementation, including model sandboxing, prompt injection, exact-revision validation, and trusted status provenance. Binding checks to the shared GitHub Actions app alone does not isolate trusted workflows from other workflows using that app.
-3. Configure a trusted review integration with credentials unavailable to feature-controlled code. Confirm provider availability and pinned dependencies.
-4. Finish canonical policy and operational documentation. Define the issue-to-PR worker and review-feedback handoff; do not describe comments as a functioning persistent orchestrator.
-5. Configure branch protection and required trusted CI/security/safety/review gates under the initial setup authorization, with no bypass.
-6. Run a failing test PR and verify merge rejection, then demonstrate two independent exact-head approvals and a protected merge. Only then enable ordinary auto-merge.
+## Verified external blockers
+- Repository exists and is private: https://github.com/Ferrsir/semi-edge.
+- Both rulesets and main protection API calls return HTTP 403 requiring a GitHub plan upgrade or public visibility. No visibility or plan change was made.
+- Repository secret listing is empty. Do not add model credentials to ordinary feature-accessible workflows.
+- T3 history, delegation capability and PR-link tools were not callable. No persistent issue-to-PR orchestrator is configured.
+- The proposed shared Actions review status is spoofable by another same-repository workflow. It is not an enforceable independent review integration.
 
-The draft contains Claude's interrupted implementation, checkpointed for review; passing unit tests are not evidence that GitHub enforces it. No deployment or live trading is authorized by this checkpoint.
+## Safe activation state
+Privileged review orchestration is manually dispatchable only and has an unconditional failing activation job; all review/publisher jobs are blocked by the context condition. No automatic merge code is enabled. This is deliberately incomplete activation, not a functioning autonomous team.
+
+## Owner/integration actions required
+1. Resolve private repository protection entitlement without exposing repository contents.
+2. Provision separately administered, least-privileged review and CI identities with credentials outside feature-controlled workflows. Ensure agent and human identities differ.
+3. Supply model authentication to isolated review runtimes through secure secret provisioning. Claude API key mode is required by this runner.
+4. Configure required protected checks and no bypass, force pushes or deletion. Validate the trusted integration against spoofing, stale reports and altered workflow definitions.
+5. Configure an available persistent orchestrator explicitly, or continue bounded foreground tasks with durable state. Feedback comments alone are not automatic repair execution.
+6. Run a protected failing test PR and confirm rejected merge; then run the successful independent-review path. Record exact SHAs, run links and merge rejection evidence. Only afterward activate auto-merge. No deployment is included.
+
+See BRANCH_PROTECTION.md and REVIEW_PROTOCOL.md. Issue #1 remains open; the draft must not merge while these conditions remain unmet.

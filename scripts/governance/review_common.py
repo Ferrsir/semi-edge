@@ -233,6 +233,8 @@ def effective_verdict(
                 reasons.append(f"P2 deferred to {ref}, which is not an open issue: {f['title']}")
     if not model_output["files_inspected"]:
         reasons.append("reviewer inspected no files")
+    if model_output["required_changes"]:
+        reasons.append("reviewer requires changes")
     if model_output["verdict"] == "FAIL":
         reasons.append("reviewer verdict FAIL")
     return VerdictResult("FAIL" if reasons else "PASS", tuple(reasons))

@@ -15,10 +15,7 @@
 name: ai-review
 
 on:
-  pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review]
-  issue_comment:
-    types: [created]
+  workflow_dispatch:
 
 permissions: {}
 
@@ -27,8 +24,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  activation-blocked:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: |
+          echo 'Trusted review issuer and protected main are not configured. See activation runbook.'
+          exit 1
   context:
     if: >-
+      false &&
       github.event_name == 'pull_request_target' ||
       (github.event.issue.pull_request &&
        (startsWith(github.event.comment.body, '/semi-edge recheck') ||
@@ -127,14 +131,13 @@ jobs:
           OPENAI_API_KEY: ${{ matrix.role == 'A' && secrets.OPENAI_API_KEY || '' }}
           CODEX_API_KEY: ${{ matrix.role == 'A' && secrets.OPENAI_API_KEY || '' }}
           ANTHROPIC_API_KEY: ${{ matrix.role == 'B' && secrets.ANTHROPIC_API_KEY || '' }}
-          CLAUDE_CODE_OAUTH_TOKEN: ${{ matrix.role == 'B' && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
         run: |
           set -euo pipefail
           out="review-$(echo "$ROLE" | tr '[:upper:]' '[:lower:]').json"
           if [ "$PROVIDER" = "openai-codex" ] && [ -z "$OPENAI_API_KEY" ]; then
             missing="OPENAI_API_KEY"
-          elif [ "$PROVIDER" = "anthropic-claude" ] && [ -z "$ANTHROPIC_API_KEY$CLAUDE_CODE_OAUTH_TOKEN" ]; then
-            missing="ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN"
+          elif [ "$PROVIDER" = "anthropic-claude" ] && [ -z "$ANTHROPIC_API_KEY" ]; then
+            missing="ANTHROPIC_API_KEY"
           else
             missing=""
           fi

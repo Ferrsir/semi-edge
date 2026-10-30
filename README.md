@@ -1,5 +1,5 @@
-<img src="assets/icon.svg" width="64" height="64" alt="">
+# SEMI-EDGE
 
-# semi edge
+Semiconductor research and paper-trading platform under development. This branch contains governance tooling and a Python skeleton. Trading and deployment are not implemented here.
 
-Created in [T3 Code](https://t3.codes).
+See [project brief](docs/PROJECT_BRIEF.md), [architecture](docs/ARCHITECTURE.md), [engineering policy](docs/governance/ENGINEERING_POLICY.md), [testing](docs/TESTING.md), and [setup status](docs/governance/ENGINEERING_SETUP_REPORT.md).
