@@ -37,10 +37,11 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 
 | ID | Issue | Task | Owner | Status | Depends on |
 |---|---|---|---|---|---|
-| T0 | #34, #8 | Consolidate governance + foundation + audit fixes into `main` | claude | IN PROGRESS (claude) | — |
-| T1 | #9, #10 | Data layer: calendar, Alpaca source, synthetic source, Parquet store, validation | codex | READY | T0 |
-| T2 | #11, #12 | Indicators, `momentum_v1` features/evaluation/score, position sizing | claude | READY | T0 |
-| T3 | #13 | Read-only paper account snapshot (`semiedge.broker.account`) | claude | READY | T0 |
+| T0 | #34, #8 | Consolidate governance + foundation + audit fixes into `main` | claude | DONE (PR #33, #35) | — |
+| T1 | #9, #10 | Data layer: calendar, Alpaca source, synthetic source, Parquet store, validation | codex | IN PROGRESS (codex) `feature/9-data-layer` | T0 |
+| T2 | #11, #12 | Indicators, `momentum_v1` features/evaluation/score, position sizing | claude | IN PROGRESS (claude) `feature/11-signals-strategy` | T0 |
+| T3 | #13 | Read-only paper account snapshot (`semiedge.broker.account`) | claude | IN PROGRESS (claude) `feature/13-paper-account` | T0 |
+| T3b | #15–#29 | Phase 2–4 interface spec (backtest, risk, execution, state, reconcile, engine, dashboard) | claude | IN PROGRESS (claude) `feature/15-phase2-4-spec` | T0 |
 | T4 | #14 | Signal report + CLI (`scan`, `data fetch/status`, `account`, `config check`) | claude | READY | T1, T2, T3 |
 | T5 | #15 | Event-driven backtest engine: next-open fills, costs, slippage | codex | READY | T1, T2 |
 | T6 | #16 | Performance metrics, SMH/QQQ benchmark comparison | codex | READY | T5 |
@@ -67,3 +68,6 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
   waived the GitHub branch-protection / trusted-review-issuer gate (ADR-004). Codex's stalled audit
   work on `feature/34-independent-audit` was preserved verbatim as a commit and is credited in
   `AUDIT_REPORT.md` (F-002..F-005). F-001: `.gitignore` had been dropping `src/semiedge/data/`.
+- 2026-10-30 15:20 UTC · claude · Wave 1 started. Codex: T1 data layer. Claude: T2 signals, T3 account,
+  T3b Phase 2–4 spec (backtest/risk/execution/state contracts so Codex and Claude can build Phase 2–4 in
+  parallel). Phase 2+ tasks (T5+) wait for T3b. Merges are squash-only; rebase on `main` before a PR.
