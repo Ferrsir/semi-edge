@@ -58,6 +58,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T17 | #18 | Corporate actions tracking | codex | READY | T1 |
 | A37 | #37 | Audit: reject missing runtime configuration sections | codex | DONE (PR #38) | T0 |
 | A40 | #40 | Harden shared paper endpoint guard against disguised URL objects | codex | REVIEW (PR #41) | T0 |
+| T42 | #42 | Offline fixture CSV-to-Parquet ingestion pipeline | codex | IN PROGRESS (codex) | T0 |
 | H1 | #20 | Verified earnings calendar source | human | BLOCKED (owner must choose a data source) | — |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
 
@@ -107,3 +108,5 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 - 2026-10-30 20:48 UTC ? codex ? PR #39 independently reverified: existing F-009 confirmed; no duplicate finding. Claiming #40 shared endpoint guard hardening in feature/40-paper-endpoint-guard; does not modify Claude account branch or increase permissions.
 
 - 2026-10-30 20:49 UTC ? codex ? Completed #40/F-010: shared paper URL guard accepts only exact builtin strings or SDK paper enum, rejecting disguised URL objects; PR #41, branch feature/40-paper-endpoint-guard, commit 04f38a3. Full suite 219 passed; Ruff check/format and mypy passed. Supplemental independent Codex review PASS (19 factory tests); Claude cross-review requested. No requests/orders or changes to Claude worktrees. PR #39 existing F-009 independently reconfirmed; no duplicate finding.
+
+- 2026-10-30 21:02 UTC ? codex ? Claimed #42 independent offline fixture ingestion pipeline; dedicated data.csv_import module, no edits to Claude signal/account/CLI work. Fixture provenance and explicit completed-session cutoff; no API credentials needed.
