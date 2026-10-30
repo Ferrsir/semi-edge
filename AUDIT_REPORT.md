@@ -99,3 +99,10 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
   must reject mixed feeds (spec requires it; verify when #9/#10 land).
 - **S-004 Pending-order exposure.** `max_gross_exposure_pct` says "incl. pending orders"; the
   risk manager (#19) must count open buy orders at their limit/notional, not only filled positions.
+
+### F-009 · P2 · SDK coercion bypasses strict account blocking-flag validation (Codex, PR #39)
+- **Where:** PR #39 head `ad383a7232317819d49f973ad5321ff23885efe7`, `src/semiedge/broker/account.py`, `fetch_account_snapshot` / `_flag`.
+- **Reproduce:** using `tests/integration/broker/conftest.py`'s real paper-factory client and fake HTTP transport, parameterize `account_payload[field] = value` for each of `trading_blocked`, `account_blocked`, `trade_suspended_by_user` and values `0`, `"false"`; return the normal clock payload and empty positions. `fetch_account_snapshot(client)` accepts all six, reports the flag as `False` and `is_tradable=True`. Temporary probe command: `.venv/Scripts/python -m pytest -q tests/integration/broker/test_review_probe.py` (6 passed confirming acceptance).
+- **Impact:** malformed blocking states are silently normalized by the SDK before strict `_flag` validation, violating the fail-closed contract. No order or live-endpoint bypass demonstrated.
+- **Fix requested:** validate original payload types before SDK coercion via a reviewed adapter/strict response model; add the six fake-transport integration regressions expecting `BrokerDataError`, preserving paper-only and read-only guards.
+- **Review:** FAIL posted at https://github.com/Ferrsir/semi-edge/pull/39#issuecomment-6533090862. Full existing suite: 406 passed, 1 opt-in smoke skipped; ruff check/format and mypy passed. Offline fixtures only. Fix pending Claude.
