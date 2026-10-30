@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import duckdb
+import numpy as np
 import pandas as pd
 
 from semiedge.data.schema import (
@@ -119,13 +120,15 @@ class ParquetBarStore:
             old = self._read_raw(path, feed, adjustment)
             if not old["source"].eq(source.value).all():
                 raise ValueError("cannot merge different data sources")
-            shared = old.index.intersection(incoming.index)
-            columns = list(REQUIRED_BAR_COLUMNS)
-            if len(shared) and not old.loc[shared, columns].equals(incoming.loc[shared, columns]):
-                logger.warning("OHLCV correction for %s on existing sessions", symbol)
+            if adjustment != Adjustment.RAW:
+                _check_adjustment_basis(symbol, old, incoming)
             # Stable ordering keeps the existing row for equal fetch timestamps.
             incoming = pd.concat([incoming, old]).sort_values("fetched_at", kind="stable")
             incoming = incoming.loc[~incoming.index.duplicated(keep="last")].sort_index()
+            columns = list(REQUIRED_BAR_COLUMNS)
+            # Warn only when a stored session's values are actually replaced.
+            if not old.loc[:, columns].equals(incoming.loc[old.index, columns]):
+                logger.warning("OHLCV correction for %s on existing sessions", symbol)
         path.parent.mkdir(parents=True, exist_ok=True)
         descriptor, temporary = tempfile.mkstemp(prefix=".bars-", suffix=".tmp", dir=path.parent)
         os.close(descriptor)
@@ -173,3 +176,33 @@ class ParquetBarStore:
                    GROUP BY symbol, feed, adjustment, source ORDER BY symbol, feed, adjustment""",
                 [[str(path) for path in paths]],
             ).df()
+
+
+def _check_adjustment_basis(symbol: str, old: pd.DataFrame, incoming: pd.DataFrame) -> None:
+    """Refuse merges that would splice two vendor adjustment bases into one series.
+
+    Adjusted history is restated retroactively (splits, dividends). Stored rows that the incoming
+    frame does not replace are only kept when a shared session proves they are on the incoming
+    basis: the earliest shared session anchors retained older rows, the latest anchors newer ones.
+    """
+    shared = old.index.intersection(incoming.index)
+    if shared.empty:
+        raise ValueError(
+            f"{symbol}: adjusted bars must overlap the stored sessions "
+            f"({old.index[0].date()}..{old.index[-1].date()}) to verify the adjustment basis"
+        )
+    anchors = []
+    if old.index[0] < incoming.index[0]:
+        anchors.append(shared[0])
+    if old.index[-1] > incoming.index[-1]:
+        anchors.append(shared[-1])
+    for anchor in anchors:
+        # Splits and dividends both rescale the close; high/low late-print corrections do not
+        # indicate a basis change, so only the close is compared.
+        stored = old.loc[[anchor], "close"].to_numpy(dtype="float64")
+        fresh = incoming.loc[[anchor], "close"].to_numpy(dtype="float64")
+        if not np.allclose(stored, fresh, rtol=1e-9, atol=0.0):
+            raise ValueError(
+                f"{symbol}: adjustment basis changed at {anchor.date()}; "
+                "refetch the full stored range before merging"
+            )

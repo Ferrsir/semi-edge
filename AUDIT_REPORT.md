@@ -99,6 +99,45 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Regression:** `test_missing_app_sections_fail_closed` covers each missing-section combination;
   existing repository-config loading covers the valid configuration.
 
+### F-009 · P1 · Bar store spliced split/dividend adjustment bases into one series (Claude, PR #36)
+- **Where:** `semiedge.data.store.ParquetBarStore.write` (merge path) for `adjustment != raw`;
+  `config/app.yaml` uses `adjustment: split`.
+- **Reproduce:** store split-adjusted bars through 2024-05-31, then write post-split (restated,
+  /10) bars from 2024-06-03 without overlap, or a partial refetch whose shared sessions changed.
+  Before the fix both writes succeeded and the stored series showed a fictitious ~90% gap
+  (`tests/integration/data/test_store_adjustment_basis.py`: 3 cases failed with
+  `DID NOT RAISE ValueError`).
+- **Impact:** vendors restate adjusted history retroactively, but the store kept rows outside the
+  new fetch range on the old basis. SMA, breakout, ATR, return and stop levels computed on the
+  merged series would be wrong (wrong trading decision), and nothing downstream could detect it.
+- **Fix:** adjusted merges must overlap the stored range; the close on the earliest/latest shared
+  session anchoring retained rows must match, else `ValueError` (refetch the full range). Raw series
+  still accept disjoint appends. Spec `phase1-interfaces.md` (store) updated.
+- **Regression:** `tests/integration/data/test_store_adjustment_basis.py` (6 cases),
+  `tests/unit/data/test_store.py::test_disjoint_adjusted_append_rejected`,
+  `test_dividend_rebase_detected_on_anchor_close`, `test_backfill_checks_latest_shared_session`.
+
+### F-010 · P2 · Alpaca adapter returned in-progress (partial) daily bars (Claude, PR #36)
+- **Where:** `semiedge.data.alpaca_source.AlpacaMarketDataSource.get_daily_bars`.
+- **Reproduce:** fake client returning a 2024-03-12 bar with `now = 2024-03-12 15:00 UTC`
+  (11:00 ET, session open); before the fix the partial bar was returned for IEX, SIP and
+  delayed SIP (`tests/unit/data/test_alpaca_source.py::test_in_progress_session_bar_is_not_returned`).
+- **Impact:** a partial bar is indistinguishable from a completed one once cached; any later fetch
+  that does not re-cover that session leaves it permanently, so a later `as_of` treats an intraday
+  snapshot as the session's close/high/volume.
+- **Fix:** drop sessions whose exchange close (early closes respected) is after `now`, with an INFO
+  log; optional keyword `calendar` on the constructor (spec updated). Settle-window handling stays
+  with the caller via `last_completed_session(now, bar_settle_minutes)`.
+- **Regression:** `test_in_progress_session_bar_is_not_returned` (3 feeds),
+  `test_early_close_session_is_returned_once_closed`.
+
+### F-011 · P3 · Store logged an OHLCV correction when nothing stored changed (Claude, PR #36)
+- **Where:** `ParquetBarStore.write`.
+- **Reproduce:** write a correction, then rewrite the original rows with an older `fetched_at`; the
+  older rows lose the merge but the WARNING was still emitted.
+- **Fix:** compare stored rows with the merged result. **Regression:**
+  `tests/integration/data/test_adapters_store.py::test_roundtrip_merge_summary` (older refetch).
+
 ---
 
 ## Speculative concerns (not demonstrated; tracked for the relevant phase)

@@ -46,12 +46,15 @@ def test_roundtrip_merge_summary(tmp_path, bars, caplog):
     pd.testing.assert_frame_equal(result.frame, bars)
     assert result.source == DataSource.FIXTURE
     changed = bars.iloc[-1:].copy()
-    changed.loc[:, "close"] += 1
+    # A volume correction on the anchor session does not change the split-adjustment basis.
+    changed.loc[:, "volume"] += 1
     write(store, changed, datetime(2024, 12, 2, tzinfo=UTC))
     assert "OHLCV correction" in caplog.text
-    assert read(store).frame.close.iloc[-1] == changed.close.iloc[-1]
+    assert read(store).frame.volume.iloc[-1] == changed.volume.iloc[-1]
+    caplog.clear()
     write(store, bars)  # older fetch cannot undo correction
-    assert read(store).frame.close.iloc[-1] == changed.close.iloc[-1]
+    assert "OHLCV correction" not in caplog.text  # nothing stored was replaced
+    assert read(store).frame.volume.iloc[-1] == changed.volume.iloc[-1]
     assert read(store).fetched_at == datetime(2024, 12, 2, tzinfo=UTC)
     assert store.symbols(feed=DataFeed.IEX, adjustment=Adjustment.SPLIT) == ["A"]
     summary = store.summary()
@@ -117,9 +120,10 @@ def test_store_rejects_mixed_provenance(tmp_path, bars, bad_feed):
         store.summary()
 
 
-def test_store_merges_disjoint_sessions_and_equal_timestamps(tmp_path, bars):
+def test_store_merges_overlapping_appends_and_equal_timestamps(tmp_path, bars):
     store = ParquetBarStore(tmp_path)
-    write(store, bars.iloc[:2])
+    # Adjusted appends overlap one stored session so the adjustment basis can be verified.
+    write(store, bars.iloc[:3])
     write(store, bars.iloc[2:])
     pd.testing.assert_frame_equal(read(store).frame, bars)
     write(store, bars * 2)
