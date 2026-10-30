@@ -1,0 +1,10 @@
+data:
+  daily_feed: sip            # consolidated tape for daily bars; IEX-only volume is not comparable
+  adjustment: split          # split-adjusted OHLCV (signal conditions are scale-invariant ratios)
+  history_start: 2016-01-04
+  calendar: XNYS
+  bar_settle_minutes: 30     # a session's daily bar counts as complete 30 min after its close
+  max_missing_sessions_in_lookback: 0   # fail closed on any gap inside the strategy lookback
+
+scanner:
+  reference_equity: 100000   # used ONLY for proposed sizes in scanner mode; labelled in reports

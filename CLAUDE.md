@@ -1,3 +1,4 @@
 # Claude entry point
 
-Follow docs/governance/ENGINEERING_POLICY.md and docs/governance/ENGINEERING_SETUP_REPORT.md.
+Read `AGENTS.md` first: it is the shared task board with Codex, the ground rules and the review
+protocol. Specifications live in `docs/specifications/`; audit findings in `AUDIT_REPORT.md`.

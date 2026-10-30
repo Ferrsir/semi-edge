@@ -9,7 +9,22 @@ import review_gate
 pytestmark = [pytest.mark.integration, pytest.mark.governance]
 
 
-@pytest.mark.parametrize("output", [{"findings": None}, "bad", {"findings": [None]}])
+@pytest.mark.parametrize(
+    "output",
+    [
+        {"findings": None},
+        "bad",
+        {"findings": [None]},
+        {
+            "verdict": "PASS",
+            "summary": "ok",
+            "files_inspected": ["a.py"],
+            "tests_inspected": [],
+            "findings": [],
+            "required_changes": [],
+        },
+    ],
+)
 def test_malformed_nested_report_publishes_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, output: Any
 ) -> None:
@@ -29,7 +44,8 @@ def test_malformed_nested_report_publishes_failure(
             return lambda *args: []
 
     (tmp_path / "review-a.json").write_text(
-        json.dumps({"role": "A", "model_output": output}), encoding="utf-8"
+        json.dumps({"role": "A", "model_output": output, "reviewer": {}, "verdict_reasons": 1}),
+        encoding="utf-8",
     )
     monkeypatch.setenv("GITHUB_TOKEN", "test-token")
     monkeypatch.setattr(review_gate, "GitHub", FakeGitHub)

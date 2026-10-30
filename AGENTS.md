@@ -1,3 +1,69 @@
-# Agent entry point
+# SEMI-EDGE agent coordination board
 
-Read docs/governance/ENGINEERING_POLICY.md before development. Current activation blockers are in docs/governance/ENGINEERING_SETUP_REPORT.md. Never bypass failed or missing gates.
+Shared by **Claude Code** (lead / integrator) and **Codex / ChatGPT** (independent auditor and
+implementer). Read this file at the start of every session, before touching code. It records who is
+working on what, what is done, and what is waiting for review. GitHub issues hold the detailed scope.
+
+Owner: Ferrsir (human). **PAPER trading only. Live trading is prohibited in code, config and policy.**
+
+## Ground rules (non-negotiable)
+1. Never contact a live trading endpoint. Trading clients come only from
+   `semiedge.safety.broker.create_paper_trading_client`. No real credentials in tests, logs or prompts.
+2. Never weaken a safety guard or raise a risk ceiling (`src/semiedge/safety/limits.py`,
+   `config/risk.yaml`) — those need the human owner.
+3. Do not change the trading strategy to improve backtest results. Strategy changes need a spec
+   change in `docs/specifications/` with rationale, made before looking at the new results.
+4. Fail closed: missing or invalid inputs produce explicit reasons or exceptions, never defaults.
+5. No fabricated results. A backtest number is quoted only with the command that reproduces it.
+
+## How to work
+- One task = one GitHub issue = one branch `feature/<issue>-<slug>` = one worktree at
+  `C:/Users/ferri/.t3/projects/semi-edge.worktrees/<slug>`. Never edit another agent's worktree.
+- Claim: set the board row to `IN PROGRESS (<agent>)`, commit only `AGENTS.md` to `main`
+  (`git pull --rebase && git push`), comment on the issue.
+- Setup in a worktree: `C:/Users/ferri/.t3/projects/semi-edge/.venv/Scripts/uv.exe sync --locked --system-certs`
+- Validate: `.venv/Scripts/python -m pytest -q`, `.venv/Scripts/ruff.exe check .`,
+  `.venv/Scripts/ruff.exe format --check .`, `.venv/Scripts/mypy.exe`.
+- Finish: push the branch, open a PR to `main` linked to the issue, set the row to `REVIEW`.
+- Review is cross-provider: Codex reviews Claude PRs and Claude reviews Codex PRs. The reviewer
+  posts PASS/FAIL with findings on the PR. The lead merges when CI is green and review is PASS
+  with no open P0/P1 (ADR-004). Findings go to `AUDIT_REPORT.md`.
+- Usage limits: if you stop mid-task, commit WIP to your branch, push it, and write a
+  `Handoff:` line in the Discussion log (branch, SHA, what is left).
+
+## Board
+
+Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reason)`
+
+| ID | Issue | Task | Owner | Status | Depends on |
+|---|---|---|---|---|---|
+| T0 | #34, #8 | Consolidate governance + foundation + audit fixes into `main` | claude | IN PROGRESS (claude) | — |
+| T1 | #9, #10 | Data layer: calendar, Alpaca source, synthetic source, Parquet store, validation | codex | READY | T0 |
+| T2 | #11, #12 | Indicators, `momentum_v1` features/evaluation/score, position sizing | claude | READY | T0 |
+| T3 | #13 | Read-only paper account snapshot (`semiedge.broker.account`) | claude | READY | T0 |
+| T4 | #14 | Signal report + CLI (`scan`, `data fetch/status`, `account`, `config check`) | claude | READY | T1, T2, T3 |
+| T5 | #15 | Event-driven backtest engine: next-open fills, costs, slippage | codex | READY | T1, T2 |
+| T6 | #16 | Performance metrics, SMH/QQQ benchmark comparison | codex | READY | T5 |
+| T7 | #17 | Walk-forward + parameter sensitivity | claude | READY | T5, T6 |
+| T8 | #19 | Deterministic independent risk manager (exposure incl. pending, halts) | claude | READY | T2 |
+| T9 | #21 | Paper order lifecycle: idempotent client IDs, partial fills, brackets | claude | READY | T3, T8 |
+| T10 | #22 | Broker reconciliation + restart recovery | codex | READY | T9 |
+| T11 | #23 | Position management, stop/target, time exits | claude | READY | T9 |
+| T12 | #24 | Exchange-calendar scheduler / trading loop | codex | READY | T9, T10, T11 |
+| T13 | #25 | Streamlit dashboard (dark theme) | codex | READY | T4 |
+| T14 | #26 | Discord notifications | codex | READY | T12 |
+| T15 | #27 | Docker / compose, health checks, graceful shutdown | claude | READY | T12 |
+| T16 | #29 | Security: secret handling, redaction, prompt-injection tests | codex | READY | T4 |
+| T17 | #18 | Corporate actions tracking | codex | READY | T1 |
+| H1 | #20 | Verified earnings calendar source | human | BLOCKED (owner must choose a data source) | — |
+| H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
+
+## Review queue
+| PR | Task | Author | Reviewer | Verdict |
+|---|---|---|---|---|
+
+## Discussion log (append-only, newest last; `YYYY-MM-DD HH:MM UTC · agent · note`)
+- 2026-10-30 15:10 UTC · claude · Took over as lead/integrator at the owner's request. Owner
+  waived the GitHub branch-protection / trusted-review-issuer gate (ADR-004). Codex's stalled audit
+  work on `feature/34-independent-audit` was preserved verbatim as a commit and is credited in
+  `AUDIT_REPORT.md` (F-002..F-005). F-001: `.gitignore` had been dropping `src/semiedge/data/`.

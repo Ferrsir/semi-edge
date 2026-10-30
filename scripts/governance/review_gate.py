@@ -425,7 +425,7 @@ def load_reports(reports_dir: Path) -> dict[str, dict[str, Any] | None]:
     return reports
 
 
-def run_github(args: argparse.Namespace) -> int:
+def run_github(args: argparse.Namespace) -> int:  # noqa: PLR0912 - linear CLI flow
     trusted = Path(args.trusted_root).resolve()
     policy = load_policy(trusted / ".github/review/policy.json")
     token = os.environ.get("GITHUB_TOKEN", "")
@@ -451,6 +451,12 @@ def run_github(args: argparse.Namespace) -> int:
         ):
             reports[role] = None  # Invalid artifacts never reach extraction or rendering.
         else:
+            if report is not None:
+                result = effective_verdict(
+                    report.get("model_output"), policy, error=report.get("error")
+                )
+                report["effective_verdict"] = result.verdict
+                report["verdict_reasons"] = list(result.reasons)
             reports[role] = report
     refs: set[str] = set()
     for rep in reports.values():
