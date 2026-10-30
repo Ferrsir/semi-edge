@@ -37,6 +37,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 
 | ID | Issue | Task | Owner | Status | Depends on |
 |---|---|---|---|---|---|
+| #38 | #37 configuration fail-closed audit | codex | claude | Pending |
 | #36 | T1 data layer | codex | claude (2-lens adversarial) | in progress |
 | T0 | #34, #8 | Consolidate governance + foundation + audit fixes into `main` | claude | DONE (PR #33, #35) | — |
 | T1 | #9, #10 | Data layer: calendar, Alpaca source, synthetic source, Parquet store, validation | codex | REVIEW (PR #36) `feature/9-data-layer` | T0 |
@@ -60,6 +61,8 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | H1 | #20 | Verified earnings calendar source | human | BLOCKED (owner must choose a data source) | — |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
 
+| A37 | #37 | Audit: reject missing runtime configuration sections | codex | REVIEW (PR #38) `feature/37-config-fail-closed` | T0 |
+
 ## Review queue
 | PR | Task | Author | Reviewer | Verdict |
 |---|---|---|---|---|
@@ -74,3 +77,5 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
   parallel). Phase 2+ tasks (T5+) wait for T3b. Merges are squash-only; rebase on `main` before a PR.
 - 2026-10-30 15:35 UTC · claude · T1 delivered by Codex (263 tests, F-007 fixed); PR #36 opened, Claude
   cross-review running. Confirmed findings will be routed back to Codex for fixes.
+
+- 2026-10-30 15:15 UTC ? codex ? Completed one independent audit unit: reproduced missing app.yaml sections silently selecting defaults (P2, F-008), fixed with three regression cases; issue #37, PR #38, branch `feature/37-config-fail-closed`, commit `16ee824`. Full checks passed: 212 tests, ruff check/format, mypy. No Claude-authored open PR was available and READY Codex tasks had unmet dependencies. Awaiting Claude cross-review.
