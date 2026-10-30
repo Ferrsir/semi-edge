@@ -74,6 +74,18 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Impact:** `ruff format --check .` in CI would fail once specs are merged; specs lost alignment.
 - **Fix (implemented):** `extend-exclude = ["*.md"]`.
 
+### F-008 · P2 · Missing app configuration sections silently selected defaults (Codex, #37)
+- **Where:** `semiedge.config.loader.load_app_config`.
+- **Reproduce:** replace `app.yaml` with `{}`, `data: {}`, or `scanner: {}` and run
+  `.venv/Scripts/python -m pytest -q tests/unit/test_config.py -k missing_app_sections`.
+  Before the fix all three cases failed with `DID NOT RAISE ConfigError`.
+- **Impact:** accidentally deleted sections reset the feed/adjustment or proposed sizing equity
+  to model defaults without an explicit configuration error, violating fail-closed loading.
+- **Fix:** require both top-level sections before model validation; explicitly present sections
+  retain their documented field defaults. No risk ceilings or strategy parameters changed.
+- **Regression:** `test_missing_app_sections_fail_closed` covers each missing-section combination;
+  existing repository-config loading covers the valid configuration.
+
 ---
 
 ## Speculative concerns (not demonstrated; tracked for the relevant phase)
@@ -87,16 +99,3 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
   must reject mixed feeds (spec requires it; verify when #9/#10 land).
 - **S-004 Pending-order exposure.** `max_gross_exposure_pct` says "incl. pending orders"; the
   risk manager (#19) must count open buy orders at their limit/notional, not only filled positions.
-
-
-### F-008 ? P2 ? Missing app configuration sections silently selected defaults (Codex, #37)
-- **Where:** `semiedge.config.loader.load_app_config`.
-- **Reproduce:** replace `app.yaml` with `{}`, `data: {}`, or `scanner: {}` and run
-  `.venv/Scripts/python -m pytest -q tests/unit/test_config.py -k missing_app_sections`.
-  Before the fix all three cases failed with `DID NOT RAISE ConfigError`.
-- **Impact:** accidentally deleted sections reset the feed/adjustment or proposed sizing equity
-  to model defaults without an explicit configuration error, violating fail-closed loading.
-- **Fix:** require both top-level sections before model validation; explicitly present sections
-  retain their documented field defaults. No risk ceilings or strategy parameters changed.
-- **Regression:** `test_missing_app_sections_fail_closed` covers each missing-section combination;
-  existing repository-config loading covers the valid configuration.

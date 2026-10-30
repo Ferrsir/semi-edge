@@ -37,8 +37,6 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 
 | ID | Issue | Task | Owner | Status | Depends on |
 |---|---|---|---|---|---|
-| #38 | #37 configuration fail-closed audit | codex | claude | Pending |
-| #36 | T1 data layer | codex | claude (2-lens adversarial) | in progress |
 | T0 | #34, #8 | Consolidate governance + foundation + audit fixes into `main` | claude | DONE (PR #33, #35) | — |
 | T1 | #9, #10 | Data layer: calendar, Alpaca source, synthetic source, Parquet store, validation | codex | REVIEW (PR #36) `feature/9-data-layer` | T0 |
 | T2 | #11, #12 | Indicators, `momentum_v1` features/evaluation/score, position sizing | claude | IN PROGRESS (claude) `feature/11-signals-strategy` | T0 |
@@ -58,14 +56,14 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T15 | #27 | Docker / compose, health checks, graceful shutdown | claude | READY | T12 |
 | T16 | #29 | Security: secret handling, redaction, prompt-injection tests | codex | READY | T4 |
 | T17 | #18 | Corporate actions tracking | codex | READY | T1 |
+| A37 | #37 | Audit: reject missing runtime configuration sections | codex | DONE (PR #38) | T0 |
 | H1 | #20 | Verified earnings calendar source | human | BLOCKED (owner must choose a data source) | — |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
-
-| A37 | #37 | Audit: reject missing runtime configuration sections | codex | REVIEW (PR #38) `feature/37-config-fail-closed` | T0 |
 
 ## Review queue
 | PR | Task | Author | Reviewer | Verdict |
 |---|---|---|---|---|
+| #36 | T1 | codex | claude | in progress (CI coverage 73.9% < 80% fails) |
 
 ## Discussion log (append-only, newest last; `YYYY-MM-DD HH:MM UTC · agent · note`)
 - 2026-10-30 15:10 UTC · claude · Took over as lead/integrator at the owner's request. Owner
@@ -97,3 +95,4 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 - 2026-10-30 19:14 UTC · codex · Completed one independent audit unit of merged data/scanner configuration (DataConfig and ScannerConfig in src/semiedge/config/models.py) at origin/main 935199d. No new concrete defect reproduced: offline probes rejected 38 invalid feed/adjustment/calendar/date/numeric/unknown-field cases and accepted 11 valid boundary/enum/date cases. No network or credentials used in probes. No eligible Claude-coauthored open PR (checked all commit messages for #36/#38); READY Codex tasks have unmet dependencies. Full checks passed: .venv/Scripts/python -m pytest -q (209 passed, one dependency deprecation warning), .venv/Scripts/ruff.exe check ., .venv/Scripts/ruff.exe format --check . and .venv/Scripts/mypy.exe. No code changes or actionable finding; #36 and #38 await Claude review.
 
 - 2026-10-30 19:44 UTC · codex · Completed one independent audit unit of effective configuration fingerprinting (config_fingerprint in src/semiedge/config/loader.py) at origin/main e2092a7. No new concrete defect reproduced: offline probes passed 3 stability/reference checks (recursive mapping order, JSON round trip, independent SHA-256 calculation), 10 sensitivity checks across universe/strategy/risk/data/scanner, and verified input unchanged. No network or credentials used in probes. No eligible Claude-coauthored open PR (checked all commit messages for #36/#38); READY Codex tasks have unmet dependencies. Full checks passed: .venv/Scripts/python -m pytest -q (209 passed, one dependency deprecation warning), .venv/Scripts/ruff.exe check ., .venv/Scripts/ruff.exe format --check . and .venv/Scripts/mypy.exe. No code changes or actionable finding; #36 and #38 await Claude review.
+- 2026-10-30 20:15 UTC · claude · Lead resumed. PR #38 (F-008) cross-reviewed PASS and squash-merged; F-008 moved into the Confirmed section of AUDIT_REPORT.md. PR #36 fails CI (coverage 73.9% < 80%); Claude review + coverage fix in progress. Resuming T2/T3/T3b from the uncommitted WIP left by the previous lead run.
