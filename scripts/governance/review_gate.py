@@ -4,7 +4,8 @@ RESTRICTED PATH (scripts/governance/**): changes require explicit human approval
 
 Runs inside the trusted ``ai-review`` workflow (definition from the base branch). It publishes
 the commit status ``semi-edge/ai-review-gate`` on the PR head SHA, which the main-branch
-ruleset requires (bound to the GitHub Actions app). The gate passes only when:
+ruleset would require. This publisher is a disabled prototype, not a trusted issuer.
+The pure evaluator passes only when:
 
 1. every required review role produced a report for EXACTLY the current head SHA;
 2. every report's effective verdict, recomputed here from its findings, is PASS
@@ -42,6 +43,7 @@ from review_common import (
     load_policy,
     redact,
     restricted_matches,
+    validate_model_output,
 )
 
 TRUSTED_ROOT_DEFAULT = Path(__file__).resolve().parents[2]
@@ -440,7 +442,16 @@ def run_github(args: argparse.Namespace) -> int:
     reports: dict[str, dict[str, Any] | None] = {
         spec["role"]: None for spec in policy["required_reviews"]
     }
-    reports.update(load_reports(Path(args.reports_dir)))
+    for role, report in load_reports(Path(args.reports_dir)).items():
+        if role not in reports:
+            continue
+        if report is not None and (
+            validate_model_output(report.get("model_output"))
+            or not isinstance(report.get("reviewer"), dict)
+        ):
+            reports[role] = None  # Invalid artifacts never reach extraction or rendering.
+        else:
+            reports[role] = report
     refs: set[str] = set()
     for rep in reports.values():
         out = rep.get("model_output") if rep else None

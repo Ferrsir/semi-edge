@@ -1,6 +1,7 @@
 # RESTRICTED (.github/**): changes require explicit human approval.
 #
-# Trusted AI review orchestration: two independent reviews of the exact PR head commit
+# DISABLED PROTOTYPE; not an authoritative review integration.
+# Proposed AI review orchestration: two independent reviews of the exact PR head commit
 #   Review A - software engineering        (OpenAI Codex CLI, read-only sandbox)
 #   Review B - quant/security/fin. safety  (Anthropic Claude Code CLI, read-only tools)
 # then a gate that publishes the commit status `semi-edge/ai-review-gate` on the head SHA.
@@ -31,12 +32,7 @@ jobs:
           echo 'Trusted review issuer and protected main are not configured. See activation runbook.'
           exit 1
   context:
-    if: >-
-      false &&
-      github.event_name == 'pull_request_target' ||
-      (github.event.issue.pull_request &&
-       (startsWith(github.event.comment.body, '/semi-edge recheck') ||
-        startsWith(github.event.comment.body, '/semi-edge reset-review-cycles')))
+    if: ${{ false }} # Activation requires a separately reviewed trusted integration.
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
