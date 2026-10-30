@@ -1,0 +1,40 @@
+# SEMI-EDGE monitored universe.
+# role: tradable  -> eligible for momentum_v1 signals
+# role: benchmark -> used for regime / relative-strength / comparison only, never traded
+# Add or remove securities here; symbols must be unique.
+#
+# NOTE: this is today's hand-picked list, NOT a point-in-time universe. Backtests on it
+# carry survivorship/selection bias and must say so (see RISK_POLICY.md).
+
+regime_benchmark: SMH
+comparison_benchmarks: [SMH, QQQ]
+
+members:
+  # AI computing
+  - {symbol: NVDA, name: NVIDIA, group: ai_computing, role: tradable}
+  - {symbol: AMD, name: Advanced Micro Devices, group: ai_computing, role: tradable}
+  - {symbol: INTC, name: Intel, group: ai_computing, role: tradable}
+  # Networking and custom silicon
+  - {symbol: AVGO, name: Broadcom, group: networking_custom_silicon, role: tradable}
+  - {symbol: MRVL, name: Marvell Technology, group: networking_custom_silicon, role: tradable}
+  - {symbol: ANET, name: Arista Networks, group: networking_custom_silicon, role: tradable}
+  # Manufacturing and foundries
+  - {symbol: TSM, name: Taiwan Semiconductor (ADR), group: foundry_manufacturing, role: tradable}
+  - {symbol: ASML, name: ASML Holding (ADR), group: foundry_manufacturing, role: tradable}
+  # Memory
+  - {symbol: MU, name: Micron Technology, group: memory, role: tradable}
+  # Semiconductor equipment
+  - {symbol: AMAT, name: Applied Materials, group: semi_equipment, role: tradable}
+  - {symbol: LRCX, name: Lam Research, group: semi_equipment, role: tradable}
+  - {symbol: KLAC, name: KLA, group: semi_equipment, role: tradable}
+  # Electronic design automation
+  - {symbol: CDNS, name: Cadence Design Systems, group: eda, role: tradable}
+  - {symbol: SNPS, name: Synopsys, group: eda, role: tradable}
+  # AI infrastructure
+  - {symbol: VRT, name: Vertiv, group: ai_infrastructure, role: tradable}
+  - {symbol: SMCI, name: Super Micro Computer, group: ai_infrastructure, role: tradable}
+  # Benchmarks
+  - {symbol: SMH, name: VanEck Semiconductor ETF, group: benchmark, role: benchmark}
+  - {symbol: SOXX, name: iShares Semiconductor ETF, group: benchmark, role: benchmark}
+  - {symbol: QQQ, name: Invesco QQQ Trust, group: benchmark, role: benchmark}
+  - {symbol: SPY, name: SPDR S&P 500 ETF, group: benchmark, role: benchmark}

@@ -1,0 +1,18 @@
+# RESTRICTED FILE — changes require explicit human approval (docs/governance/ENGINEERING_POLICY.md).
+# Values are fractions of account equity. They may be TIGHTENED; they can never exceed the
+# pre-approved ceilings in src/semiedge/safety/limits.py (enforced at load time).
+
+max_risk_per_trade_pct: 0.0025   # 0.25% of equity at risk (entry - stop) per trade
+max_position_pct: 0.05           # 5% of equity notional per position
+max_gross_exposure_pct: 0.20     # 20% aggregate long exposure incl. pending orders
+max_positions: 4
+daily_loss_halt_pct: 0.01        # halt new entries after a 1% daily loss
+drawdown_halt_pct: 0.05          # halt new entries after a 5% peak-to-trough drawdown
+
+allow_leverage: false            # immutable in the MVP (schema rejects true)
+allow_short_selling: false
+allow_options: false
+allow_extended_hours: false
+
+earnings_blackout_sessions: 3    # no new entries within N sessions before a verified earnings date
+require_verified_earnings_data: true   # fail closed when earnings data is unavailable (Phase 3)

@@ -26,10 +26,11 @@ htmlcov/
 *.key
 secrets/
 
-# Runtime data (market data cache, operational DBs, reports, logs)
-data/
-!data/.gitkeep
-logs/
+# Runtime data (market data cache, operational DBs, reports, logs).
+# Anchored to the repo root: an unanchored `data/` also ignored the src/semiedge/data package.
+/data/
+!/data/.gitkeep
+/logs/
 *.sqlite
 *.sqlite3
 *.duckdb

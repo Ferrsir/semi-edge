@@ -1,0 +1,31 @@
+# momentum_v1 — long-only sector-relative momentum breakout.
+# Formulas: docs/specifications/momentum_v1.md
+# The score weights are heuristic priors, NOT statistically validated (DECISIONS.md D-006).
+
+name: momentum_v1
+version: "1.0.0"
+
+regime_sma_window: 50        # SMH close > SMA(50) of SMH
+fast_sma_window: 20          # stock close > SMA(20)
+slow_sma_window: 50          # stock close > SMA(50)
+breakout_lookback: 20        # close > max(high) of the PREVIOUS 20 sessions (current bar excluded)
+return_lookback: 20          # trailing 20-session return
+min_excess_return: 0.02      # stock return - SMH return >= 2 percentage points
+volume_lookback: 20          # volume baseline = mean volume of the PREVIOUS 20 sessions
+min_relative_volume: 1.2     # current volume >= 1.2 x baseline
+atr_window: 14               # Wilder ATR
+stop_atr_multiple: 2.0       # proposed protective stop = close - 2 x ATR(14)
+target_atr_multiple: 4.0     # proposed profit target = close + 4 x ATR(14)
+max_holding_sessions: 5
+
+score_weights:
+  relative_strength: 0.40
+  breakout: 0.30
+  relative_volume: 0.20
+  trend_persistence: 0.10
+
+score_normalization:
+  relative_strength_saturation: 0.15   # excess return at which the RS component reaches 1.0
+  breakout_atr_saturation: 1.0         # (close - prior high) / ATR at which breakout reaches 1.0
+  relative_volume_saturation: 3.0      # relative volume at which the volume component reaches 1.0
+  trend_persistence_window: 20         # sessions over which closes above SMA(50) are counted
