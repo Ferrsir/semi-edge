@@ -97,3 +97,20 @@ def test_raw_series_keeps_disjoint_appends(tmp_path, bars):
     _write(store, bars.loc[:"2024-05-31"], FIRST, Adjustment.RAW)
     _write(store, bars.loc["2024-06-03":], SECOND, Adjustment.RAW)
     pd.testing.assert_frame_equal(_read(store, Adjustment.RAW).frame, bars)
+
+
+def test_rebased_refetch_with_interior_gap_is_rejected(tmp_path, bars):
+    """F-012: a stored session missing from a restated refetch must not keep the old basis."""
+    store = ParquetBarStore(tmp_path)
+    _write(store, bars, FIRST)
+    rebased = _rebased(bars, 10.0).drop(pd.Timestamp("2024-06-05"))
+    with pytest.raises(ValueError, match="adjustment basis changed at 2024-06-06"):
+        _write(store, rebased, SECOND)
+    pd.testing.assert_frame_equal(_read(store).frame, bars)
+
+
+def test_same_basis_refetch_with_interior_gap_keeps_stored_session(tmp_path, bars):
+    store = ParquetBarStore(tmp_path)
+    _write(store, bars, FIRST)
+    _write(store, bars.drop(pd.Timestamp("2024-06-05")), SECOND)
+    pd.testing.assert_frame_equal(_read(store).frame, bars)
