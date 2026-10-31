@@ -156,7 +156,7 @@ class SignalEvaluation:
     eligible: bool
     conditions: tuple[ConditionResult, ...]
     score: float | None       # 0..100 when inputs defined
-    score_components: Mapping[str, float]   # s_RS, s_BO, s_RV, s_TP
+    score_components: Mapping[str, float]   # keys s_rs, s_bo, s_rv, s_tp (defined ones only)
     close: float | None
     atr: float | None
     proposed_stop: float | None
@@ -165,17 +165,26 @@ class SignalEvaluation:
     rank: int | None          # 1-based among eligible, else None
 
 # semiedge/strategy/momentum_v1.py
-def compute_features(bars: pd.DataFrame, regime: pd.DataFrame, params: MomentumV1Params) -> pd.DataFrame:
+def compute_features(bars: pd.DataFrame, regime: pd.DataFrame, params: MomentumV1Params, *,
+                     expected_sessions: Iterable[date] | None = None) -> pd.DataFrame:
     """Vectorised per-session features & condition booleans for ONE symbol (reused by the backtester).
     Columns include: close, sma_fast, sma_slow, prior_high, atr, ret, regime_close, regime_sma, regime_ret,
     excess_ret, prior_volume, rel_volume, trend_persistence, cond_* booleans, s_rs, s_bo, s_rv, s_tp, score, all_conditions."""
 
 def evaluate_universe(bars: Mapping[str, pd.DataFrame], regime_symbol: str, params: MomentumV1Params,
                       as_of: date, *, tradable: Sequence[str],
-                      quality: Mapping[str, DataQualityReport] | None = None) -> list[SignalEvaluation]:
+                      quality: Mapping[str, DataQualityReport] | None = None,
+                      expected_sessions: Iterable[date] | None = None) -> list[SignalEvaluation]:
     """Evaluate every tradable symbol at `as_of`; eligible first ranked by score desc then symbol."""
 ```
 Regime frame alignment: join on session; a session missing from either series makes that row undefined.
+`expected_sessions` is the exchange session calendar (e.g. `TradingCalendar.sessions_in_range`) covering
+the bars. With it, a session missing from BOTH series is also an undefined row, and a bar on a
+non-session is a `DataSchemaError`. The backtester must pass it to `compute_features`.
+`evaluate_universe` makes every symbol ineligible when it is `None` or does not contain `as_of`, and
+makes an otherwise eligible symbol ineligible when its proposed stop `C_t - k·ATR_t` is `<= 0`.
+Threshold comparisons use IEEE-754 doubles without tolerance (a value that rounds just below an
+inclusive threshold fails — the conservative reading).
 
 ## `semiedge.risk.sizing` (#12)
 

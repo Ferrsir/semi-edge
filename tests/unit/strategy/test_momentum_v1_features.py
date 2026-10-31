@@ -403,3 +403,92 @@ def test_split_adjustment_invariance() -> None:
     cond_cols = [c for c in a.columns if c.startswith("cond_")] + ["all_conditions"]
     pd.testing.assert_frame_equal(a[cond_cols], b[cond_cols])
     pd.testing.assert_series_equal(a["score"], b["score"], rtol=1e-9)
+
+
+# ------------------------------------------------------------------ expected session calendar
+
+
+def _gapped() -> tuple[pd.DataFrame, pd.DataFrame, pd.DatetimeIndex]:
+    """STOCK and regime bars with the same session (calendar position 3) missing from BOTH."""
+    calendar = sessions(6)
+    index = calendar.delete(3)
+    return bar_frame(STOCK, index), regime_frame(REGIME_CLOSE, index), calendar
+
+
+def test_session_missing_from_both_series_is_undefined_with_calendar() -> None:
+    stock, regime, calendar = _gapped()
+    features = compute_features(stock, regime, SMALL_PARAMS, expected_sessions=calendar)
+    assert list(features.index) == list(calendar)
+    # Prior-window baselines on the gap end at t-1 and stay defined; nothing else on it is.
+    excluded = [c for c in FEATURE_COLUMNS if c.startswith(("cond_", "all_"))]
+    on_gap = features.loc[calendar[3]].drop([*excluded, "prior_high", "prior_volume"])
+    assert on_gap.isna().all()
+    assert math.isnan(features.loc[calendar[4], "prior_high"])
+    last = features.iloc[-1]
+    # Every window ending at the last session spans the gap: nothing is defined, nothing passes.
+    for column in ("sma_slow", "prior_high", "atr", "ret", "regime_sma", "score"):
+        assert math.isnan(last[column]), column
+    assert not last["all_conditions"]
+
+
+def test_session_missing_from_both_series_is_invisible_without_calendar() -> None:
+    # Documented limitation: the join alone cannot see a gap present in both series.
+    stock, regime, _ = _gapped()
+    features = compute_features(stock, regime, SMALL_PARAMS)
+    assert len(features) == 5
+    assert bool(features.iloc[-1]["all_conditions"])
+
+
+def test_calendar_without_gaps_changes_nothing() -> None:
+    plain = _features()
+    with_calendar = compute_features(
+        bar_frame(STOCK), regime_frame(REGIME_CLOSE), SMALL_PARAMS, expected_sessions=sessions(9)
+    )
+    pd.testing.assert_frame_equal(plain, with_calendar)
+
+
+def test_bar_on_unexpected_session_is_rejected() -> None:
+    calendar = sessions(5).delete(2)
+    with pytest.raises(DataSchemaError, match="not expected trading sessions"):
+        compute_features(
+            bar_frame(STOCK), regime_frame(REGIME_CLOSE), SMALL_PARAMS, expected_sessions=calendar
+        )
+
+
+@pytest.mark.parametrize(
+    ("calendar", "error", "match"),
+    [
+        ("2024-01-02", TypeError, "not a string"),
+        ([pd.Timestamp("2024-01-02 10:00")], ValueError, "midnight"),
+        ([pd.Timestamp("2024-01-02", tz="UTC")], ValueError, "tz-naive"),
+        ([pd.Timestamp("2024-01-02"), pd.NaT], ValueError, "missing"),
+        ([pd.Timestamp("2024-01-02")] * 2, ValueError, "unique"),
+    ],
+)
+def test_malformed_calendar_is_rejected(
+    calendar: object, error: type[Exception], match: str
+) -> None:
+    with pytest.raises(error, match=match):
+        compute_features(
+            bar_frame(STOCK),
+            regime_frame(REGIME_CLOSE),
+            SMALL_PARAMS,
+            expected_sessions=calendar,  # type: ignore[arg-type]
+        )
+
+
+def test_threshold_is_exact_ieee_comparison_fail_closed_at_rounded_boundary() -> None:
+    # Decimal excess return is exactly 0.13 - 0.11 = 0.02, but in binary it computes to
+    # 0.0199999999999998 < 0.02: the inclusive >= test fails (no tolerance, conservative).
+    closes = [100.0, 100.0, 100.0, 105.0, 113.0]
+    stock = {
+        "open": closes,
+        "high": [c + 1 for c in closes],
+        "low": [c - 1 for c in closes],
+        "close": closes,
+        "volume": [100.0] * 5,
+    }
+    last = _features(stock, [100.0, 100.0, 100.0, 105.0, 111.0]).iloc[-1]
+    assert last["excess_ret"] == pytest.approx(0.02, abs=1e-15)
+    assert last["excess_ret"] < 0.02
+    assert not last["cond_relative_strength"]

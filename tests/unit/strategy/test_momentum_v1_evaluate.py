@@ -24,6 +24,7 @@ from semiedge.strategy.momentum_v1 import CONDITION_NAMES
 
 AS_OF = sessions(5)[-1].date()  # 2024-01-08
 T3 = sessions(5)[3].date()
+CALENDAR = sessions(80)  # expected exchange sessions covering every fixture
 EXPECTED_SCORE = 100 * (0.4 * 0.08 / 0.13 + 0.3 * 0.8 + 0.2 * 1.0 + 0.1 * 1.0)
 
 
@@ -41,11 +42,20 @@ def _evaluate(
     *,
     as_of: date = AS_OF,
     quality: dict[str, FakeQuality] | str | None = "auto",
+    calendar: pd.DatetimeIndex | None = CALENDAR,
 ) -> list[SignalEvaluation]:
     if quality == "auto":
         quality = quality_for(as_of, "SMH", *tradable)
     assert not isinstance(quality, str)
-    return evaluate_universe(bars, "SMH", SMALL_PARAMS, as_of, tradable=tradable, quality=quality)
+    return evaluate_universe(
+        bars,
+        "SMH",
+        SMALL_PARAMS,
+        as_of,
+        tradable=tradable,
+        quality=quality,
+        expected_sessions=calendar,
+    )
 
 
 def _by_symbol(evals: list[SignalEvaluation]) -> dict[str, SignalEvaluation]:
@@ -300,3 +310,58 @@ def test_argument_validation() -> None:
 def test_deterministic() -> None:
     bars = _base() | {"BBB": _stock(volume={4: 200.0})}
     assert _evaluate(bars, ["BBB", "AAA"]) == _evaluate(bars, ["AAA", "BBB"])
+
+
+# ------------------------------------------------------------------ calendar and stop gates
+
+
+def test_missing_calendar_makes_every_symbol_ineligible() -> None:
+    [e] = _evaluate(_base(), ["AAA"], calendar=None)
+    assert not e.eligible
+    assert any("no expected session calendar" in r for r in e.rejection_reasons)
+    assert e.score == pytest.approx(EXPECTED_SCORE, rel=1e-12)  # still shown
+
+
+def test_as_of_not_an_expected_session_is_ineligible() -> None:
+    [e] = _evaluate(_base(), ["AAA"], calendar=CALENDAR.delete(4))
+    assert not e.eligible
+    assert any(f"as_of {AS_OF} is not an expected" in r for r in e.rejection_reasons)
+
+
+def test_session_missing_from_both_series_is_ineligible() -> None:
+    index = sessions(6).delete(3)
+    bars = {"SMH": regime_frame(REGIME_CLOSE, index), "AAA": bar_frame(STOCK, index)}
+    as_of = index[-1].date()
+    [e] = _evaluate(bars, ["AAA"], as_of=as_of)
+    assert not e.eligible
+    assert e.score is None
+    assert any(r.startswith("breakout: undefined input") for r in e.rejection_reasons)
+    # The same bars without the calendar would wrongly pass: the gate is what catches it.
+    [unchecked] = evaluate_universe(
+        bars,
+        "SMH",
+        SMALL_PARAMS,
+        as_of,
+        tradable=["AAA"],
+        quality=quality_for(as_of, "SMH", "AAA"),
+    )
+    assert [r for r in unchecked.rejection_reasons if "calendar" not in r] == []
+
+
+def test_bar_on_unexpected_session_is_ineligible() -> None:
+    [e] = _evaluate(_base(), ["AAA"], calendar=CALENDAR.delete(2))
+    assert not e.eligible
+    assert any("not expected trading sessions" in r for r in e.rejection_reasons)
+
+
+def test_non_positive_proposed_stop_is_ineligible() -> None:
+    # A wide final bar: TR4 = 30 - 11 = 19, ATR4 = (1 + 19) / 2 = 10, stop = 12 - 2 * 10 = -8.
+    bars = {"SMH": regime_frame(REGIME_CLOSE), "AAA": _stock(high={4: 30.0})}
+    [e] = _evaluate(bars, ["AAA"])
+    assert all(c.passed for c in e.conditions)
+    assert e.atr == 10.0
+    assert not e.eligible
+    assert e.rejection_reasons == ("proposed stop -8 = close 12 - 2 x ATR 10 is not positive",)
+    assert e.proposed_stop is None
+    assert e.proposed_target is None
+    assert e.rank is None

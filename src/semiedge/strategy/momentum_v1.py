@@ -14,6 +14,15 @@ Fail-closed conventions (any of these makes the affected values undefined, never
 * Stock and regime series are outer-joined on session. A session missing (or invalid) in
   EITHER series makes that whole row undefined for both, so every window that contains it is
   undefined too. Rows before the later of the two first sessions are dropped.
+* A session missing from BOTH series cannot be seen by the join alone. When
+  ``expected_sessions`` (the exchange calendar) is supplied, the aligned frame is reindexed
+  onto every expected session in range, so such a gap is an undefined row as well; a bar on a
+  session that is not an expected session is rejected (:class:`DataSchemaError`).
+  :func:`evaluate_universe` requires the calendar; callers of :func:`compute_features`
+  (the backtester) must pass it, or supply gap-free bars and accept that gaps are unchecked.
+* Comparisons are evaluated on IEEE-754 doubles with no tolerance. A value that is exactly
+  at a threshold in decimal but rounds below it (e.g. an excess return computing to
+  ``0.0199999999999998``) FAILS the inclusive ``>=`` test (conservative reading).
 * Relative volume is undefined when the prior-volume baseline is ``<= 0`` (no division by
   zero); the breakout component is undefined when ``ATR <= 0``.
 * ``cond_*`` columns are ``False`` whenever an input is undefined (a NaN comparison never
@@ -24,11 +33,11 @@ Fail-closed conventions (any of these makes the affected values undefined, never
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import replace
 from datetime import date, datetime
 from types import MappingProxyType
-from typing import Final
+from typing import Final, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -123,16 +132,50 @@ def _invalid_rows(frame: pd.DataFrame) -> npt.NDArray[np.bool_]:
     return np.asarray(~valid, dtype=np.bool_)
 
 
-def _aligned_frames(bars: pd.DataFrame, regime: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Outer-join both series on session; a row missing/invalid in either is NaN in both."""
+def _expected_index(expected_sessions: Iterable[date | pd.Timestamp]) -> pd.DatetimeIndex:
+    """Normalise the expected session calendar to a sorted, unique, tz-naive index."""
+    if isinstance(cast(object, expected_sessions), str):
+        raise TypeError("expected_sessions must be a collection of sessions, not a string")
+    index = pd.DatetimeIndex(list(expected_sessions))
+    if index.tz is not None:
+        raise ValueError("expected_sessions must be tz-naive session dates")
+    if index.hasnans:
+        raise ValueError("expected_sessions must not contain missing values")
+    if not (index == index.normalize()).all():
+        raise ValueError("expected_sessions must be dates (midnight), not intraday times")
+    if not index.is_unique:
+        raise ValueError("expected_sessions must be unique")
+    return index.sort_values().as_unit("ns")
+
+
+def _aligned_frames(
+    bars: pd.DataFrame, regime: pd.DataFrame, expected: pd.DatetimeIndex | None
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Outer-join both series on session; a row missing/invalid in either is NaN in both.
+
+    With an ``expected`` calendar the index is every expected session in range, so a session
+    absent from both series is an all-NaN (undefined) row.
+    """
     cols = list(REQUIRED_BAR_COLUMNS)
     stock = bars[cols].astype(np.float64)
     reg = regime[cols].astype(np.float64)
+    if expected is not None:
+        for label, frame in (("bars", stock), ("regime", reg)):
+            unexpected = frame.index.difference(expected)
+            if len(unexpected):
+                shown = ", ".join(str(ts.date()) for ts in unexpected[:5])
+                raise DataSchemaError(
+                    f"{label}: {len(unexpected)} bar(s) on sessions that are not expected "
+                    f"trading sessions ({shown})"
+                )
     if stock.empty or reg.empty:
         index = pd.DatetimeIndex([], dtype="datetime64[ns]", name=SESSION_INDEX_NAME)
     else:
         start = max(stock.index[0], reg.index[0])
         union = stock.index.union(reg.index)
+        if expected is not None:
+            end = union[-1]
+            union = union.union(expected[(expected >= start) & (expected <= end)])
         index = pd.DatetimeIndex(union[union >= start], name=SESSION_INDEX_NAME)
     stock_arr = stock.reindex(index).to_numpy(dtype=np.float64, copy=True)
     reg_arr = reg.reindex(index).to_numpy(dtype=np.float64, copy=True)
@@ -155,7 +198,11 @@ def _arr(series: pd.Series[float]) -> FloatArray:
 
 
 def compute_features(
-    bars: pd.DataFrame, regime: pd.DataFrame, params: MomentumV1Params
+    bars: pd.DataFrame,
+    regime: pd.DataFrame,
+    params: MomentumV1Params,
+    *,
+    expected_sessions: Iterable[date | pd.Timestamp] | None = None,
 ) -> pd.DataFrame:
     """Vectorised per-session ``momentum_v1`` features for ONE symbol (reused by the backtester).
 
@@ -164,10 +211,16 @@ def compute_features(
     The result is indexed by the aligned sessions (see module docstring) with
     :data:`FEATURE_COLUMNS`. Row ``t`` depends only on bars at sessions ``<= t`` (truncation
     and perturb-the-future tests in ``tests/safety/test_signal_lookahead.py``).
+
+    ``expected_sessions`` is the exchange session calendar (at least covering the bars'
+    range). When given, sessions missing from both series become undefined rows and bars on
+    non-sessions raise :class:`DataSchemaError`. Without it, only sessions missing from ONE
+    series are detected; pass it whenever the bars may contain gaps.
     """
     validate_bar_frame(bars, symbol="bars")
     validate_bar_frame(regime, symbol="regime")
-    stock, reg = _aligned_frames(bars, regime)
+    expected = None if expected_sessions is None else _expected_index(expected_sessions)
+    stock, reg = _aligned_frames(bars, regime, expected)
     norm = params.score_normalization
     weights = params.score_weights
 
@@ -388,6 +441,7 @@ def evaluate_universe(
     *,
     tradable: Sequence[str],
     quality: Mapping[str, QualityReport] | None = None,
+    expected_sessions: Iterable[date | pd.Timestamp] | None = None,
 ) -> list[SignalEvaluation]:
     """Evaluate every tradable symbol at ``as_of``; eligible first, by score desc then symbol.
 
@@ -397,6 +451,11 @@ def evaluate_universe(
     defined. ``quality`` should come from ``assess_quality`` with ``lookback_sessions >=
     params.required_history()``; when it is ``None`` the missing-session and feed gates cannot
     be verified, so every symbol is ineligible (scores are still computed for display).
+    ``expected_sessions`` is the exchange session calendar covering the supplied bars up to
+    ``as_of``; it makes a session missing from BOTH the stock and the regime series an
+    undefined row (see :func:`compute_features`). When it is ``None``, or ``as_of`` is not one
+    of its sessions, every symbol is ineligible. An eligible symbol whose proposed stop
+    ``close - stop_atr_multiple * ATR`` is ``<= 0`` is made ineligible (no valid stop exists).
     Ineligible symbols follow the ranked ones in symbol order.
     """
     if isinstance(as_of, datetime) or not isinstance(as_of, date):
@@ -408,8 +467,17 @@ def evaluate_universe(
     if duplicates:
         raise ValueError(f"duplicate tradable symbols: {duplicates}")
 
+    expected = None if expected_sessions is None else _expected_index(expected_sessions)
+
     regime_frame, regime_reasons = _completed(bars.get(regime_symbol), regime_symbol, as_of)
     regime_reasons = [f"regime benchmark {r}" for r in regime_reasons]
+    if expected is None:
+        regime_reasons.append(
+            "no expected session calendar supplied (sessions missing from both the stock "
+            "and regime series cannot be detected)"
+        )
+    elif pd.Timestamp(as_of) not in expected:
+        regime_reasons.append(f"as_of {as_of} is not an expected trading session")
     reference_feed: object = None
     if quality is None:
         regime_reasons.append(
@@ -434,6 +502,7 @@ def evaluate_universe(
             as_of=as_of,
             quality=quality,
             reference_feed=reference_feed,
+            expected=expected,
         )
         for symbol in sorted(symbols)
     ]
@@ -456,6 +525,7 @@ def _evaluate_symbol(
     as_of: date,
     quality: Mapping[str, QualityReport] | None,
     reference_feed: object,
+    expected: pd.DatetimeIndex | None,
 ) -> SignalEvaluation:
     reasons = list(regime_reasons)
     if symbol == regime_symbol:
@@ -469,9 +539,13 @@ def _evaluate_symbol(
     if frame is not None:
         session = frame.index[-1].date()
         if regime_frame is not None:
-            features = compute_features(frame, regime_frame, params)
+            try:
+                features = compute_features(frame, regime_frame, params, expected_sessions=expected)
+            except DataSchemaError as exc:
+                features = None
+                reasons.append(f"{symbol}: {exc}")
             as_of_ts = pd.Timestamp(as_of)
-            if as_of_ts in features.index:
+            if features is not None and as_of_ts in features.index:
                 values = {
                     column: _opt(features.at[as_of_ts, column])
                     for column in FEATURE_COLUMNS
@@ -495,6 +569,13 @@ def _evaluate_symbol(
     close = values.get("close")
     atr_value = values.get("atr")
 
+    if not reasons and close is not None and atr_value is not None:
+        candidate_stop = close - params.stop_atr_multiple * atr_value
+        if not candidate_stop > 0:
+            reasons.append(
+                f"proposed stop {candidate_stop:.6g} = close {close:.6g} - "
+                f"{params.stop_atr_multiple:g} x ATR {atr_value:.6g} is not positive"
+            )
     eligible = not reasons
     stop = target = None
     if eligible and close is not None and atr_value is not None:

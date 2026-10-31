@@ -145,7 +145,15 @@ def test_evaluate_universe_ignores_bars_after_as_of(t: int) -> None:
     future = {s: _perturb_after(f, t, 30 + i) for i, (s, f) in enumerate(bars.items())}
     past = {s: f.iloc[: t + 1] for s, f in bars.items()}
     results = [
-        evaluate_universe(b, "SMH", PARAMS, as_of, tradable=["AAA", "BBB"], quality=quality)
+        evaluate_universe(
+            b,
+            "SMH",
+            PARAMS,
+            as_of,
+            tradable=["AAA", "BBB"],
+            quality=quality,
+            expected_sessions=bars["SMH"].index,
+        )
         for b in (bars, future, past)
     ]
     assert results[0] == results[1] == results[2]
