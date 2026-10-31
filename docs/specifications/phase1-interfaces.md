@@ -99,10 +99,11 @@ class ParquetBarStore:
   (vendor corrections), and a WARNING is logged when OHLCV values change for an existing session.
 - Adjusted series (`adjustment != raw`) are restated retroactively by the vendor (splits,
   dividends), so a merge must prove that retained stored rows share the incoming basis: the
-  incoming frame must overlap at least one stored session, and the close on the earliest shared
-  session (when older stored rows are retained) and on the latest shared session (when newer stored
-  rows are retained) must match; otherwise `write` raises `ValueError` and the caller refetches the
-  full stored range. Raw series may be appended without overlap.
+  incoming frame must overlap at least one stored session, and every retained stored row (one the
+  incoming frame does not replace, including stored sessions missing *inside* the incoming range)
+  is anchored by the first shared session after it, or the last shared session for rows after all
+  shared ones; the close on each anchor must match. Otherwise `write` raises `ValueError` and the
+  caller refetches the full stored range. Raw series may be appended without overlap.
 - Writes are atomic (write temp file in the same dir, then `os.replace`).
 - Synthetic data may only be written under a root whose path contains a `synthetic` component
   (raise otherwise) so it can never pollute the real cache.

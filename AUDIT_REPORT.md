@@ -138,6 +138,20 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Fix:** compare stored rows with the merged result. **Regression:**
   `tests/integration/data/test_adapters_store.py::test_roundtrip_merge_summary` (older refetch).
 
+### F-012 · P1 · Adjusted refetch with an interior gap kept a stored row on the old basis (Claude review, PR #36)
+- **Where:** `semiedge.data.store._check_adjustment_basis` (head `492b75e`).
+- **Reproduce:** store split-adjusted bars 2024-01-02..2024-06-28, then write the same range
+  restated /10 (post-split) but missing one interior session (vendor gap). Before the fix the write
+  succeeded and the stored series had a ~9x one-day return at the retained old-basis session.
+- **Impact:** same as F-009: a fictitious price jump inside the series corrupts SMA/ATR/breakout
+  and stop levels; the anchors only checked the first/last shared session when stored rows extended
+  past the incoming range, so rows retained *inside* the range were never verified.
+- **Fix:** every retained stored row is anchored by the first shared session after it (last shared
+  session for trailing rows); spec `phase1-interfaces.md` (store) updated.
+- **Regression:** `tests/unit/data/test_store.py::test_interior_gap_in_rebased_refetch_rejected`,
+  `tests/integration/data/test_store_adjustment_basis.py::test_rebased_refetch_with_interior_gap_is_rejected`,
+  `test_same_basis_refetch_with_interior_gap_keeps_stored_session`.
+
 ---
 
 ## Speculative concerns (not demonstrated; tracked for the relevant phase)

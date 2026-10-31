@@ -264,3 +264,18 @@ def test_backfill_checks_latest_shared_session(store, bars):
     stored = _read(store)
     assert stored is not None
     pd.testing.assert_frame_equal(stored.frame, bars)
+
+
+def test_interior_gap_in_rebased_refetch_rejected(
+    store: ParquetBarStore, bars: pd.DataFrame
+) -> None:
+    """F-012: a retained session inside the refetch range is anchored by the next shared one."""
+    _write(store, bars)
+    rebased = bars.drop(pd.Timestamp("2024-11-21")).copy()
+    rebased["close"] = rebased["close"] / 10.0  # vendor restated history after a split
+    with pytest.raises(ValueError, match="adjustment basis changed at 2024-11-22"):
+        _write(store, rebased, T1)
+    _write(store, bars.drop(pd.Timestamp("2024-11-21")), T1)  # same basis: stored row kept
+    stored = _read(store)
+    assert stored is not None
+    pd.testing.assert_frame_equal(stored.frame, bars)

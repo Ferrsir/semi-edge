@@ -181,9 +181,11 @@ class ParquetBarStore:
 def _check_adjustment_basis(symbol: str, old: pd.DataFrame, incoming: pd.DataFrame) -> None:
     """Refuse merges that would splice two vendor adjustment bases into one series.
 
-    Adjusted history is restated retroactively (splits, dividends). Stored rows that the incoming
-    frame does not replace are only kept when a shared session proves they are on the incoming
-    basis: the earliest shared session anchors retained older rows, the latest anchors newer ones.
+    Adjusted history is restated retroactively (splits, dividends): a corporate action rescales
+    every session before its ex-date. Stored rows that the incoming frame does not replace are only
+    kept when a shared session proves they are on the incoming basis: each retained row is anchored
+    by the first shared session after it (the last shared session for rows after all shared ones).
+    This also covers stored sessions missing *inside* the incoming range (vendor gaps).
     """
     shared = old.index.intersection(incoming.index)
     if shared.empty:
@@ -191,11 +193,9 @@ def _check_adjustment_basis(symbol: str, old: pd.DataFrame, incoming: pd.DataFra
             f"{symbol}: adjusted bars must overlap the stored sessions "
             f"({old.index[0].date()}..{old.index[-1].date()}) to verify the adjustment basis"
         )
-    anchors = []
-    if old.index[0] < incoming.index[0]:
-        anchors.append(shared[0])
-    if old.index[-1] > incoming.index[-1]:
-        anchors.append(shared[-1])
+    retained = old.index.difference(incoming.index)
+    positions = shared.searchsorted(retained, side="right")
+    anchors = sorted({shared[min(int(p), len(shared) - 1)] for p in positions})
     for anchor in anchors:
         # Splits and dividends both rescale the close; high/low late-print corrections do not
         # indicate a basis change, so only the close is compared.
