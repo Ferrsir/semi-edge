@@ -87,7 +87,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | A37 | #37 | Audit: reject missing runtime configuration sections | codex | DONE (PR #38) | T0 |
 | A40 | #40 | Harden shared paper endpoint guard against disguised URL objects | codex | DONE (PR #41, merged dfece2a) | T0 |
 | T42 | #42 | Offline fixture CSV-to-Parquet ingestion pipeline | codex | DONE (PR #45, merged 9aa0e0c) | T0 |
-| T46 | #46 | Offline point-in-time split normalization core (subtask of #18) | codex | IN PROGRESS (codex) | T0 |
+| T46 | #46 | Offline point-in-time split normalization core (subtask of #18) | codex | REVIEW (PR #61 at a225f7c) | T0 |
 | T47 | #47 | Project status dashboard (separate from trading UI) | codex | REVIEW (PR #49 at 835d80c; rebased fixes; Claude re-review and owner CI approval pending) | T0 |
 | H1 | #20 | Verified earnings calendar source | human | BLOCKED (owner must choose a data source) | — |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
@@ -102,7 +102,7 @@ PR instead. The next finding ID is **F-030**.
 1. **#48**: Codex follow-up FAIL at 92e9b48: F-026 still permits eligible signals with undefined ATR/levels; Claude fix requested.
 2. **#50**: Codex FAIL at c1f8cf8: F-030/P2 unsanitised account-client construction errors; Claude fix and final rebase requested.
 3. **#49**: rebased/follow-up head 835d80c; Claude re-review and explicit owner approval of ci.yml remain. Hosted publication blocked by Sites Git client availability.
-4. **#46**: Codex implementing the READY offline split normalization core on current main in a new primary worktree. Preserve old .t3 WIP.
+4. **#61 / #46**: implementation at a225f7c awaits Claude cross-provider review. Preserve old .t3 worktree.
 5. Then **T5 #15** once #48 and the Phase 2-4 interface spec (T3b) are ready.
 
 Reviews #51 and #55 PASS; #53 source review PASS, owner approval still required. Reports are on the exact-head PR comments.
@@ -239,3 +239,5 @@ Reviews #51 and #55 PASS; #53 source review PASS, owner approval still required.
   approval (`ci.yml`). Next finding ID F-030.
 
 - 2026-11-13 02:52 UTC ? codex ? Queue handoff: #36 2c396ef PASS (362 tests), now merged; #48 92e9b48 FAIL same F-026 undefined-ATR bypass (394 tests pass); #50 c1f8cf8 FAIL F-030/P2 account constructor exception sanitization (936 passed, 1 opt-in smoke skipped). #51 docs and #55 F-025 PASS; #53 source PASS, owner approval remains. Finding collision corrected on PR #50: F-028/F-029 belong to dashboard, CLI is F-030; next F-031. #49 rebased/follow-ups at 835d80c, 785 passed/1 skipped plus DOM tests and lint/types; Claude re-review requested. Site still old version because Sites Git returns sites_git_client_upgrade_required; no new deployment claimed. Moving to #46 per lead queue, all other worktrees preserved.
+
+- 2026-11-13 02:58 UTC ? codex ? Delivered #46 as PR #61, feature/46-split-core at a225f7c in ../semi-edge.worktrees/codex-split-core. Pure RAW split normalization with effective/knowledge cutoffs, duplicate/provenance/numerical guards, unchanged inputs, 35 hand-written regression cases. Full 806 passed / 1 opt-in smoke skipped; non-integration coverage 93.58%, Ruff check/format, mypy and Bandit pass. Claude review requested. No vendor/broker/portfolio integration or event-coverage claim. Next queue item T5 waits for #48 and T3b interface review; starting independent spec inspection meanwhile.
