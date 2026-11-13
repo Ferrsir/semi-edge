@@ -25,7 +25,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T10 | #22 | Broker reconciliation + restart recovery | codex | READY | T9 |
 | T11 | #23 | Position management, stop/target, time exits | claude | READY | T9 |
 | T12 | #24 | Exchange-calendar scheduler / trading loop | codex | READY | T9, T10, T11 |
-| T13 | #25 | Streamlit dashboard (dark theme) | codex | IN PROGRESS (codex via lead-run `codex exec`) `feature/25-trading-dashboard`, worktree `codex-dashboard-25`: interactive Codex, don't start it | T4 |
+| T13 | #25 | Streamlit dashboard (dark theme) | codex | IN PROGRESS (codex): #82 review fixes F-160..F-163 in `codex-dashboard-fixes-82`, branch `feature/25-trading-dashboard` | T4 |
 | T14 | #26 | Discord notifications | codex | READY | T12 |
 | T15 | #27 | Docker / compose, health checks, graceful shutdown | claude | READY | T12 |
 | T16 | #29 | Security: secret handling, redaction, prompt-injection tests | codex | IN PROGRESS (codex): core merged (PR #67, f0b093d); follow-ups #74; §13 e2e test open | T4 |
@@ -48,12 +48,11 @@ Codex: start here every session. When an item is done, post on the PR or issue, 
 delete the item from this list in the same `BOARD.md` commit. If an item is blocked, say why in the
 log and move to the next one. Work in your own worktree under `../semi-edge.worktrees/`, not in the
 `.t3` checkout and not in a Claude worktree. Never push to a Claude branch. Report findings on the
-PR instead. **Next finding ID: F-165** (F-160..F-164 used in the Claude review of #82; F-060 is your #67 security fix; F-061..F-063 were used in your #69 review).
+PR instead. **Next finding ID: F-168** (F-160..F-164 used in the Claude review of #82; F-060 is your #67 security fix; F-061..F-063 were used in your #69 review).
 
 **T5 is delivered as PR #75** (written by a lead-run `codex exec`; Claude review in progress). Fix whatever that review raises
 on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest-15`, which is the lead's).
-00. **Review Claude PRs #94 (#93 board move to BOARD.md, restricted; merge before #92 is applied), #91 (#5 agent identity, restricted), #92 (#4 main ruleset, restricted), #88 (#20 earnings, Finnhub + Alpha Vantage), #89 (#86 RUNBOOK), and #87 post-merge (#85 CI usage, already merged).**
-   Exact-head PASS/FAIL comments; Codex CLI is not installed on the owner's second PC, so run it from the PC that has it.
+00. **Review #94 post-merge** (#93 board move); initial reviews #91/#92/#88/#89/#87 posted. Re-review #92 and #88 after author fixes F-165 and F-166/F-167.
 000. **Fix #82** (T13 dashboard): Claude review FAIL at `f5a99d0`: F-160 (P2) held sessions off by one against ADR-005 (use
    `semiedge.strategy.exits.held_sessions`); P3 F-161..F-163. F-164 is handled in #87.
 0a. **Fix #76** (#74 security): Claude review FAIL at `288ed94`: F-100 (P2) is an unparseable credential value (unterminated quote, or a
@@ -66,11 +65,11 @@ on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest
 ## Review queue
 | PR | Task | Author | Reviewer | Verdict |
 |---|---|---|---|---|
-| #88 | H1/#20 | claude | codex | Earnings calendar, Finnhub + Alpha Vantage; review requested |
-| #87 | #85 | claude | codex (post-merge) | Owner merged 2026-11-13 18:09 UTC (`56cd3a8`); Codex review still wanted, findings become follow-ups |
-| #89 | #86 | claude | codex | RUNBOOK (docs only) |
-| #91 | #5 | claude | codex + owner | Agent identity `Ferrisfy` in policy, human/agent overlap rejected (restricted) |
-| #92 | #4 | claude | codex + owner | Main ruleset file + runbook (restricted); decisions made: board to BOARD.md, checks not strict; owner applies after #94 merges |
+| #88 | H1/#20 | claude | codex | Codex FAIL a7e8389: F-166 P1 redirect token forwarding; F-167 P2 malformed cache verifies absence; author fixes requested |
+| #87 | #85 | claude | codex (post-merge) | Codex post-merge PASS 7f6e2b6 (merged 56cd3a8); classifier/gates verified offline |
+| #89 | #86 | claude | codex | Codex PASS c970fc7; runbook commands and 16 docs tests passed |
+| #91 | #5 | claude | codex + owner | Codex PASS 01d80fa; 125 governance tests passed / 1 skipped; owner approval remains |
+| #92 | #4 | claude | codex + owner | Codex FAIL 28fd2b9: F-165 P2 last-push approval conflicts with approval-free board path |
 | #94 | #93 | claude | codex + owner | Board, queues and log moved verbatim to BOARD.md (restricted); merges before the #92 ruleset is applied |
 | #82 | T13 | codex | claude | Claude FAIL at f5a99d0 (F-160 P2); back with Codex |
 | #76 | #74 | codex | claude | Claude FAIL at 288ed94 (F-100 P2); back with Codex |
@@ -302,3 +301,5 @@ on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest
 - 2026-11-13 20:55 UTC · claude · Owner delegated the two #92 decisions. Chosen: board, queues and log move to non-code-owned `BOARD.md` (#93, PR #94; must merge before the ruleset is applied), and required checks are not strict (`28fd2b9`). Order for the owner: Codex reviews, approve and merge #94, #91, #92, import the ruleset, then #7 refusal tests.
 
 - 2026-11-13 21:00 UTC · claude · Board, queues and log moved verbatim from `AGENTS.md` to `BOARD.md` (#93), so board updates need no owner approval once the #4 ruleset requires PRs. Codex: write log lines and claims here from now on; an unmerged `AGENTS.md` log append on another branch should be moved here when rebasing.
+
+- 2026-11-13 20:54 UTC · codex · Resumed lead queue: exact-head reviews posted, #91/#89/#87 PASS; #92 FAIL F-165 (documented approval-setting contradiction, no activation); #88 FAIL F-166/F-167 (offline token-redirect and malformed-cache reproductions), full1696 passed/1 skipped plus lint/types. #82 claimed in own codex-dashboard-fixes-82: three holding-count regressions fail old f5a99d0 (0/1/9 vs1/2/10), shared-helper fix and docs cleanup underway;40 dashboard tests including10 Streamlit AppTests pass. Main snapshot and all other worktrees preserved. New rules/BOARD split read after #94 merged; next finding F-168.
