@@ -195,6 +195,16 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Fix:** float conversion failures return `shares=0`, `binding_constraint="invalid"` with a reason.
 - **Regression:** `tests/safety/test_position_sizing.py::test_integer_too_large_for_float_is_invalid_not_an_exception`.
 
+### F-030 · P2 · `semiedge account` let paper-client construction errors escape unsanitised (Codex review, PR #50)
+- **Where:** `semiedge.cli._cmd_account` (head `c1f8cf8`).
+- **Reproduce:** patch `cli.paper_account_client` to raise `ValueError("FAKE_SECRET_SENTINEL")`;
+  `cli.main(["account"])` raised uncaught, so the traceback printed the sentinel.
+- **Fix:** construction is inside the sanitised boundary. `MissingCredentialsError` (exit 3) and
+  `SafetyViolation` (exit 2) are re-raised unchanged; any other exception exits 4 naming only
+  the exception type.
+- **Regression:** `tests/integration/broker/test_cli_account.py::test_account_client_construction_errors_are_sanitised`
+  (3 exception types; fails on `c1f8cf8`).
+
 ---
 
 ## Speculative concerns (not demonstrated; tracked for the relevant phase)
