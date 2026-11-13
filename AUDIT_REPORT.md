@@ -106,3 +106,11 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Impact:** malformed blocking states are silently normalized by the SDK before strict `_flag` validation, violating the fail-closed contract. No order or live-endpoint bypass demonstrated.
 - **Fix requested:** validate original payload types before SDK coercion via a reviewed adapter/strict response model; add the six fake-transport integration regressions expecting `BrokerDataError`, preserving paper-only and read-only guards.
 - **Review:** FAIL posted at https://github.com/Ferrsir/semi-edge/pull/39#issuecomment-6533090862. Full existing suite: 406 passed, 1 opt-in smoke skipped; ruff check/format and mypy passed. Offline fixtures only. Fix pending Claude.
+
+
+### F-010 ? P2 ? Shared paper endpoint guard trusted URL display instead of type (Codex, #40)
+- **Where:** `src/semiedge/safety/broker.py::assert_paper_client`.
+- **Reproduce:** a `str` subclass containing a non-paper URL can return the paper URL from `__str__` or a `.value` property. The old guard accepts it while URL concatenation retains the underlying non-paper destination. Regressions: `pytest -q tests/safety/test_broker_factory.py -k disguised`. This was independently reproduced against the pre-fix source, without making a request.
+- **Impact:** future callers relying only on the shared guard could accept an incorrectly configured client. The existing factory still constructs paper=True; no live request or order was demonstrated. PR #39 already has a local compensating check.
+- **Fix:** accept only identity-equal SDK `BaseURL.TRADING_PAPER` or an exact builtin `str` matching the paper endpoint (existing trailing-slash support retained). Never coerce arbitrary `.value` or display representations. Error remains sanitized.
+- **Tests:** seven regression/compatibility cases cover two disguises, a custom value wrapper, accepted SDK/string representations, and factory rejection of a disguised constructed client. Full suite: 219 passed; Ruff check/format and mypy passed. Offline fixtures only; no risk ceiling or trading permission changes.
