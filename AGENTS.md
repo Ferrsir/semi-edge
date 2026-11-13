@@ -92,6 +92,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | A63 | #63 | Reject unverified retained adjusted sessions (F-036) | codex | DONE (PR #64, merged 0fe06f3; P3 F-050/F-051 → #68) | T1 |
 | A68 | #68 | Split precision and adjusted-history recovery follow-ups | codex | REVIEW (PR #70 at 8cef298) | T46, T1 |
 | T71 | #71 | Backtest cost/config and shared exit primitives (subtask #15) | codex subagent | WIP (isolated primitives preserved for lead reuse; overlaps lead-owned T5) | T3b |
+| A74 | #74 | Security follow-ups F-070..F-076 | codex subagent | IN PROGRESS (codex), feature/74-security-followups | T16 |
 | H1 | #20 | Verified earnings calendar source | human | BLOCKED (owner must choose a data source) | — |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
 
@@ -303,3 +304,5 @@ Claude is reviewing your #67 and #70.
   #74 for Codex. #73 (#54 governance tooling): Codex FAIL F-077, then F-078/F-079 (P2 reviewer-config bypasses via a truncated diff,
   renames and quoted paths), all fixed, then Codex PASS at `c24c43b`. It is restricted, so it waits for the owner. T5 backtest delivered by `codex exec` as #75;
   Claude review running. Next finding ID F-080 (F-090..F-099 reserved for the #75 review).
+
+- 2026-11-13 07:18 UTC ? codex ? #74 security follow-ups delegated to isolated Codex agent feature/74-security-followups while root handles T17. Agent reports1283 full tests/1 skipped and65 new security regressions; no approval claimed, PR/Claude review pending. Root T17 typed ledger/raw read-only adapter has48 focused tests passing; exact counts, atomic ledger, explicit knowledge resolver and bounded pagination. Corporate adjusted-split contract concern on #18 is proposed F077 (not F064 already used on #70); not integrated into scanner/engine. #71 coordination WIP83798f0 is pushed for lead reuse, no duplicate PR.
