@@ -183,9 +183,11 @@ def _check_adjustment_basis(symbol: str, old: pd.DataFrame, incoming: pd.DataFra
 
     Adjusted history is restated retroactively (splits, dividends): a corporate action rescales
     every session before its ex-date. Stored rows that the incoming frame does not replace are only
-    kept when a shared session proves they are on the incoming basis: each retained row is anchored
-    by the first shared session after it (the last shared session for rows after all shared ones).
-    This also covers stored sessions missing *inside* the incoming range (vendor gaps).
+    kept when shared sessions prove they are on the incoming basis: each retained row is anchored
+    by the nearest shared session on each side that exists (only the following one for older rows,
+    only the preceding one for newer rows). Stored sessions missing *inside* the incoming range
+    (vendor gaps) need both, because an ex-date right after the gap rescales the preceding session
+    but not the following one.
     """
     shared = old.index.intersection(incoming.index)
     if shared.empty:
@@ -195,7 +197,10 @@ def _check_adjustment_basis(symbol: str, old: pd.DataFrame, incoming: pd.DataFra
         )
     retained = old.index.difference(incoming.index)
     positions = shared.searchsorted(retained, side="right")
-    anchors = sorted({shared[min(int(p), len(shared) - 1)] for p in positions})
+    anchors = sorted(
+        {shared[int(p) - 1] for p in positions if p > 0}
+        | {shared[int(p)] for p in positions if p < len(shared)}
+    )
     for anchor in anchors:
         # Splits and dividends both rescale the close; high/low late-print corrections do not
         # indicate a basis change, so only the close is compared.

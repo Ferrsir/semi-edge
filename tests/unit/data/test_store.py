@@ -269,13 +269,27 @@ def test_backfill_checks_latest_shared_session(store, bars):
 def test_interior_gap_in_rebased_refetch_rejected(
     store: ParquetBarStore, bars: pd.DataFrame
 ) -> None:
-    """F-012: a retained session inside the refetch range is anchored by the next shared one."""
+    """F-012: a retained session inside the refetch range is anchored by its shared neighbours."""
     _write(store, bars)
     rebased = bars.drop(pd.Timestamp("2024-11-21")).copy()
     rebased["close"] = rebased["close"] / 10.0  # vendor restated history after a split
-    with pytest.raises(ValueError, match="adjustment basis changed at 2024-11-22"):
+    with pytest.raises(ValueError, match="adjustment basis changed at 2024-11-20"):
         _write(store, rebased, T1)
     _write(store, bars.drop(pd.Timestamp("2024-11-21")), T1)  # same basis: stored row kept
     stored = _read(store)
     assert stored is not None
     pd.testing.assert_frame_equal(stored.frame, bars)
+
+
+def test_interior_gap_before_ex_date_rejected(store: ParquetBarStore, bars: pd.DataFrame) -> None:
+    """A gap on the session before an ex-date is caught by the preceding shared session.
+
+    The split restates only sessions before 2024-11-22, so the following anchor matches while the
+    retained 2024-11-21 row is still on the old basis.
+    """
+    _write(store, bars)
+    rebased = bars.drop(pd.Timestamp("2024-11-21")).copy()
+    before_ex_date = rebased.index < pd.Timestamp("2024-11-22")
+    rebased.loc[before_ex_date, "close"] = rebased.loc[before_ex_date, "close"] / 10.0
+    with pytest.raises(ValueError, match="adjustment basis changed at 2024-11-20"):
+        _write(store, rebased, T1)

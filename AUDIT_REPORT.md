@@ -143,12 +143,16 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Reproduce:** store split-adjusted bars 2024-01-02..2024-06-28, then write the same range
   restated /10 (post-split) but missing one interior session (vendor gap). Before the fix the write
   succeeded and the stored series had a ~9x one-day return at the retained old-basis session.
-- **Impact:** same as F-009: a fictitious price jump inside the series corrupts SMA/ATR/breakout
+- **Impact:** a fictitious price jump inside the series corrupts SMA/ATR/breakout
   and stop levels; the anchors only checked the first/last shared session when stored rows extended
   past the incoming range, so rows retained *inside* the range were never verified.
-- **Fix:** every retained stored row is anchored by the first shared session after it (last shared
-  session for trailing rows); spec `phase1-interfaces.md` (store) updated.
+- **Fix:** every retained stored row is anchored by its nearest shared session on each side that
+  exists; spec `phase1-interfaces.md` (store) updated. The first fix (`64eb0b4`) used only the
+  following session. That still accepted a gap on the session before an ex-date, because the split
+  rescales the preceding session but not the following one. Closed by the both-sides anchor
+  (2026-11-13).
 - **Regression:** `tests/unit/data/test_store.py::test_interior_gap_in_rebased_refetch_rejected`,
+  `test_interior_gap_before_ex_date_rejected` (fails on `64eb0b4`),
   `tests/integration/data/test_store_adjustment_basis.py::test_rebased_refetch_with_interior_gap_is_rejected`,
   `test_same_basis_refetch_with_interior_gap_keeps_stored_session`.
 

@@ -104,7 +104,7 @@ def test_rebased_refetch_with_interior_gap_is_rejected(tmp_path, bars):
     store = ParquetBarStore(tmp_path)
     _write(store, bars, FIRST)
     rebased = _rebased(bars, 10.0).drop(pd.Timestamp("2024-06-05"))
-    with pytest.raises(ValueError, match="adjustment basis changed at 2024-06-06"):
+    with pytest.raises(ValueError, match="adjustment basis changed at 2024-06-04"):
         _write(store, rebased, SECOND)
     pd.testing.assert_frame_equal(_read(store).frame, bars)
 
