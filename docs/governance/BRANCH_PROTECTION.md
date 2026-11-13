@@ -1,7 +1,67 @@
-# Protection activation runbook
+# Protection activation runbook (#4)
 
-Current GitHub API response for this private repository is HTTP 403: upgrade to GitHub Pro or make the repository public. The owner must resolve the plan restriction; agents must not change visibility or purchase a plan.
+Status on 2026-11-13: the repository is public, so rulesets are available on the free plan. The
+earlier HTTP 403 ("Upgrade to GitHub Pro or make this repository public") no longer applies.
+`main` has no ruleset yet (`gh api repos/Ferrsir/semi-edge/rulesets --jq length` → `0`). Until one
+is active, the merge rules in `AGENTS.md` are followed by process only.
 
-After entitlement is available, configure protected main: PR required; strict up-to-date checks; no bypass, force push or deletion; protected governance ownership. Required contexts: ci-required, security-required, integration-required, trading-safety-required, and two independently issued review checks. Bind to a separately controlled integration, not only the shared GitHub Actions app. Keep protection credentials outside agent access.
+Only the owner applies or changes the ruleset. The agent identity `Ferrisfy` has no admin rights
+and must not hold a credential that does (#5).
 
-Before activation create deliberately failing and spoofing test PRs. Verify GitHub rejects merging with missing reviews, stale reviews, failed CI, missing safety tests, altered workflow definitions and unresolved restricted changes. Never attempt an actual merge test while protection is absent. Demonstrate the successful two-review path afterward and preserve API/check URLs and SHAs in the audit issue. No such demonstration has completed yet.
+## The ruleset
+
+`docs/governance/main-ruleset.json` targets the default branch with no bypass actors:
+
+| Rule | Effect |
+|---|---|
+| `deletion` | `main` cannot be deleted. |
+| `non_fast_forward` | No force pushes. |
+| `required_linear_history` | No merge commits; squash merges only (also set below). |
+| `pull_request` | Every change to `main` goes through a PR. Code owners (`.github/CODEOWNERS`, the owner) must approve PRs that touch their paths. Stale approvals are dismissed on a new push, and the last push must be approved by someone other than its pusher. Other PRs need 0 approvals: the cross-provider review stays a PR comment, as ADR-004 defines it. |
+| `required_status_checks` | `ci-required`, `integration-required`, `security-required` and `trading-safety-required` must pass, published by the GitHub Actions app (id 15368), on a branch that is up to date with `main`. |
+
+`tests/governance/test_main_ruleset.py` keeps the file fail closed: no bypass actors, deletion and
+force push blocked, code-owner review on, and every required check name published by a job in
+`.github/workflows/`. A renamed aggregate job would otherwise leave a required check that never
+reports, and every PR would block.
+
+Not included yet: the two independently issued AI review checks. They need the trusted review
+integration in #6, published by a separately controlled identity rather than the shared GitHub
+Actions app. Requiring them now would block every merge.
+
+## Decisions for the owner before applying
+
+1. **Board updates.** With a PR required, agents can no longer push `AGENTS.md` straight to
+   `main`. Because `AGENTS.md` is code-owned, every board update would also need your approval.
+   Options: (a) accept that and batch board updates into PRs; (b) move the board and discussion
+   log into a file that is not code-owned, so board PRs can merge on green CI, and keep the rules
+   in code-owned `AGENTS.md`.
+2. **Up-to-date branches.** `strict_required_status_checks_policy: true` makes each PR rebase on
+   `main` and rerun CI after every merge. That is safer, but it costs Actions minutes with several
+   PRs open. Setting it to `false` keeps the checks but drops the rebase requirement.
+
+## Apply (owner, browser)
+
+1. Settings → Rules → Rulesets → New ruleset → **Import a ruleset**, and choose
+   `docs/governance/main-ruleset.json` from `main`.
+2. Check that the bypass list is empty, then create it.
+
+Or, from a terminal logged in as the owner (not an agent shell):
+
+```
+gh api -X POST repos/Ferrsir/semi-edge/rulesets --input docs/governance/main-ruleset.json
+```
+
+## Verify (any identity)
+
+```
+gh api repos/Ferrsir/semi-edge/rulesets --jq '.[] | {name, enforcement}'
+gh api repos/Ferrsir/semi-edge/rules/branches/main --jq '[.[].type]'
+```
+
+Then run the #7 test PRs. Each must be refused: a failing required check; a code-owned path with
+no owner approval; an approval made stale by a new push; a branch behind `main`; a direct push and
+a force push to `main` as `Ferrisfy`. Also run one clean PR that merges. Record the PR numbers,
+head SHAs and check URLs in `ENGINEERING_SETUP_REPORT.md` and on #7. Never treat a merge test as
+evidence while the ruleset is absent. No such demonstration has been done yet. Only after it may
+the ADR-004 waiver be revisited.
