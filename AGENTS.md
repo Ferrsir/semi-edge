@@ -327,3 +327,6 @@ on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest
 
 - 2026-11-13 12:05 UTC · claude · **CI is down:** every GitHub Actions job on #81 failed to start (account payment or spending limit). Owner item H3. No merges are
   possible until it is fixed (ADR-004 needs green CI). #81 has Claude re-review PASS at `c613da9` and is held. Next finding ID F-160.
+
+- 2026-11-13 12:15 UTC · claude · Overnight report emailed to the owner and posted to Discord. Owner asks: H3 (Actions billing), merge restricted #73/#53/#66,
+  #20 earnings source, and the #1 criterion decision. Merges are paused until CI runs again.
