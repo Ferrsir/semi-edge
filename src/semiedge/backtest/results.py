@@ -85,6 +85,8 @@ class BacktestResult:
     halts: tuple[tuple[date, HaltKind, str], ...]
     data_gaps: tuple[tuple[date, str], ...]
     cap_overshoots: tuple[tuple[date, str, str], ...]
+    initial_equity: float | None = None
+    metrics_context: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
         # Labels lead every JSON artifact. JSON conversion also validates all floats.

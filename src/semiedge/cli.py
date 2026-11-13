@@ -26,10 +26,13 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from semiedge import __version__
 from semiedge.backtest.engine import BacktestData, BacktestRequest, load_backtest_data, run_backtest
+from semiedge.backtest.metrics_context import read_context
+from semiedge.backtest.metrics_report import metrics_report
+from semiedge.backtest.results import BacktestResult
 from semiedge.broker.account import BrokerError, fetch_account_snapshot
 from semiedge.config import (
     AppConfig,
@@ -673,6 +676,59 @@ def _cmd_backtest(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _cmd_metrics(args: argparse.Namespace) -> int:
+    settings, _, _ = _load(args)
+    try:
+        result = TypeAdapter(BacktestResult).validate_json(args.result.read_text(encoding="utf-8"))
+        if result.schema_version != 1 or not result.labels or not result.command:
+            raise ValueError("invalid_result_metadata")
+        result.to_dict()
+        context = read_context(result)
+        calendar = TradingCalendar(context.data_config.calendar)
+        data = None
+        if context.source == DataSource.SYNTHETIC:
+            source = SyntheticMarketDataSource(calendar=calendar)
+            first = calendar.sessions_window(
+                calendar.previous_session(result.start), context.params.required_history()
+            )[0]
+            symbols = sorted(
+                {
+                    *context.universe.tradable_symbols,
+                    context.universe.regime_benchmark,
+                    *context.universe.comparison_benchmarks,
+                }
+            )
+            data = BacktestData(
+                source.get_daily_bars(symbols, first, result.end),
+                source.feed,
+                source.adjustment,
+                source.source,
+            )
+        else:
+            try:
+                data = load_backtest_data(
+                    ParquetBarStore(settings.data_dir),
+                    context.universe,
+                    context.data_config,
+                    start=result.start,
+                    end=result.end,
+                    calendar=calendar,
+                    corporate_actions=None,
+                )
+            except (ValueError, OSError):
+                data = None
+        report = metrics_report(result, data, command=args.reproduce_command)
+        rendering = json.dumps(
+            report, default=lambda d: d.isoformat(), ensure_ascii=False, allow_nan=False, indent=2
+        )
+    except (ValueError, KeyError, TypeError, OSError, OverflowError):
+        raise CommandError(
+            EXIT_DATA, "Metrics failed: invalid result or missing run context."
+        ) from None
+    sys.stdout.write(rendering + "\n")
+    return EXIT_OK
+
+
 def build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--config-dir", type=Path, help="configuration directory")
@@ -727,6 +783,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--output", type=Path, help="new output directory (existing paths refused)"
     )
     backtest.set_defaults(handler=_cmd_backtest)
+    metrics = commands.add_parser("metrics", parents=[common], help="offline performance report")
+    metrics.add_argument("result", type=Path, metavar="RESULT.json")
+    metrics.set_defaults(handler=_cmd_metrics)
     return parser
 
 

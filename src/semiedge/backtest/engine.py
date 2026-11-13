@@ -447,6 +447,13 @@ def run_backtest(  # noqa: PLR0912 - validation and mandatory labels follow the 
         tuple(sim.halts),
         tuple(sim.gaps),
         tuple(sim.overshoots),
+        initial_equity=request.settings.initial_equity,
+        metrics_context={
+            **config,
+            "source": data.source.value,
+            "feed": data.feed.value,
+            "adjustment": data.adjustment.value,
+        },
     )
     result.to_dict()  # No non-finite quantity may escape even when save() is not called.
     return result
