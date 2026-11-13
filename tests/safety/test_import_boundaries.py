@@ -27,7 +27,7 @@ UPPER = (
     *NETWORK,
 )
 DENY = {
-    "semiedge.risk": UPPER,
+    "semiedge.risk": (*UPPER, "semiedge.data.earnings_sources"),
     "semiedge.strategy": (*UPPER, "semiedge.data.synthetic", "semiedge.risk"),
     "semiedge.indicators": (*UPPER, "semiedge.data.synthetic"),
     "semiedge.reporting": (
@@ -92,6 +92,24 @@ DENY = {
         "semiedge.data.alpaca_source",
         "semiedge.state.store",
         *NETWORK,
+    ),
+    # #20 earnings: the pure resolution module never reaches the network or the risk layer.
+    "semiedge.data.earnings": (
+        "alpaca",
+        "semiedge.risk",
+        "semiedge.data.earnings_sources",
+        *NETWORK,
+    ),
+    "semiedge.data.earnings_sources": (
+        "alpaca",
+        "semiedge.risk",
+        "semiedge.broker",
+        "semiedge.execution",
+        "semiedge.engine",
+        "semiedge.state",
+        "semiedge.backtest",
+        "semiedge.notify",
+        "semiedge.dashboard",
     ),
     "semiedge.ai": (
         "semiedge.execution",

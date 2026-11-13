@@ -26,6 +26,9 @@ dependencies = [
 [project.scripts]
 semiedge = "semiedge.cli:main"
 
+[project.optional-dependencies]
+dashboard = ["streamlit>=1.40"]
+
 [dependency-groups]
 dev = [
     "pytest>=8.3",

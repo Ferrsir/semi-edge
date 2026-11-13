@@ -40,6 +40,9 @@ class AppSettings(BaseSettings):
         None, validation_alias="ALPACA_PAPER_SECRET_KEY"
     )
     discord_webhook_url: SecretStr | None = Field(None, validation_alias="DISCORD_WEBHOOK_URL")
+    # Earnings calendar (#20): read-only data APIs; never logged (included in secret_values).
+    finnhub_api_key: SecretStr | None = Field(None, validation_alias="FINNHUB_API_KEY")
+    alphavantage_api_key: SecretStr | None = Field(None, validation_alias="ALPHAVANTAGE_API_KEY")
 
     config_dir: Path = Field(Path("config"), validation_alias="SEMIEDGE_CONFIG_DIR")
     data_dir: Path = Field(Path("data"), validation_alias="SEMIEDGE_DATA_DIR")
@@ -98,5 +101,7 @@ class AppSettings(BaseSettings):
             self.alpaca_paper_api_key,
             self.alpaca_paper_secret_key,
             self.discord_webhook_url,
+            self.finnhub_api_key,
+            self.alphavantage_api_key,
         )
         return [s.get_secret_value() for s in secrets if s is not None and s.get_secret_value()]

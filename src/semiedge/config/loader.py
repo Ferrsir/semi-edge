@@ -14,6 +14,7 @@ from semiedge.config.models import (
     AppConfig,
     BacktestSettings,
     DataConfig,
+    EarningsSettings,
     MomentumV1Params,
     RiskLimits,
     ScannerConfig,
@@ -24,6 +25,7 @@ UNIVERSE_FILE = "universe.yaml"
 RISK_FILE = "risk.yaml"
 APP_FILE = "app.yaml"
 STRATEGY_FILE = "strategies/momentum_v1.yaml"
+EARNINGS_FILE = "earnings.yaml"
 
 
 class ConfigError(ValueError):
@@ -58,6 +60,11 @@ def _read_yaml(path: Path) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ConfigError(f"{path}: top level must be a mapping")
     return data
+
+
+def read_strict_yaml(path: Path) -> dict[str, Any]:
+    """Public strict reader (duplicate keys, non-string keys, non-mapping top level rejected)."""
+    return _read_yaml(path)
 
 
 def load_app_config(config_dir: Path) -> AppConfig:
@@ -110,3 +117,13 @@ def run_fingerprint(app: AppConfig, *extra: BaseModel) -> str:
         payload[name] = model.model_dump(mode="json")
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
     return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def load_earnings_settings(config_dir: Path) -> EarningsSettings:
+    """Load the required, strictly validated earnings-calendar configuration (#20)."""
+    try:
+        return EarningsSettings.model_validate(_read_yaml(config_dir / EARNINGS_FILE))
+    except ConfigError:
+        raise
+    except (ValueError, yaml.YAMLError, OSError) as exc:
+        raise ConfigError(str(exc)) from exc

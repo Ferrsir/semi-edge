@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from pydantic import TypeAdapter, ValidationError
+from pydantic import SecretStr, TypeAdapter, ValidationError
 
 from semiedge import __version__
 from semiedge.backtest.engine import BacktestData, BacktestRequest, load_backtest_data, run_backtest
@@ -34,6 +34,7 @@ from semiedge.backtest.metrics_context import read_context
 from semiedge.backtest.metrics_report import metrics_report
 from semiedge.backtest.results import BacktestResult
 from semiedge.broker.account import BrokerError, fetch_account_snapshot
+from semiedge.clock import SystemClock
 from semiedge.config import (
     AppConfig,
     AppSettings,
@@ -42,9 +43,12 @@ from semiedge.config import (
     config_fingerprint,
     load_app_config,
 )
-from semiedge.config.loader import load_backtest_settings, run_fingerprint
+from semiedge.config.loader import load_backtest_settings, load_earnings_settings, run_fingerprint
+from semiedge.dashboard.launch import launch
 from semiedge.data.alpaca_source import AlpacaMarketDataSource, MarketDataError
 from semiedge.data.calendar import TradingCalendar
+from semiedge.data.earnings import EarningsDataError
+from semiedge.data.earnings_sources import EarningsProvider, EarningsProviderSettings
 from semiedge.data.schema import DataFeed, DataSource
 from semiedge.data.source import MarketDataSource
 from semiedge.data.store import ParquetBarStore
@@ -736,11 +740,97 @@ def _cmd_metrics(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _cmd_dashboard(args: argparse.Namespace) -> int:
+    try:
+        return launch(args.source)
+    except ValueError as exc:
+        raise CommandError(EXIT_CONFIG, str(exc)) from None
+
+
+# ------------------------------------------------------------------ earnings (#20)
+
+
+def _earnings_provider(args: argparse.Namespace) -> EarningsProvider:
+    settings, config, _ = _load(args)
+    config_dir = args.config_dir or settings.config_dir
+    try:
+        es = load_earnings_settings(config_dir)
+    except (ConfigError, OSError):
+        raise CommandError(EXIT_CONFIG, _CONFIG_FAILED) from None
+
+    def secret(value: SecretStr | None) -> str | None:
+        return value.get_secret_value() if value is not None else None
+
+    return EarningsProvider(
+        EarningsProviderSettings(
+            lookahead_days=es.lookahead_days,
+            min_forward_coverage_days=es.min_forward_coverage_days,
+            max_age_hours=es.max_age_hours,
+            max_attempts_per_day=es.max_attempts_per_day,
+            retry_interval_minutes=es.retry_interval_minutes,
+            request_timeout_seconds=es.request_timeout_seconds,
+            finnhub_min_interval_seconds=es.finnhub_min_interval_seconds,
+            override_max_age_days=es.override_max_age_days,
+        ),
+        cache_dir=settings.data_dir / "earnings",
+        override_path=config_dir / es.override_file,
+        universe=config.universe.tradable_symbols,
+        finnhub_api_key=secret(settings.finnhub_api_key),
+        alphavantage_api_key=secret(settings.alphavantage_api_key),
+        clock=SystemClock(),
+    )
+
+
+def _cmd_earnings_refresh(args: argparse.Namespace) -> int:
+    provider = _earnings_provider(args)
+    try:
+        outcomes = provider.refresh(force=args.force)
+    except OSError:
+        raise CommandError(EXIT_CONFIG, "Cannot write the earnings cache.") from None
+    for o in outcomes:
+        error = o.error or "-"
+        sys.stdout.write(f"{o.source:<13} {o.action:<22} status={o.status} error={error}\n")
+    return EXIT_OK if all(o.status == "ok" for o in outcomes) else EXIT_DATA
+
+
+def _cmd_earnings_status(args: argparse.Namespace) -> int:
+    provider = _earnings_provider(args)
+    on_or_after = args.as_of or utcnow().date()
+    try:
+        resolve = provider.resolver()
+    except EarningsDataError as exc:
+        raise CommandError(
+            EXIT_CONFIG, f"Earnings override file rejected (all entries blocked): {exc}"
+        ) from None
+    for source, snap in provider.snapshots().items():
+        if snap is None:
+            sys.stdout.write(f"{source:<13} missing\n")
+            continue
+        sys.stdout.write(
+            f"{source:<13} {snap.status} fetched_at={snap.fetched_at.isoformat()} "
+            f"coverage={snap.coverage_start}..{snap.coverage_end} error={snap.error or '-'}\n"
+        )
+    sys.stdout.write(f"\nR16 view for decisions on/after {on_or_after.isoformat()}:\n")
+    all_verified = True
+    for symbol in provider.universe:
+        r = resolve(symbol, on_or_after)
+        all_verified &= r.verified
+        when = r.next_date.isoformat() if r.next_date else "-"
+        state = "VERIFIED" if r.verified else "BLOCKED"
+        sys.stdout.write(
+            f"{symbol:<8} {state:<9} next={when:<10} source={r.source} reason={r.reason}\n"
+        )
+    return EXIT_OK if all_verified else EXIT_DATA
+
+
 def build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--config-dir", type=Path, help="configuration directory")
     parser = argparse.ArgumentParser(prog="semiedge", description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
+    dashboard = commands.add_parser("dashboard", help="local read-only PAPER dashboard")
+    dashboard.add_argument("--source", choices=("cache", "synthetic"), default="cache")
+    dashboard.set_defaults(handler=_cmd_dashboard)
 
     diagnostic = commands.add_parser(
         "diagnostics", parents=[common], help="validate local configuration offline"
@@ -793,6 +883,19 @@ def build_parser() -> argparse.ArgumentParser:
     metrics = commands.add_parser("metrics", parents=[common], help="offline performance report")
     metrics.add_argument("result", type=Path, metavar="RESULT.json")
     metrics.set_defaults(handler=_cmd_metrics)
+
+    earnings = commands.add_parser("earnings", help="earnings calendar for R16 (#20)")
+    earnings_commands = earnings.add_subparsers(dest="earnings_command", required=True)
+    refresh = earnings_commands.add_parser(
+        "refresh", parents=[common], help="refresh Finnhub + Alpha Vantage (at most daily)"
+    )
+    refresh.add_argument("--force", action="store_true", help="ignore the daily/retry limits")
+    refresh.set_defaults(handler=_cmd_earnings_refresh)
+    status = earnings_commands.add_parser(
+        "status", parents=[common], help="per-symbol R16 view from the cache (no network)"
+    )
+    status.add_argument("--as-of", type=_iso_date, metavar="YYYY-MM-DD")
+    status.set_defaults(handler=_cmd_earnings_status)
     return parser
 
 
