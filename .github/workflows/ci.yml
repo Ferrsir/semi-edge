@@ -78,11 +78,26 @@ jobs:
           uv pip install --python /tmp/wheel-check/bin/python dist/*.whl
           /tmp/wheel-check/bin/python -c "import semiedge; print(semiedge.__version__)"
 
+  dashboard-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+        working-directory: project-status
+      - run: npm test
+        working-directory: project-status
+
   ci-required:
     # The ONLY check from this workflow that branch protection requires. It fails unless every
     # job above succeeded — a skipped or cancelled job is a failure, never a silent pass.
     if: always()
-    needs: [lint, typecheck, test, build]
+    needs: [lint, typecheck, test, build, dashboard-tests]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

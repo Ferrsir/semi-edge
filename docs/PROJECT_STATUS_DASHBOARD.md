@@ -8,7 +8,7 @@ It shows the current phase, roadmap, board items by status and owner, dependency
 
 ## Source and refresh
 
-Reviewed source is under `project-status/`. The canonical hosted source has its own private Sites repository and is also checked out locally at `C:/Users/ferri/.t3/projects/semi-edge-status-site`. Preserve the Site ID in `.openai/hosting.json`.
+Reviewed source is under `project-status/`. The canonical hosted source has its own private Sites repository and can be opened through the Sites source workflow in a separate checkout. Preserve the Site ID in `.openai/hosting.json`.
 
 The dashboard uses an explicit snapshot from AGENTS.md and GitHub; it is not automatically synchronized. Reloading the page does not refresh project metadata. Its checked-at timestamp and stale-snapshot notice make this visible. No GitHub token or other credential is shipped to the browser.
 
@@ -17,7 +17,7 @@ To refresh the versioned source from a current project checkout:
 ```powershell
 cd project-status
 python scripts/refresh-snapshot.py --repo ..
-npm.cmd ci
+npm.cmd ci --ignore-scripts
 npm.cmd test
 ```
 
@@ -26,3 +26,5 @@ Then copy reviewed changes to the separate canonical Site checkout, synchronize 
 The supplied Claude artifact link could not be fetched. Content instead uses the owner's previously supplied Nov 12 task list, the current local coordination board and fetched GitHub metadata. Phase counts are board items of varying size, not a claim of operational readiness.
 
 DOM interaction tests cover navigation, search/filtering, task dialogs, review counts, inert rendering of untrusted strings, browser checklist persistence and snapshot-help text. No visual browser layout verification was available in this session.
+
+The refresh parser refuses unknown board IDs/statuses and truncated metadata; a failed refresh preserves the previous snapshot. Review notes are read from AGENTS.md Review queue, while current phase and owner blockers are computed from tasks. Roadmap placeholders are labeled and derive issue state from GitHub. Both Python snapshot regression tests and JavaScript DOM tests are required CI checks; the refresh script is included in strict mypy.

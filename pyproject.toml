@@ -68,7 +68,7 @@ quote-style = "double"
 # ---------------------------------------------------------------- mypy
 [tool.mypy]
 python_version = "3.12"
-files = ["src", "scripts/governance"]
+files = ["src", "scripts/governance", "project-status/scripts/refresh-snapshot.py"]
 strict = true
 warn_unreachable = true
 pretty = true

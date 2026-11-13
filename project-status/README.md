@@ -7,7 +7,7 @@ Owner-private project status Site. This is a management dashboard, separate from
 The app displays a timestamped snapshot of AGENTS.md and GitHub metadata, not an automatic live integration. Refresh using a locally authenticated GitHub CLI:
 
 ```powershell
-python scripts/refresh-snapshot.py --repo C:/Users/ferri/.t3/projects/semi-edge
+python scripts/refresh-snapshot.py --repo ..
 npm.cmd test
 ```
 
@@ -17,4 +17,8 @@ Sources: current coordination board, GitHub issue/PR snapshot and the owner-prov
 
 ## Development
 
-Buildless static files in `dist/`; no runtime dependencies or external fonts/assets. `npm.cmd ci` installs jsdom for DOM interaction tests. `npm.cmd test` checks rendering, filters, dialogs, private checklist storage and source-navigation behavior. Browser layout QA was not available in the authoring session.
+Buildless static files in `dist/`; no runtime dependencies or external fonts/assets. `npm.cmd ci --ignore-scripts` installs jsdom for DOM interaction tests. `npm.cmd test` checks rendering, filters, dialogs, private checklist storage and source-navigation behavior. Browser layout QA was not available in the authoring session.
+
+Refresh fails without replacing the prior snapshot when the board has an unknown task ID/status, malformed or duplicate rows, missing metadata, missing GitHub CLI, or a result reaches the 1,000-item safety limit. Add explicit phase mappings or pagination before retrying. Review handoffs come from the board review queue; phase and blocker counts are derived from snapshot tasks. Research rows absent from the board are labeled roadmap placeholders, with open/closed state from GitHub.
+
+Python refresh validation runs in pytest and strict mypy. Dashboard DOM regression tests run in the required CI dashboard-tests job using locked npm dependencies with install scripts disabled. No browser layout claim is made.
