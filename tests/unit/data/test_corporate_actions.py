@@ -362,13 +362,51 @@ def test_reverse_split_cannot_create_a_breakout_after_normalization():
     assert not check_adjustment_consistency(stored(frame), [event]).is_consistent
 
 
-def test_future_announced_actions_do_not_invalidate_historical_series():
+def test_split_after_retrieval_requires_refetch_even_beyond_stored_prefix():
     series = stored(bars([100.0] * 4))
     future = action(ex_date=date(2024, 1, 8))
-    assert check_adjustment_consistency(series, [future]).is_consistent
+    result = check_adjustment_consistency(series, [future])
+    assert not result.is_consistent
+    assert "split 2024-01-08 after latest fetched_at: full refetch required" in result.issues
     assert not check_adjustment_consistency(
         stored(bars([100.0, 100.0, 20.0, 20.0])), []
     ).is_consistent
+
+
+@pytest.mark.parametrize(("new", "old"), [(3, 2), (5, 4), (4, 5)])
+def test_mixed_basis_small_splits_with_market_return_are_rejected(new, old):
+    kind = Kind.SPLIT if new > old else Kind.REVERSE_SPLIT
+    event = action(kind=kind, new_shares=new, old_shares=old, ex_date=date(2024, 1, 4))
+    close = 100.0 * old / new * 1.005
+    mixed = check_adjustment_consistency(stored(bars([100.0, 100.0, close, close])), [event])
+    assert not mixed.is_consistent
+    assert any("unadjusted split discontinuity" in reason for reason in mixed.issues)
+    adjusted = stored(bars([100.0, 100.0, 100.5, 100.5]))
+    assert check_adjustment_consistency(adjusted, [event]).is_consistent
+
+
+def test_same_day_cash_dividends_are_summed():
+    events = [
+        action(
+            kind=Kind.CASH_DIVIDEND,
+            new_shares=None,
+            old_shares=None,
+            cash_amount=amount,
+            event_id=f"dividend-{index}",
+            ex_date=date(2024, 1, 4),
+        )
+        for index, amount in enumerate([40.0, 5.0])
+    ]
+    frame = bars([100.0, 100.0, 55.0, 55.0])
+    assert check_adjustment_consistency(stored(frame), events).is_consistent
+    assert not check_adjustment_consistency(stored(frame, Adjustment.ALL), events).is_consistent
+
+
+@pytest.mark.parametrize("day", [date(2024, 1, 6), date(2024, 1, 1)])
+@pytest.mark.parametrize(("kind", "new", "old"), [(Kind.SPLIT, 3, 2), (Kind.REVERSE_SPLIT, 2, 3)])
+def test_splits_require_exchange_session_ex_dates(day, kind, new, old):
+    with pytest.raises(ValueError, match="supported exchange session"):
+        action(kind=kind, new_shares=new, old_shares=old, ex_date=day)
 
 
 def test_cash_price_return_and_all_adjusted_series_have_distinct_expectations():

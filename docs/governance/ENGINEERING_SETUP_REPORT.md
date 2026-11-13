@@ -1,26 +1,63 @@
 # Engineering setup report
 
-## Implemented, not deployed
-PR #33 contains canonical governance and operating documentation, CI/build/security/integration/safety workflows, review runner and fail-closed evaluator, audit workflow, templates and ownership declarations. A CLI integration test verifies rejection of live configuration and acceptance of safe defaults. Scanner tests do not establish runtime broker safety.
+Verified facts only, each with how it was checked. Last verified 2026-11-13 against `main` `7bf7437`.
+When a fact changes, update it here with the date and the check.
 
-Two independent local reviews of f1b70014c97548e884207f29d8633d0f0cc2456c returned FAIL. Findings drove fixes for superseded approvals, unresolved required changes, malformed/duplicate artifacts, dirty reviewer checkouts and unsafe Claude configuration fallback. These historical reviews do not approve later revisions.
+## Operating process in force
+- **ADR-004** (`docs/DECISIONS.md`, 2026-10-30): the owner waived the branch-protection and
+  trusted-review-issuer requirements and delegated merging to the lead agent. A PR merges when CI
+  is green and a cross-provider review recorded on the PR (Claude ↔ Codex) is PASS with no open
+  P0/P1. The day-to-day rules live in `AGENTS.md` (owner decision, PR #44).
+- Board updates are committed by agents directly to `main`, touching only `AGENTS.md`, as
+  `AGENTS.md` instructs. Every other change goes through a PR.
+- Merged under this process: #38, #41 and #39. GitHub shows no `semi-edge/ai-review-gate` status
+  on them (`gh api repos/Ferrsir/semi-edge/commits/<sha>/status` → `total_count: 0`). The PR
+  comments hold the review record.
 
 ## Verified external blockers
-- Repository exists and is private: https://github.com/Ferrsir/semi-edge.
-- Both rulesets and main protection API calls return HTTP 403 requiring a GitHub plan upgrade or public visibility. No visibility or plan change was made.
-- Repository secret listing is empty. Do not add model credentials to ordinary feature-accessible workflows.
-- T3 history, delegation capability and PR-link tools were not callable. No persistent issue-to-PR orchestrator is configured.
-- The proposed shared Actions review status is spoofable by another same-repository workflow. It is not an enforceable independent review integration.
+- The repository is public since 2026-11-13 (owner decision, to unblock Actions and rulesets):
+  `gh api repos/Ferrsir/semi-edge --jq .visibility` → `public`.
+- `main` has no protection yet: `gh api repos/Ferrsir/semi-edge/rulesets --jq length` → `0`, and
+  `gh api repos/Ferrsir/semi-edge/branches/main --jq .protected` → `false`. Public visibility makes
+  rulesets available; applying one is the owner's step in #4. Until then the merge rules are
+  followed by process only, and the agent identity below can push to `main`.
+- No repository secrets are configured (`gh secret list` is empty as the agent identity), so the
+  AI review workflow cannot run (#6).
 
-## Safe activation state
-Privileged review orchestration is manually dispatchable only and has an unconditional failing activation job; all review/publisher jobs are blocked by the context condition. No automatic merge code is enabled. This is deliberately incomplete activation, not a functioning autonomous team.
+## Agent identity (issue #5), verified 2026-11-13
+- Agents authenticate as the bot account `Ferrisfy` through `GH_TOKEN` (classic token, `repo` and
+  `workflow` scopes), loaded by the owner's agent shell. `gh auth status` → `Ferrisfy (GH_TOKEN)`.
+- `gh api repos/Ferrsir/semi-edge --jq .permissions` → `admin: false, maintain: false, push: true`.
+  The agent identity cannot change settings, protections or visibility.
+- The owner account `Ferrsir` is logged out of `gh` on the agent PCs; approvals, merges of
+  restricted PRs and settings changes happen in the owner's browser.
+- `.github/review/policy.json`: `human_maintainers` is `["Ferrsir"]` and `agent_identities` is
+  `["Ferrisfy"]`. `load_policy` rejects a login listed in both, an empty human list, and missing
+  or malformed identity lists (`tests/governance/test_review_gate.py`).
+- Remaining limits: the bot still has push access, so it can push to `main` and merge PRs until
+  the #4 ruleset is active. Codex and Claude share this one identity, so GitHub cannot tell
+  them apart; the PR comment labels (`Claude review`, `Codex review`) carry that distinction.
 
-## Owner/integration actions required
-1. Resolve private repository protection entitlement without exposing repository contents.
-2. Provision separately administered, least-privileged review and CI identities with credentials outside feature-controlled workflows. Ensure agent and human identities differ.
-3. Supply model authentication to isolated review runtimes through secure secret provisioning. Claude API key mode is required by this runner.
-4. Configure required protected checks and no bypass, force pushes or deletion. Validate the trusted integration against spoofing, stale reports and altered workflow definitions.
-5. Configure an available persistent orchestrator explicitly, or continue bounded foreground tasks with durable state. Feedback comments alone are not automatic repair execution.
-6. Run a protected failing test PR and confirm rejected merge; then run the successful independent-review path. Record exact SHAs, run links and merge rejection evidence. Only afterward activate auto-merge. No deployment is included.
+## CI (issue #2), demonstrated on real PRs
+`ci`, `integration`, `trading-safety` and `security` run on every PR. Each ends in a `*-required`
+aggregate job that fails unless every needed job succeeded (a skipped or cancelled job fails it).
+Example: PR #48 has 16/16 checks green (`gh pr checks 48`). Workflow permissions default to
+`contents: read` or `{}`, and every third-party action is pinned to a full commit SHA.
 
-See BRANCH_PROTECTION.md and REVIEW_PROTOCOL.md. Issue #1 remains open; the draft must not merge while these conditions remain unmet.
+## AI review orchestration (issue #3): disabled prototype
+`.github/workflows/review-orchestration.yml` is `workflow_dispatch` only, and its context job is
+`if: false`. It has never run (`gh run list --workflow review-orchestration.yml` is empty). The
+gate evaluator (`scripts/governance/review_gate.py`) is unit-tested (`uv run pytest -q
+tests/governance`). The ordinary Actions status token is spoofable by other same-repository
+workflows, so this workflow is not an enforceable independent review integration until a
+separately administered identity publishes the check.
+
+## Owner actions required
+1. #4: apply the main ruleset (`docs/governance/BRANCH_PROTECTION.md`); public visibility now allows it.
+2. #5: done except closing the issue (see "Agent identity" above).
+3. #6: model credentials for isolated review runtimes, outside feature-accessible workflows.
+4. #7: once 1–3 are done, test PRs that must be refused, plus one clean path, recorded here
+   with SHAs. Only after that may the ADR-004 waiver be revisited.
+
+History: the bootstrap report for PR #33 (2026-10-30) is in git history (`git log --
+docs/governance/ENGINEERING_SETUP_REPORT.md`).

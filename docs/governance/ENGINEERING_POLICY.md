@@ -2,13 +2,28 @@
 
 SEMI-EDGE is paper-only. Ordinary approved development may proceed without per-PR human permission. Merging and deployment are separate actions.
 
-## Development lifecycle
-Select an approved issue; record ownership and dependencies. Use an isolated feature worktree. Implement, add relevant tests, validate, commit, push, and open a PR linked to the issue. Obtain two independent reviews of the exact proposed SHA. The implementation agent cannot approve its own work. Review A covers software correctness and architecture; Review B covers quantitative correctness, security and financial safety. Prefer different providers when available. Each report must identify role, reviewer, PR, SHA, PASS/FAIL, severity, evidence and required changes.
+## Where the rules live
+`AGENTS.md` holds the operating rules, task board and review protocol that Claude Code and Codex
+follow day to day (owner decision, PR #44). This policy holds the target-state controls and the
+restricted actions. When the two disagree on process, `AGENTS.md` and ADR-004 govern until the
+target state below is reached. Restricted actions (below) always apply.
 
-Fix blocking findings on the same branch and regenerate both reviews after every code change. Allow at most three failed review/fix cycles, then escalate. Do not equate comments or local reports with trusted GitHub checks.
+## Current process (ADR-004, in force)
+One task per issue, branch and worktree. Implement, add tests, validate, push and open a PR
+linked to the issue. A reviewer from the other provider (Claude ↔ Codex) posts PASS/FAIL with
+severity-ranked findings for the exact head SHA. Fixes go on the same branch and are re-reviewed.
+After three failed review/fix cycles on a PR, escalate to the owner. The lead merges (squash)
+when CI is green and the review is PASS with no open P0/P1; P2 deferrals need an open follow-up
+issue. Agents may commit `AGENTS.md` board updates directly to `main`; every other change goes
+through a PR.
 
-## Merge requirements
-CI, security, integration, trading-safety, and both independently issued reviews must pass for the latest revision. No unresolved P0/P1 findings; P2 deferrals require an open follow-up issue under policy. Require protected PR merges, current-commit validation, no bypass, no force push or deletion, and trusted check provenance. Enable GitHub auto-merge only after these controls are demonstrated. Do not push to main directly.
+## Target state (after #4, #5, #6 and #7)
+Two independent reviews of the exact SHA from trusted, separately administered integrations:
+Review A covers software correctness and architecture, Review B quantitative correctness,
+security and financial safety. The implementation agent cannot approve its own work. Protected PR
+merges, current-commit validation, no bypass, no force push or deletion, trusted check
+provenance. No direct pushes to `main`. Auto-merge only after these controls are
+demonstrated. Comments and local reports are evidence, not trusted checks.
 
 ## Restricted actions
 Human authorization is required for governance or protection changes, reviewer requirements, credentials, live endpoints or trading permissions, risk-limit increases, and deployment of trading execution changes. This initial governance setup was explicitly requested; that authorization does not grant permanent authority to weaken controls. Keep administration credentials outside agent workflows. Human and agent identities must be distinct before identity-based approval can be trusted.

@@ -105,6 +105,12 @@ class CorporateAction:
 
     def _check_terms(self) -> None:
         if self.kind in _SPLITS:
+            try:
+                supported = TradingCalendar().is_session(self.ex_date)
+            except ValueError:
+                supported = False
+            if not supported:
+                raise ValueError("split ex_date must be a supported exchange session")
             # Reuse the shared exact-count validation; no independent split arithmetic.
             event = self.to_split_event()
             if self.cash_amount is not None:
@@ -310,7 +316,8 @@ def check_adjustment_consistency(
 ) -> AdjustmentCheck:
     """Check a vendor-adjusted snapshot, not historical event coverage or strategy performance.
 
-    Future-to-series events are ignored. An explained raw split discontinuity in already
+    Splits after retrieval require refetch before the stored-prefix cutoff is applied.
+    An explained raw split discontinuity in already
     adjusted bars is still inconsistent (proposed §14 correction on #18); event metadata is
     never used here to repair prices silently. Freshness/required windows remain separate gates.
     """
@@ -367,13 +374,13 @@ def _effective_actions(
         seen.add(action.event_id)
         if action.source != stored.source:
             issues.append("corporate-action source differs from stored history")
+        if action.kind in _SPLITS and action.ex_date > fetched_at.date():
+            issues.append(f"split {action.ex_date} after latest fetched_at: full refetch required")
         if action.ex_date > last:
             continue
         effective.setdefault(action.ex_date, []).append(action)
         if action.known_at > fetched_at:
             issues.append("effective corporate action was not known at the retrieval cutoff")
-        if action.kind in _SPLITS and action.ex_date > fetched_at.date():
-            issues.append(f"split {action.ex_date} after latest fetched_at: full refetch required")
     return effective, issues
 
 
@@ -411,14 +418,20 @@ def _jump_issues(
         if len(splits) > 1:
             issues.append(f"multiple split events at {day} require review")
         split = splits[0].ratio if len(splits) == 1 else None
-        if split is not None and math.isclose(price_ratio, float(1 / split), rel_tol=1e-6):
+        log_return = math.log(current) - math.log(previous)
+        if split is not None and abs(log_return + math.log(float(split))) <= abs(log_return):
             issues.append(f"unadjusted split discontinuity at {day}: full refetch required")
         elif abs(price_ratio - 1) > threshold:
             cash = [a for a in matching if a.kind == CorporateActionKind.CASH_DIVIDEND]
-            explained_cash = adjustment == Adjustment.SPLIT and any(
-                a.cash_amount is not None
-                and math.isclose(current, previous - a.cash_amount, rel_tol=1e-6)
-                for a in cash
+            try:
+                total_cash = math.fsum(a.cash_amount for a in cash if a.cash_amount is not None)
+            except OverflowError:
+                total_cash = math.inf
+            explained_cash = (
+                adjustment == Adjustment.SPLIT
+                and bool(cash)
+                and math.isfinite(total_cash)
+                and math.isclose(current, previous - total_cash, rel_tol=1e-6)
             )
             if not explained_cash:
                 issues.append(f"unexplained 1-day move {price_ratio - 1:+.1%} on {day}")

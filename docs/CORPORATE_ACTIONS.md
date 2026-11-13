@@ -34,15 +34,23 @@ separate. Callers still need normal bar quality, freshness and required-history 
 
 Consistency policy proposed for the §14 clarification on issue18:
 
-- Evaluate events effective through the stored last session; future announced actions do not
-  retroactively invalidate that prefix. This is cache validation, not proof of event coverage.
+- First flag every supplied split whose ex-date is after the stored fetch date as requiring a
+  full refetch, even beyond the stored prefix. This preserves the existing §14 conservative
+  rule, including announced future splits; there is no evaluation-date argument to distinguish
+  them from splits already effective since the fetch. Other events are evaluated through the
+  stored last session. This is cache validation, not proof of event coverage.
 - A split-ratio discontinuity in **already SPLIT/ALL-adjusted** history is inconsistent even
   when a matching event explains the raw jump. Explaining a 100→25 move is not evidence that
   those observations share a basis. Require a complete authoritative refetch; never repair
   prices silently. A correctly normalized/refetched 25→25 history passes.
+  The split-day log return is compared to zero and the raw split basis change: if it is at
+  least as close to the raw change, flag it even below the generic jump threshold. This
+  recognizes fractional splits with a nonzero market return; it is not a proof that every
+  possible mixture can be identified from prices. Split ex-dates must be exchange sessions.
 - Unexplained moves beyond the fixed 35% default are flagged. A known cash-dividend drop can
   explain a price-return (`SPLIT`) series, but cannot explain an already dividend-adjusted
-  (`ALL`) series. Matching uses fixed 1e-6 relative tolerance, not parameter fitting.
+  (`ALL`) series. Same-day cash dividends are summed. Cash matching is best-effort and uses
+  fixed 1e-6 relative tolerance; market returns may still cause conservative rejection.
 - Missing/invalid input produces reasons/exceptions, not a default consistent result. No
   data-quality threshold or strategy is tuned against research performance.
 

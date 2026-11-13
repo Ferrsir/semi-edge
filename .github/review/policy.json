@@ -24,7 +24,9 @@
   "human_maintainers": [
     "Ferrsir"
   ],
-  "agent_identities": [],
+  "agent_identities": [
+    "Ferrisfy"
+  ],
   "restricted_paths": [
     ".github/**",
     "AGENTS.md",

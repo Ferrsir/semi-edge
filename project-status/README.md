@@ -4,7 +4,7 @@ Owner-private project status Site. This is a management dashboard, separate from
 
 ## Update data
 
-The app displays a timestamped snapshot of AGENTS.md and GitHub metadata, not an automatic live integration. Refresh using a locally authenticated GitHub CLI:
+The app displays a timestamped snapshot of BOARD.md and GitHub metadata, not an automatic live integration. Refresh using a locally authenticated GitHub CLI:
 
 ```powershell
 python scripts/refresh-snapshot.py --repo ..

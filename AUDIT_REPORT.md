@@ -305,6 +305,77 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Fix:** tests for batch approvals exhausting gross exposure and cash with exact sizes, equal-rank
   symbol ties, a rejected earlier duplicate, and a property test with pending BUY/SELL orders.
 
+### F-096 · P3 · Backtest entry could be stopped out better than its open (Claude review of #75; fixed in #80)
+- **Fix:** ADR-008 also invalidates the entry when `open_d ≤ stop`. Regression: `test_f096_open_below_stop_invalidates_even_if_slipped_fill_is_above`.
+
+### F-130 · P2 · ADR-008 broke the stated backtest/paper parity (Codex review, PR #80)
+- **Fix (spec):** ADR-008 is a backtest-only conservative adjustment. §6.3 documents the parity
+  exception (paper has no trustworthy opening price at fill time), and the §10 parity test excludes
+  exactly that case. §19 item 4 and ADR-008 are updated.
+- **F-131 (P2, Codex re-review):** the §18 checklist still claimed unconditional parity; it now carries the same exception.
+
+### F-120 · P2 · Recovery `unknown → staged` wrote a supplied broker id and trusted stale lookups (Codex review, PR #78)
+- **Reproduce (9060783):** recovery with `broker_order_id="known-broker-order"` succeeded and
+  stored that id. 404 lookup timestamps from before the submission attempt were accepted, and
+  so were lookups with no spacing evidence.
+- **Fix:** recovery refuses any `broker_order_id`, so the recovered row never has one. Every
+  lookup must be strictly after the order's last submission attempt (`submitted_at`). The
+  caller must supply `detail.monitor_cycle_seconds` (finite > 0), and consecutive lookups must
+  be at least that far apart; without it, recovery is refused.
+- **Regression:** `tests/safety/test_state_review_fixes.py::test_f120_*`.
+
+### F-121 · P2 · Weighted fill average could overflow to inf and be committed (Codex review, PR #78)
+- **Reproduce (9060783):** a 2-share activity at 1.5e308 gave a `fsum` of inf, so inf was
+  committed as `filled_avg_price` and `get_order` could no longer decode the row.
+- **Fix:** averages are computed exactly with `Fraction`. Every derived persisted price
+  (fill average, split-adjusted avg/stop/target/split_ratio) goes through `_derived_float`,
+  which requires finite > 0; otherwise it raises `StateStoreError` and the transaction rolls
+  back. `_apply_transition` re-checks the average before it writes.
+- **Regression:** `test_f121_weighted_average_never_overflows`,
+  `test_f121_non_finite_derived_split_price_rolls_back` (asserts an unchanged DB snapshot).
+
+### F-122 · P2 · Unknown target status raised without a RECONCILIATION halt (Codex review, PR #78)
+- **Reproduce (9060783):** `transition_order(cid, "done", ...)` raised `StateStoreError`, but
+  no halt row was recorded.
+- **Fix:** an unknown status is now an `illegal_transition` through the halting error path.
+  The halt is written after a rollback, and also when an outer transaction swallows the error.
+- **Regression:** `test_f122_*`.
+
+### F-123 · P2 · `ingest_order_fills` updated `orders` outside `transition_order` (Codex review, PR #78)
+- **Reproduce (9060783):** `store.py` had two `UPDATE orders` sites, and `transition_order`
+  could not record a `filled_qty` increase. Both contradict §5.1 ("no other UPDATE path";
+  "filled_qty may only increase").
+- **Fix:** `_apply_transition` is now the only `UPDATE orders` path. `transition_order` uses it
+  after validating the edge, and it accepts any `filled_qty` ≥ the stored value that equals the
+  ingested-fill watermark; a decrease halts. Ingestion records fills through the same path with
+  the status unchanged (`event="fills_ingested"`, from/to = current status). The spec is
+  unchanged: the implementation now conforms to it.
+- **Regression:** `test_f123_orders_rows_have_exactly_one_update_path` (AST) and
+  `test_f123_ingestion_records_filled_qty_through_the_transition_path`.
+
+### F-140 · P2 · Recovery spacing could round to zero (Codex re-review, PR #78)
+- **Reproduce:** `monitor_cycle_seconds=1e-10` became `timedelta(0)`, so two identical post-submission lookups allowed `unknown → staged`.
+- **Fix:** the cycle must be finite and ≥ 1 s, and lookups must be strictly increasing and at least one cycle apart.
+- **Regression:** two new cases in `test_f120_recovery_needs_post_submission_spaced_evidence`.
+- **F-141 (P2) / F-142 (P3), Codex re-review:** `timedelta` rounding (a 1.0000004 s cycle accepted 1 s gaps) and overflow (1e308) are avoided by comparing `total_seconds()` with the unrounded cycle; regressions added.
+- **F-143 (P2), Codex re-review:** `total_seconds()` float rounding accepted a 1,000,002 µs gap for a 1.000002 s cycle; the comparison is now exact (integer microseconds vs `Fraction(cycle)`). Regression `test_f143_spacing_uses_exact_microseconds`.
+- **F-144 (P2), Codex re-review:** `fromisoformat` truncated a 7-digit fraction, inflating a 0.9999991 s gap to 1 s. Lookup timestamps must now match an exact ISO form (≤ 6 fractional digits, `Z`/`±HH:MM` offset). Regression `test_f144_lookup_timestamps_must_not_lose_precision`.
+
+### F-077 · P2 · A truncated diff could hide excluded reviewer-config changes (Codex review, PR #73)
+- **Reproduce:** pad an earlier file so that a later `z/.claude/settings.json` change falls beyond
+  `MAX_DIFF_CHARS`. The sanitized review copy omits that path, so the change was in neither the prompt nor the copy.
+- **Fix:** if the diff is truncated and any changed path has an excluded component (case-insensitive),
+  the review fails closed with a request to split the PR.
+- **Regression:** `tests/governance/test_ai_review.py::test_truncated_diff_hiding_excluded_config_fails_closed`
+  (the reviewer ran on `fcdb423`); a large ordinary diff is still reviewed.
+
+### F-078 / F-079 · P2 · Rename sources and Git-quoted paths bypassed the F-077 guard (Codex re-review, PR #73)
+- **Reproduce:** `.claude/settings.json → ordinary.txt` showed only the destination in `--name-only`.
+  `.claude/é.json` was reported quoted (`".claude/Ã©.json"`), so the component check missed it.
+- **Fix:** the guard lists paths with `git diff --no-renames --name-only -z` (both rename endpoints,
+  NUL-delimited, unquoted).
+- **Regression:** `test_f078_renamed_excluded_config_fails_closed`, `test_f079_git_quoted_excluded_path_fails_closed`.
+
 ---
 
 ## Speculative concerns (not demonstrated; tracked for the relevant phase)
@@ -419,3 +490,10 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - Missing ledgers raise explicitly; empty writes do not certify no events. Exact count persistence uses strict JSON payloads in schema-versioned Parquet; conflicting immutable event terms/sources reject; atomic failures preserve original bytes.
 - Proposed P2 contract clarification: a raw split-ratio discontinuity in already split-adjusted bars remains inconsistent even if explained by a matching split. The old section14 wording conflicted with its no-false-stop/breakout acceptance. A hand-written mixed snapshot fails the new proposed check; a complete normalized refetch passes. This is a proposed data-policy tightening for Claude review, not a claimed defect in a previously shipped checker. It is not activated in scanner/engine consumers by this core PR.
 - Evidence:66 focused safety tests pass; initial full suite1244 passed/1 credentialed smoke skipped; post-rebase1273 passed/1 skipped; Ruff/format/mypy/Bandit clean. Fixtures include reverse-split feature breakout and a same-basis stop-level harness, not a complete backtest lifecycle. #18 remains open for verified knowledge-source provisioning, coverage policy and scanner/backtest/engine integration. All fixtures hand-written.
+## PR #77 review fixes (F-110..F-113)
+- **F-110 / P2:** apply the existing §14 split-after-fetched_at refusal before discarding events beyond the stored last session. This deliberately implements review option (a), with no new as_of argument: announced future splits also require refetch under the conservative existing rule. Removed the contradictory prefix exemption. The exact Jan2..5/Jan8 regression fails on 96d6c65 and passes now.
+- **F-111 / P2:** on a split ex-date compare the log price return to no basis change and to the raw split basis change. At least as close to the raw change means mixed-basis suspicion and full refetch, even below the 35% generic threshold. Three fractional forward/reverse split regressions with a +0.5% market return fail on 96d6c65 and pass now; adjusted controls stay consistent. Log returns use the difference of price logs, avoiding ratio-underflow errors.
+- **F-112 / P3:** sum distinct same-day cash dividend amounts with `math.fsum` before testing the price-return explanation. Overflow remains unexplained/fail-closed; ALL-adjusted history cannot use cash dividends as an explanation. The 40+5 /100-to-55 regression fails on 96d6c65 and passes now. Fixed 1e-6 cash matching remains best-effort and conservatively rejects some market-return cases, documented explicitly.
+- **F-113 / P3:** split/reverse-split constructors now require supported exchange-session ex-dates, including ledger loading. Four holiday/weekend regressions fail on 96d6c65 and pass now.
+- Validation after rebasing: `pytest -q -p no:cacheprovider` passed1666 tests/two skips (Windows symlink and opt-in paper smoke), with13 pandas deprecation warnings. Ruff check/format, mypy (66 source files) and Bandit passed. Focused suite74 passed; all nine review regressions failed on the original head. No strategy/risk-ceiling change, real data, network request, credential or consumer activation. #18 remains open for verified coverage/source provisioning and integration. Claude exact-head re-review is required; publishing awaits the bot connection.
+

@@ -82,7 +82,7 @@ def test_truncated_or_invalid_github_data_fails(
 def test_failed_refresh_preserves_previous_snapshot(
     snapshot_module: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    (tmp_path / "AGENTS.md").write_text(
+    (tmp_path / "BOARD.md").write_text(
         BOARD.replace("REVIEW (PR #36)", "unknown"), encoding="utf-8"
     )
     destination = tmp_path / "snapshot.js"
@@ -97,7 +97,7 @@ def test_failed_refresh_preserves_previous_snapshot(
 def test_successful_refresh_replaces_snapshot(
     snapshot_module: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    (tmp_path / "AGENTS.md").write_text(BOARD, encoding="utf-8")
+    (tmp_path / "BOARD.md").write_text(BOARD, encoding="utf-8")
     destination = tmp_path / "snapshot.js"
     monkeypatch.setattr(snapshot_module.shutil, "which", lambda _: "gh")
     monkeypatch.setattr(
@@ -113,3 +113,17 @@ def test_closed_roadmap_issue_reflects_github(snapshot_module: ModuleType) -> No
     issues = [{**i, "state": "CLOSED"} for i in ISSUES]
     result = snapshot_module.build_snapshot(BOARD, issues, [], datetime(2026, 1, 1, tzinfo=UTC))
     assert all(task["status"] == "DONE" for task in result["tasks"][1:])
+
+
+def test_refresh_fails_closed_without_board_file(
+    snapshot_module: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The board moved out of AGENTS.md (#93); an AGENTS.md board must not be read instead."""
+    (tmp_path / "AGENTS.md").write_text(BOARD, encoding="utf-8")
+    destination = tmp_path / "snapshot.js"
+    destination.write_text("previous snapshot", encoding="utf-8")
+    monkeypatch.setattr(snapshot_module.shutil, "which", lambda _: "gh")
+    monkeypatch.setattr(snapshot_module, "read_github", lambda *args: ISSUES)
+    with pytest.raises(snapshot_module.SnapshotError, match=r"BOARD.md"):
+        snapshot_module.refresh_snapshot(tmp_path, destination)
+    assert destination.read_text() == "previous snapshot"
