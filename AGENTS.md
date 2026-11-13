@@ -66,9 +66,9 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | ID | Issue | Task | Owner | Status | Depends on |
 |---|---|---|---|---|---|
 | T0 | #34, #8 | Consolidate governance + foundation + audit fixes into `main` | claude | DONE (PR #33, #35) | — |
-| T1 | #9, #10 | Data layer: calendar, Alpaca source, synthetic source, Parquet store, validation | codex | REVIEW (PR #36) `feature/9-data-layer` | T0 |
-| T2 | #11, #12 | Indicators, `momentum_v1` features/evaluation/score, position sizing | claude | IN PROGRESS (claude) `feature/11-signals-strategy` | T0 |
-| T3 | #13 | Read-only paper account snapshot (`semiedge.broker.account`) | claude | IN PROGRESS (claude) F-009 fix on PR #39 `feature/13-paper-account` | T0 |
+| T1 | #9, #10 | Data layer: calendar, Alpaca source, synthetic source, Parquet store, validation | codex | REVIEW (PR #36, F-012 fix by claude awaits Codex review) `feature/9-data-layer` | T0 |
+| T2 | #11, #12 | Indicators, `momentum_v1` features/evaluation/score, position sizing | claude | IN PROGRESS (claude) `feature/11-signals-strategy`, PR next | T0 |
+| T3 | #13 | Read-only paper account snapshot (`semiedge.broker.account`) | claude | REVIEW (PR #39 @ da04e38, F-009 fixed; awaits Codex re-review) | T0 |
 | T3b | #15–#29 | Phase 2–4 interface spec (backtest, risk, execution, state, reconcile, engine, dashboard) | claude | IN PROGRESS (claude) `feature/15-phase2-4-spec` | T0 |
 | T4 | #14 | Signal report + CLI (`scan`, `data fetch/status`, `account`, `config check`) | claude | READY | T1, T2, T3 |
 | T5 | #15 | Event-driven backtest engine: next-open fills, costs, slippage | codex | READY | T1, T2 |
@@ -85,7 +85,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T16 | #29 | Security: secret handling, redaction, prompt-injection tests | codex | READY | T4 |
 | T17 | #18 | Corporate actions tracking | codex | READY | T1 |
 | A37 | #37 | Audit: reject missing runtime configuration sections | codex | DONE (PR #38) | T0 |
-| A40 | #40 | Harden shared paper endpoint guard against disguised URL objects | codex | REVIEW (PR #41) | T0 |
+| A40 | #40 | Harden shared paper endpoint guard against disguised URL objects | codex | DONE (PR #41, merged dfece2a) | T0 |
 | T42 | #42 | Offline fixture CSV-to-Parquet ingestion pipeline | codex | REVIEW (PR #45) `feature/42-offline-ingestion` | T0 |
 | T46 | #46 | Offline point-in-time split normalization core (subtask of #18) | codex | IN PROGRESS (codex) | T0 |
 | H1 | #20 | Verified earnings calendar source | human | BLOCKED (owner must choose a data source) | — |
@@ -94,9 +94,9 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 ## Review queue
 | PR | Task | Author | Reviewer | Verdict |
 |---|---|---|---|---|
-| #36 | T1 | codex | claude | FAIL at 492b75e (P1 F-012). Claude fix `64eb0b4` being applied to the PR branch; the fix commit then needs **Codex** review |
-| #39 | T3 | claude | codex | FAIL at ad383a7 (P2 F-009). Claude fixing; then **Codex** re-review |
-| #41 | A40 | codex | claude | PASS at 04f38a3; lead merging |
+| #36 | T1 | codex | claude → codex | Claude FAIL at 492b75e (P1 F-012) cleared by Claude fix `cc3737e`+`b2c43f0` on the PR branch; **Codex: review `492b75e..b2c43f0`** |
+| #39 | T3 | claude | codex | F-009 fixed at `da04e38` (rebased); **Codex: re-review** |
+| #45 | T42 | codex | claude | in progress (claude) |
 
 ## Discussion log (append-only, newest last; `YYYY-MM-DD HH:MM UTC · agent · note`)
 - 2026-10-30 15:10 UTC · claude · Took over as lead/integrator at the owner's request. Owner
@@ -160,3 +160,11 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 - 2026-11-13 01:54 UTC · codex · Finished preserved #42 WIP, rebased onto dfece2a, published PR #45 at 5df112e; Claude cross-provider review requested. Validation: 261 tests, Ruff check/format and mypy passed; pre-rebase non-integration coverage 85%. No network or credentials in tests. Claude priorities acknowledged: F-012 on #36 then F-009 on #39; no edits to Claude worktrees.
 
 - 2026-11-13 01:58 UTC ? codex ? Claimed #46: offline split normalization core using merged bar schema, feature/46-split-normalization in sibling split-normalization worktree. No edits to Claude worktrees or #36/#39 fixes. Pure hand-written fixtures only; vendor/event-coverage and portfolio integration remain #18 follow-ups. Claude cross-review requested on completion.
+
+- 2026-11-13 02:40 UTC · claude · #41 squash-merged (`dfece2a`). #36: F-012 fix on the PR branch, plus
+  `b2c43f0` closing an ex-date gap in my first fix; Codex review of those two commits requested. #39:
+  F-009 fixed at `da04e38`, with the six fake-transport regressions shown failing on the old code; Codex
+  re-review requested. Pushed `feature/15-phase2-4-spec` (`badef76`), which existed only in `.t3`.
+  T3 orchestration is retired; work runs from `C:/Users/ferri/projects/semi-edge` and
+  `../semi-edge.worktrees/`. The `.t3` clone and all its worktrees are kept unmodified; its branches
+  are also kept as local `refs/t3-backup/*` in the primary clone. Claude reviewing #45 next.
