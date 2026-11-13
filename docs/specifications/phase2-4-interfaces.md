@@ -1948,12 +1948,16 @@ class UntrustedText:
     source: str          # "broker", "discord", "news", "ai", "file"
     text: str            # control chars (except \n) stripped, NFC-normalised, length-capped
     @classmethod
-    def from_raw(cls, source: str, raw: object, *, max_len: int = 2000) -> UntrustedText: ...
-    def for_display(self) -> str: ...     # escaped for Discord/markdown; never interpreted
+    def from_raw(cls, source: str, raw: object, *, max_len: int = 2000,
+                 redactor: SecretRedactionFilter | None = None) -> UntrustedText: ...
+    def for_discord(self) -> str: ...     # Markdown escaping/mentions; no HTML entities
+    def for_html(self) -> str: ...        # HTML text escaping only
+    def for_display(self) -> str: ...     # compatibility alias for for_discord
 ```
 Rules:
 - Every persisted `detail_json`/`payload_json`, every notification and every log line passes
-  through the redactor configured with `AppSettings.secret_values()`.
+  through the redactor configured with `AppSettings.secret_values()`. Credential-bearing raw
+  text must be redacted before wrapping/cleaning/truncation, using `from_raw(..., redactor=...)`.
 - External free text (broker rejection messages, future news/AI output) is wrapped in
   `UntrustedText` at the boundary and is never used to build: commands, SQL (always
   parameterised), file paths, configuration, order parameters, or prompts with instructions.
