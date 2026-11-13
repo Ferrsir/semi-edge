@@ -2046,7 +2046,7 @@ Policy (documented in DECISIONS.md by T17):
 - A one-session close-to-close move beyond `±jump_threshold` with no matching action → issue
   (ineligible until a human or a matching action explains it). Ratio-consistent moves on a
   split ex-date with matching action are **not** accepted in already SPLIT/ALL-adjusted bars:
-  an explained raw split discontinuity still means inconsistent share bases (proposed F-077
+  an explained raw split discontinuity still means inconsistent share bases (proposed corporate-action policy clarification
   clarification on #18). Require full refetch. A known cash-dividend drop may explain SPLIT
   price-return history but not ALL-adjusted history. Events effective after the stored last
   session do not invalidate the historical prefix; ordinary freshness gates remain separate.
