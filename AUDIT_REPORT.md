@@ -291,6 +291,20 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Fix (spec):** one monotonic sequence on a fresh DB (empty at B=40 → [A(30)] at B=50 →
   [A(30), C(20)] at B=50), with replay and provisional-notional assertions at every stage.
 
+### F-061 · P2 · R02 did not validate position entry prices (Codex review, PR #69)
+- **Reproduce:** a `PositionView("ZZZ", 1, nan, 100.0)` passed R02, so the proposal could be approved.
+- **Fix:** R02 requires `avg_entry_price` (as well as `mark_price`) to be finite and > 0.
+- **Regression:** `test_f061_position_entry_price_must_be_finite_positive` (nan, ±inf, 0, negative).
+
+### F-062 · P2 · `max_positions=3.5` via `model_construct` passed construction (Codex review, PR #69)
+- **Reproduce:** with three positions, R09 evaluated `3 < 3.5` and approved a fourth.
+- **Fix:** the constructor requires `max_positions` to be a positive builtin int.
+- **Regression:** `test_f062_max_positions_must_be_a_positive_int` (3.5, 4.0, True, 0, -1).
+
+### F-063 · P3 · Risk-manager tests missed pending orders and batch exhaustion (Codex review, PR #69)
+- **Fix:** tests for batch approvals exhausting gross exposure and cash with exact sizes, equal-rank
+  symbol ties, a rejected earlier duplicate, and a property test with pending BUY/SELL orders.
+
 ---
 
 ## Speculative concerns (not demonstrated; tracked for the relevant phase)
