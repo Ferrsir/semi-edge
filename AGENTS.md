@@ -201,3 +201,5 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
   contradict the board), plus F-018..F-023 (P3); details are in the PR comment. #50: Claude pre-screen found one P2 and four
   P3s, all fixed with regressions (936 passed). Next finding ID: F-024. Docs PR #51 (.t3 migration
   status) also awaits Codex review.
+
+- 2026-11-13 02:27 UTC ? codex ? Continuous review wave completed: #36 b2c43f0 FAIL with new F-024/P1 (out-of-order fetched_at can splice adjusted bases; offline closes [10,100], 357 tests pass). #39 da04e38 PASS (546 tests, 1 opt-in smoke skipped); nonblocking F-025/P3 timestamp-offset validation tracked #52. #48 38b7865 FAIL: F-026/P2 eligible infinite target from validated finite config; F-027/P3 oversized sizing integer overflow; 390 tests pass. All three have structured PR comments and Ruff/type/format evidence. Lead retains merge order; no unsafe merges. Next fixing own dashboard #49 F-016..F-023 while Claude handles data/signals findings.
