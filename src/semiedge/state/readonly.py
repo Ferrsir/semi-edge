@@ -111,6 +111,28 @@ class ReadOnlyStateStore(StateReaderBase):
             params=(run_id,),
         )
 
+    def recent_runs(self, limit: int = 100) -> pd.DataFrame:
+        """Persisted run metadata, newest first, for operational monitoring."""
+        return pd.read_sql_query(
+            "SELECT run_id, kind, mode, status, started_at, ended_at, detail FROM runs "
+            "ORDER BY started_at DESC, run_id DESC LIMIT ?",
+            self._connection(),
+            params=(_check_limit(limit),),
+        )
+
+    def latest_signal_run_id(self) -> str | None:
+        """Newest run containing persisted evaluations, irrespective of job kind."""
+        row = (
+            self._connection()
+            .execute(
+                "SELECT r.run_id FROM runs r WHERE EXISTS "
+                "(SELECT 1 FROM signals s WHERE s.run_id = r.run_id) "
+                "ORDER BY r.started_at DESC, r.run_id DESC LIMIT 1"
+            )
+            .fetchone()
+        )
+        return None if row is None else str(row[0])
+
     def equity_snapshots(self) -> pd.DataFrame:
         return pd.read_sql_query(
             "SELECT ts, session, equity, last_equity, cash, long_market_value, source "
