@@ -224,7 +224,7 @@ def test_self_transitions_only_record_new_fills_or_legs(harness: Harness) -> Non
     harness.store.transition_order(
         entry, "partially_filled", now=LATER, event="legs", legs_json='[{"id": "x"}]'
     )
-    with pytest.raises(StateStoreError, match="not the ingested local cumulative"):
+    with pytest.raises(StateStoreError, match="ingested fills"):
         harness.store.transition_order(entry, "filled", now=LATER, event="sync", filled_qty=100)
     with pytest.raises(StateStoreError, match="cannot mark filled"):
         harness.store.transition_order(entry, "filled", now=LATER, event="sync")
@@ -261,17 +261,21 @@ def test_recovery_exception_unknown_to_staged(harness: Harness) -> None:
     store = harness.store
     store.transition_order(entry, "submitting", now=LATER, event="begin_submit")
     store.transition_order(entry, "unknown", now=LATER, event="submit_timeout")
+    first = LATER + timedelta(minutes=1)
+    second = LATER + timedelta(minutes=6)
     good = {
-        "lookup_404_at": [LATER.isoformat(), (LATER + timedelta(minutes=5)).isoformat()],
+        "lookup_404_at": [first.isoformat(), second.isoformat()],
         "absent_from_list_orders_all": True,
+        "monitor_cycle_seconds": 300,
     }
-    when = LATER + timedelta(minutes=6)
+    when = LATER + timedelta(minutes=7)
     bad_details = [
-        {"lookup_404_at": [LATER.isoformat()], "absent_from_list_orders_all": True},
+        {**good, "lookup_404_at": [first.isoformat()]},
         {**good, "absent_from_list_orders_all": False},
-        {**good, "lookup_404_at": [LATER.isoformat(), LATER.isoformat()]},
-        {**good, "lookup_404_at": ["garbage", LATER.isoformat()]},
-        {**good, "lookup_404_at": [LATER.isoformat(), (when + timedelta(hours=1)).isoformat()]},
+        {**good, "lookup_404_at": [first.isoformat(), first.isoformat()]},
+        {**good, "lookup_404_at": ["garbage", first.isoformat()]},
+        {**good, "lookup_404_at": [first.isoformat(), (when + timedelta(hours=1)).isoformat()]},
+        {k: v for k, v in good.items() if k != "monitor_cycle_seconds"},
     ]
     for detail in bad_details:
         with pytest.raises(StateStoreError, match="recovery"):
@@ -301,8 +305,16 @@ def test_recovery_exception_unknown_to_staged(harness: Harness) -> None:
     store.ingest_order_fills(
         entry, broker_filled_qty=5, broker_avg_price=100.0, activities=None, now=when
     )
+    late = when + timedelta(minutes=10)
+    again = {
+        **good,
+        "lookup_404_at": [
+            (when + timedelta(minutes=1)).isoformat(),
+            (when + timedelta(minutes=6)).isoformat(),
+        ],
+    }
     with pytest.raises(StateStoreError, match="recovery refused"):
-        store.transition_order(entry, "staged", now=when, event="recovered_unsent", detail=good)
+        store.transition_order(entry, "staged", now=late, event="recovered_unsent", detail=again)
 
 
 def test_events_record_every_transition_and_errors(harness: Harness) -> None:
@@ -339,5 +351,5 @@ def test_events_record_every_transition_and_errors(harness: Harness) -> None:
         harness.store.transition_order(
             cid("entry", "AMD"), "withdrawn", now=LATER, event="x", detail={"v": float("inf")}
         )
-    with pytest.raises(StateStoreError, match="unknown order status"):
+    with pytest.raises(StateStoreError, match="illegal_transition"):
         harness.store.transition_order(cid("entry", "AMD"), "done", now=LATER, event="x")  # type: ignore[arg-type]

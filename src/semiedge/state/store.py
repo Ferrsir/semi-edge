@@ -29,7 +29,7 @@ import uuid
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from enum import Enum
 from fractions import Fraction
 from pathlib import Path
@@ -764,30 +764,43 @@ class StateStore(StateReaderBase):
         legs_json: str | None = None,
         detail: Mapping[str, object] | None = None,
     ) -> None:
-        """The only status-changing path (§6.4); writes ``orders`` + ``order_events`` together."""
-        if to_status not in ORDER_STATUSES:
-            raise StateStoreError(f"unknown order status {to_status!r}")
-        event = text(event, "event", max_len=64)
+        """The only status-changing path (§6.4); writes ``orders`` + ``order_events`` together.
+
+        An unknown or disallowed target status is an illegal transition: ``StateStoreError``
+        plus a RECONCILIATION halt (F-122). ``filled_qty`` may increase only to the watermark of
+        the ingested fills (F-123); a decrease halts.
+        """
         ts = ts_text(now, "now")
+        event = text(event, "event", max_len=64)
         if broker_status is not None:
             broker_status = text(broker_status, "broker_status", max_len=64)
         detail_obj, detail_json, legs_canonical = _transition_payload(detail, legs_json)
         with self._txn() as conn:
+            if to_status not in ORDER_STATUSES:
+                raise self._halting(
+                    "illegal_transition",
+                    f"{client_order_id}: unknown target status {to_status!r}",
+                    ts,
+                )
             order = self._order(client_order_id)
             current = order.status
             if to_status not in ALLOWED[current]:
                 raise self._halting(
                     "illegal_transition", f"{client_order_id}: {current} -> {to_status}", ts
                 )
-            self._check_fill_fields(order, filled_qty, filled_avg_price, ts)
-            new_broker_id = self._resolve_broker_id(conn, order, broker_order_id, ts)
-            if to_status == "filled" and order.filled_qty != order.intent.qty:
+            if (current, to_status) == RECOVERY_EDGE and broker_order_id is not None:
                 raise StateStoreError(
-                    f"{client_order_id}: cannot mark filled at {order.filled_qty}/"
+                    f"{client_order_id}: recovery refused, a recovered row has no broker order id"
+                )
+            new_filled = self._check_fill_fields(order, filled_qty, filled_avg_price, ts)
+            new_broker_id = self._resolve_broker_id(conn, order, broker_order_id, ts)
+            if to_status == "filled" and new_filled != order.intent.qty:
+                raise StateStoreError(
+                    f"{client_order_id}: cannot mark filled at {new_filled}/"
                     f"{order.intent.qty}; ingest the broker fills first"
                 )
             if to_status == current:
-                self._check_self_transition(conn, order, legs_canonical)
+                self._check_self_transition(conn, order, legs_canonical, new_filled)
             submitted_at = (
                 ts_text(order.submitted_at, "submitted_at") if order.submitted_at else None
             )
@@ -801,54 +814,109 @@ class StateStore(StateReaderBase):
             error = detail_obj.get("error")
             if isinstance(error, str) and error:
                 last_error = error[:_MAX_REASON]
-            conn.execute(
-                "UPDATE orders SET status = ?, broker_order_id = ?, legs_json = ?, "
-                "submitted_at = ?, updated_at = ?, last_error = ? WHERE client_order_id = ?",
-                (
-                    to_status,
-                    new_broker_id,
-                    legs_canonical if legs_canonical is not None else order.legs_json,
-                    submitted_at,
-                    ts,
-                    last_error,
-                    client_order_id,
-                ),
-            )
-            _insert_event(
+            self._apply_transition(
                 conn,
-                client_order_id,
+                order,
+                to_status=to_status,
                 ts=ts,
                 event=event,
-                from_status=current,
-                to_status=to_status,
                 broker_status=broker_status,
-                filled_qty=order.filled_qty,
-                price=order.filled_avg_price,
+                filled_qty=new_filled,
+                filled_avg_price=order.filled_avg_price,
+                broker_order_id=new_broker_id,
+                legs_json=legs_canonical if legs_canonical is not None else order.legs_json,
+                submitted_at=submitted_at,
+                last_error=last_error,
                 detail_json=detail_json,
             )
 
+    def _apply_transition(
+        self,
+        conn: sqlite3.Connection,
+        order: OrderRecord,
+        *,
+        to_status: OrderStatus,
+        ts: str,
+        event: str,
+        broker_status: str | None,
+        filled_qty: int,
+        filled_avg_price: float | None,
+        broker_order_id: str | None,
+        legs_json: str,
+        submitted_at: str | None,
+        last_error: str | None,
+        detail_json: str,
+    ) -> None:
+        """The ONE ``UPDATE orders`` path (§5.1, F-123), used by ``transition_order`` and by
+        ``ingest_order_fills`` (which records fills with the status unchanged). Writes the
+        ``order_events`` row in the same transaction and re-checks the fill invariants."""
+        cid = order.intent.client_order_id
+        if filled_qty < order.filled_qty:
+            raise self._halting(
+                "filled_qty_decrease", f"{cid}: {order.filled_qty} -> {filled_qty}", ts
+            )
+        watermark = _watermark(self._fill_rows(conn, cid))
+        if filled_qty != watermark:
+            raise StateStoreError(
+                f"{cid}: filled_qty {filled_qty} is not consistent with the ingested fills "
+                f"(watermark {watermark}); ingest fills first (ingest_order_fills)"
+            )
+        if filled_avg_price is not None and not (
+            math.isfinite(filled_avg_price) and filled_avg_price > 0
+        ):
+            raise StateStoreError(f"{cid}: derived filled_avg_price is not finite and > 0")
+        if (filled_qty > 0) != (filled_avg_price is not None):
+            raise StateStoreError(f"{cid}: filled_avg_price must be set exactly when filled")
+        conn.execute(
+            "UPDATE orders SET status = ?, broker_order_id = ?, filled_qty = ?, "
+            "filled_avg_price = ?, legs_json = ?, submitted_at = ?, updated_at = ?, "
+            "last_error = ? WHERE client_order_id = ?",
+            (
+                to_status,
+                broker_order_id,
+                filled_qty,
+                filled_avg_price,
+                legs_json,
+                submitted_at,
+                ts,
+                last_error,
+                cid,
+            ),
+        )
+        _insert_event(
+            conn,
+            cid,
+            ts=ts,
+            event=event,
+            from_status=order.status,
+            to_status=to_status,
+            broker_status=broker_status,
+            filled_qty=filled_qty,
+            price=filled_avg_price,
+            detail_json=detail_json,
+        )
+
     def _check_fill_fields(
         self, order: OrderRecord, filled_qty: object, filled_avg_price: object, ts: str
-    ) -> None:
-        """Fill quantities/prices enter only through ingest_order_fills; here they must match."""
+    ) -> int:
+        """The filled qty to record: an explicit value may only increase (a decrease halts)
+        and must match the ingested fills (checked in ``_apply_transition``)."""
         cid = order.intent.client_order_id
+        new_filled = order.filled_qty
         if filled_qty is not None:
             if not is_int(filled_qty) or cast(int, filled_qty) < 0:
                 raise StateStoreError("filled_qty must be an int >= 0")
-            if cast(int, filled_qty) < order.filled_qty:
+            new_filled = cast(int, filled_qty)
+            if new_filled < order.filled_qty:
                 raise self._halting(
-                    "filled_qty_decrease", f"{cid}: {order.filled_qty} -> {filled_qty}", ts
-                )
-            if filled_qty != order.filled_qty:
-                raise StateStoreError(
-                    f"{cid}: filled_qty {filled_qty} is not the ingested local cumulative "
-                    f"{order.filled_qty}; ingest fills first (ingest_order_fills)"
+                    "filled_qty_decrease", f"{cid}: {order.filled_qty} -> {new_filled}", ts
                 )
         if filled_avg_price is not None:
             price = _positive_price(filled_avg_price, "filled_avg_price")
             stored = order.filled_avg_price
             if stored is None or not math.isclose(price, stored, rel_tol=1e-9):
                 raise StateStoreError(f"{cid}: filled_avg_price differs from the ingested fills")
+        return new_filled
 
     def _resolve_broker_id(
         self, conn: sqlite3.Connection, order: OrderRecord, broker_order_id: object, ts: str
@@ -873,18 +941,18 @@ class StateStore(StateReaderBase):
         return new_id
 
     def _check_self_transition(
-        self, conn: sqlite3.Connection, order: OrderRecord, legs: str | None
+        self, conn: sqlite3.Connection, order: OrderRecord, legs: str | None, filled: int
     ) -> None:
         """Self-transitions only record new fills or new legs (§5.1)."""
         if legs is not None and legs != order.legs_json:
             return
         row = conn.execute(
             "SELECT filled_qty FROM order_events WHERE client_order_id = ? AND "
-            "to_status IS NOT NULL ORDER BY id DESC LIMIT 1",
+            "to_status IS NOT NULL AND event <> 'fills_ingested' ORDER BY id DESC LIMIT 1",
             (order.intent.client_order_id,),
         ).fetchone()
         recorded = row[0] if row is not None and row[0] is not None else 0
-        if order.filled_qty > recorded:
+        if filled > recorded:
             return
         raise StateStoreError(
             f"{order.intent.client_order_id}: {order.status} -> {order.status} records no new "
@@ -935,28 +1003,27 @@ class StateStore(StateReaderBase):
         ).fetchone()[0]
         if fills:
             raise StateStoreError(f"{cid}: recovery refused, fill rows exist")
+        if order.submitted_at is None:
+            raise StateStoreError(f"{cid}: recovery refused, no recorded submission attempt")
         lookups = detail.get("lookup_404_at")
         if not isinstance(lookups, list) or len(lookups) < 2:
-            raise StateStoreError(f"{cid}: recovery needs two confirmed 404 lookups")
-        parsed: list[datetime] = []
-        for value in lookups:
-            try:
-                stamp = datetime.fromisoformat(cast(str, value))
-            except (TypeError, ValueError):
-                raise StateStoreError(
-                    f"{cid}: recovery refused, lookup timestamps must be ISO datetimes"
-                ) from None
-            if stamp.tzinfo is None or stamp > now:
-                raise StateStoreError(
-                    f"{cid}: recovery refused, lookup timestamps must be aware and <= now"
-                )
-            parsed.append(stamp)
-        if any(b <= a for a, b in itertools.pairwise(parsed)):
+            raise StateStoreError(f"{cid}: recovery refused, needs two confirmed 404 lookups")
+        cycle = detail.get("monitor_cycle_seconds")
+        if not is_finite(cycle) or cast(float, cycle) <= 0:
             raise StateStoreError(
-                f"{cid}: recovery refused, lookup timestamps must be strictly increasing"
+                f"{cid}: recovery refused, needs monitor_cycle_seconds (finite > 0) as "
+                "spacing evidence"
+            )
+        spacing = timedelta(seconds=float(cast(float, cycle)))
+        parsed = _recovery_lookups(cid, lookups, order.submitted_at, now)
+        if any(b - a < spacing for a, b in itertools.pairwise(parsed)):
+            raise StateStoreError(
+                f"{cid}: recovery refused, lookups must be at least one monitor cycle apart"
             )
         if detail.get("absent_from_list_orders_all") is not True:
-            raise StateStoreError(f"{cid}: recovery needs absence from list_orders(status='all')")
+            raise StateStoreError(
+                f"{cid}: recovery refused, needs absence from list_orders(status='all')"
+            )
 
     # ------------------------------------------------------------ fills (§6.4, F-038/F-044/F-046)
 
@@ -1020,27 +1087,28 @@ class StateStore(StateReaderBase):
                 rows = self._fill_rows(conn, cid)
                 w = b
             avg_price = _order_avg_price(rows, avg, order.filled_avg_price)
-            if (w, avg_price) != (order.filled_qty, order.filled_avg_price):
-                conn.execute(
-                    "UPDATE orders SET filled_qty = ?, filled_avg_price = ?, updated_at = ? "
-                    "WHERE client_order_id = ?",
-                    (w, avg_price, ts, cid),
-                )
-            if inserted or superseded:
-                detail = dumps(
-                    {"broker_filled_qty": b, "inserted": inserted, "superseded": superseded}
-                )
-                _insert_event(
+            changed = (w, avg_price) != (order.filled_qty, order.filled_avg_price)
+            if inserted or superseded or changed:
+                self._apply_transition(
                     conn,
-                    cid,
+                    order,
+                    to_status=order.status,  # fills are recorded; the status is unchanged
                     ts=ts,
                     event="fills_ingested",
-                    from_status=None,
-                    to_status=None,
                     broker_status=None,
                     filled_qty=w,
-                    price=avg_price,
-                    detail_json=detail,
+                    filled_avg_price=avg_price,
+                    broker_order_id=order.broker_order_id,
+                    legs_json=order.legs_json,
+                    submitted_at=(
+                        None
+                        if order.submitted_at is None
+                        else ts_text(order.submitted_at, "submitted_at")
+                    ),
+                    last_error=order.last_error,
+                    detail_json=dumps(
+                        {"broker_filled_qty": b, "inserted": inserted, "superseded": superseded}
+                    ),
                 )
             return FillIngestResult(
                 added_qty=w - w_old,
@@ -1202,10 +1270,10 @@ class StateStore(StateReaderBase):
                 "split_ratio = ?, updated_at = ? WHERE symbol = ?",
                 (
                     qty_after,
-                    float(Fraction(position.avg_entry_price) / ratio),
-                    float(Fraction(position.stop) / ratio),
-                    float(Fraction(position.target) / ratio),
-                    float(Fraction(position.split_ratio) * ratio),
+                    _derived_float(Fraction(position.avg_entry_price) / ratio, "avg_entry_price"),
+                    _derived_float(Fraction(position.stop) / ratio, "stop"),
+                    _derived_float(Fraction(position.target) / ratio, "target"),
+                    _derived_float(Fraction(position.split_ratio) * ratio, "split_ratio"),
                     ts,
                     symbol,
                 ),
@@ -1625,7 +1693,43 @@ def _order_avg_price(
     if not finals:
         return None
     a_sum = sum(r.qty for r in finals)
-    return math.fsum(r.qty * r.price for r in finals) / a_sum
+    exact = sum((r.qty * Fraction(r.price) for r in finals), Fraction(0)) / a_sum
+    return _derived_float(exact, "filled_avg_price")  # exact: never an intermediate overflow
+
+
+def _recovery_lookups(
+    cid: str, lookups: list[object], submitted_at: datetime, now: datetime
+) -> list[datetime]:
+    """Parse the 404 lookup timestamps: aware, after the last submission attempt, <= now."""
+    parsed: list[datetime] = []
+    for value in lookups:
+        try:
+            stamp = datetime.fromisoformat(cast(str, value))
+        except (TypeError, ValueError):
+            raise StateStoreError(
+                f"{cid}: recovery refused, lookup timestamps must be ISO datetimes"
+            ) from None
+        if stamp.tzinfo is None or stamp > now:
+            raise StateStoreError(
+                f"{cid}: recovery refused, lookup timestamps must be aware and <= now"
+            )
+        if stamp <= submitted_at:
+            raise StateStoreError(
+                f"{cid}: recovery refused, lookups must follow the last submission attempt"
+            )
+        parsed.append(stamp)
+    return parsed
+
+
+def _derived_float(value: Fraction, field: str) -> float:
+    """A derived persisted number: finite and > 0, else StateStoreError (rolls back, F-121)."""
+    try:
+        result = float(value)
+    except OverflowError:
+        raise StateStoreError(f"derived {field} is not finite") from None
+    if not math.isfinite(result) or result <= 0:
+        raise StateStoreError(f"derived {field} is not finite and > 0")
+    return result
 
 
 def _validate_activities(

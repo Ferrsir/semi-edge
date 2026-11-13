@@ -305,6 +305,45 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Fix:** tests for batch approvals exhausting gross exposure and cash with exact sizes, equal-rank
   symbol ties, a rejected earlier duplicate, and a property test with pending BUY/SELL orders.
 
+### F-120 · P2 · Recovery `unknown → staged` wrote a supplied broker id and trusted stale lookups (Codex review, PR #78)
+- **Reproduce (9060783):** recovery with `broker_order_id="known-broker-order"` succeeded and
+  stored that id. 404 lookup timestamps from before the submission attempt were accepted, and
+  so were lookups with no spacing evidence.
+- **Fix:** recovery refuses any `broker_order_id`, so the recovered row never has one. Every
+  lookup must be strictly after the order's last submission attempt (`submitted_at`). The
+  caller must supply `detail.monitor_cycle_seconds` (finite > 0), and consecutive lookups must
+  be at least that far apart; without it, recovery is refused.
+- **Regression:** `tests/safety/test_state_review_fixes.py::test_f120_*`.
+
+### F-121 · P2 · Weighted fill average could overflow to inf and be committed (Codex review, PR #78)
+- **Reproduce (9060783):** a 2-share activity at 1.5e308 gave a `fsum` of inf, so inf was
+  committed as `filled_avg_price` and `get_order` could no longer decode the row.
+- **Fix:** averages are computed exactly with `Fraction`. Every derived persisted price
+  (fill average, split-adjusted avg/stop/target/split_ratio) goes through `_derived_float`,
+  which requires finite > 0; otherwise it raises `StateStoreError` and the transaction rolls
+  back. `_apply_transition` re-checks the average before it writes.
+- **Regression:** `test_f121_weighted_average_never_overflows`,
+  `test_f121_non_finite_derived_split_price_rolls_back` (asserts an unchanged DB snapshot).
+
+### F-122 · P2 · Unknown target status raised without a RECONCILIATION halt (Codex review, PR #78)
+- **Reproduce (9060783):** `transition_order(cid, "done", ...)` raised `StateStoreError`, but
+  no halt row was recorded.
+- **Fix:** an unknown status is now an `illegal_transition` through the halting error path.
+  The halt is written after a rollback, and also when an outer transaction swallows the error.
+- **Regression:** `test_f122_*`.
+
+### F-123 · P2 · `ingest_order_fills` updated `orders` outside `transition_order` (Codex review, PR #78)
+- **Reproduce (9060783):** `store.py` had two `UPDATE orders` sites, and `transition_order`
+  could not record a `filled_qty` increase. Both contradict §5.1 ("no other UPDATE path";
+  "filled_qty may only increase").
+- **Fix:** `_apply_transition` is now the only `UPDATE orders` path. `transition_order` uses it
+  after validating the edge, and it accepts any `filled_qty` ≥ the stored value that equals the
+  ingested-fill watermark; a decrease halts. Ingestion records fills through the same path with
+  the status unchanged (`event="fills_ingested"`, from/to = current status). The spec is
+  unchanged: the implementation now conforms to it.
+- **Regression:** `test_f123_orders_rows_have_exactly_one_update_path` (AST) and
+  `test_f123_ingestion_records_filled_qty_through_the_transition_path`.
+
 ---
 
 ## Speculative concerns (not demonstrated; tracked for the relevant phase)
