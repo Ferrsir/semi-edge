@@ -72,10 +72,10 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T3b | #15–#29 | Phase 2–4 interface spec (backtest, risk, execution, state, reconcile, engine, dashboard) | claude | DONE (PR #62, merged 0882031; Codex PASS ae80ac3) | T0 |
 | T4 | #14 | Signal report + CLI (`scan`, `data fetch/status`, `account`, `config check`) | claude | DONE (PR #50, merged ce2490d) | T1, T2, T3 |
 | T5 | #15 | Event-driven backtest engine: next-open fills, costs, slippage | codex | DONE (PR #75, merged 1d147df; ADR-008 in #80, merged 03ce186; P3s #79) | T1, T2 |
-| T6 | #16 | Performance metrics, SMH/QQQ benchmark comparison | codex | IN PROGRESS (codex via lead-run `codex exec`) `feature/16-metrics`, worktree `codex-metrics-16`: interactive Codex, don't start it | T5 |
+| T6 | #16 | Performance metrics, SMH/QQQ benchmark comparison | codex | REVIEW (PR #81; Claude FAIL F-150 P2 period rebasing, F-151..F-153 P3; codex exec fixing) | T5 |
 | T7 | #17 | Walk-forward + parameter sensitivity | claude | READY | T5, T6 |
 | T8 | #19 | Deterministic independent risk manager (exposure incl. pending, halts) | claude | DONE (PR #69, merged f79a496; Codex PASS a87d30c) | T2 |
-| T9 | #21 | Paper order lifecycle: idempotent client IDs, partial fills, brackets | claude | READY | T3, T8 |
+| T9 | #21 | Paper order lifecycle: idempotent client IDs, partial fills, brackets | claude | IN PROGRESS: part 1 state store DONE (PR #78, merged 5a378da); part 2 gateway/client IDs/OrderManager READY | T3, T8 |
 | T10 | #22 | Broker reconciliation + restart recovery | codex | READY | T9 |
 | T11 | #23 | Position management, stop/target, time exits | claude | READY | T9 |
 | T12 | #24 | Exchange-calendar scheduler / trading loop | codex | READY | T9, T10, T11 |
@@ -101,7 +101,7 @@ Codex: start here every session. When an item is done, post on the PR or issue, 
 delete the item from this list in the same `AGENTS.md` commit. If an item is blocked, say why in the
 log and move to the next one. Work in your own worktree under `../semi-edge.worktrees/`, not in the
 `.t3` checkout and not in a Claude worktree. Never push to a Claude branch. Report findings on the
-PR instead. **Next finding ID: F-120** (F-060 is your #67 security fix; F-061..F-063 were used in your #69 review).
+PR instead. **Next finding ID: F-160** (F-060 is your #67 security fix; F-061..F-063 were used in your #69 review).
 
 **T5 is delivered as PR #75** (written by a lead-run `codex exec`; Claude review in progress). Fix whatever that review raises
 on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest-15`, which is the lead's).
@@ -319,3 +319,7 @@ on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest
 
 - 2026-11-13 11:35 UTC · claude · Merged #80 (ADR-008, `03ce186`; Codex FAIL F-130/F-131 parity-spec gaps, fixed, then PASS). The lead claimed T6 (#16) for a
   `codex exec` run. #78 (state store) is being fixed for Codex's F-120..F-123.
+
+- 2026-11-13 11:55 UTC · claude · Merged #78 (T9 part 1, `semiedge.state`, `5a378da`). Codex review chain: F-120..F-123 P2, then F-140..F-144 recovery-spacing
+  precision bypasses, all fixed, then Codex PASS. Added bandit `nosec B608` on constant-column SQL to fix CI `sast`. #21 reopened for part 2. T6
+  delivered by `codex exec` as #81; Claude FAIL F-150 (P2: period returns drop the first session), and `codex exec` is fixing it. Next finding ID F-160.
