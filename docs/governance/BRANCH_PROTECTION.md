@@ -18,7 +18,7 @@ and must not hold a credential that does (#5).
 | `non_fast_forward` | No force pushes. |
 | `required_linear_history` | No merge commits; squash merges only (also set below). |
 | `pull_request` | Every change to `main` goes through a PR. Code owners (`.github/CODEOWNERS`, the owner) must approve PRs that touch their paths. Stale approvals are dismissed on a new push, and the last push must be approved by someone other than its pusher. Other PRs need 0 approvals: the cross-provider review stays a PR comment, as ADR-004 defines it. |
-| `required_status_checks` | `ci-required`, `integration-required`, `security-required` and `trading-safety-required` must pass, published by the GitHub Actions app (id 15368), on a branch that is up to date with `main`. |
+| `required_status_checks` | `ci-required`, `integration-required`, `security-required` and `trading-safety-required` must pass, published by the GitHub Actions app (id 15368). The branch does not have to be up to date with `main` (see below). |
 
 `tests/governance/test_main_ruleset.py` keeps the file fail closed: no bypass actors, deletion and
 force push blocked, code-owner review on, and every required check name published by a job in
@@ -29,16 +29,18 @@ Not included yet: the two independently issued AI review checks. They need the t
 integration in #6, published by a separately controlled identity rather than the shared GitHub
 Actions app. Requiring them now would block every merge.
 
-## Decisions for the owner before applying
+## Decisions made (owner delegated them to the lead, 2026-11-13)
 
-1. **Board updates.** With a PR required, agents can no longer push `AGENTS.md` straight to
-   `main`. Because `AGENTS.md` is code-owned, every board update would also need your approval.
-   Options: (a) accept that and batch board updates into PRs; (b) move the board and discussion
-   log into a file that is not code-owned, so board PRs can merge on green CI, and keep the rules
-   in code-owned `AGENTS.md`.
-2. **Up-to-date branches.** `strict_required_status_checks_policy: true` makes each PR rebase on
-   `main` and rerun CI after every merge. That is safer, but it costs Actions minutes with several
-   PRs open. Setting it to `false` keeps the checks but drops the rebase requirement.
+1. **Board updates.** With a PR required, agents cannot push straight to `main`, and `AGENTS.md`
+   is code-owned. The board, queues and discussion log therefore move to `BOARD.md`, which is not
+   code-owned (#93, PR #94), so a board-only PR merges on green checks without owner approval. The
+   rules stay in code-owned `AGENTS.md`. **#94 must merge before this ruleset is applied.**
+2. **No strict up-to-date requirement.** `strict_required_status_checks_policy` is `false`. With
+   strict on, every open PR must rebase and rerun all CI after each merge, and board PRs would make
+   that happen many times a day, against the Actions-minutes cut in #85. The trade-off: two PRs that
+   each pass on their own can break `main` together. The workflows also run on every push to `main`,
+   so such a break shows up as a red `main` run right after the merge and is fixed forward. Revisit
+   if that happens more than rarely.
 
 ## Apply (owner, browser)
 
@@ -60,8 +62,8 @@ gh api repos/Ferrsir/semi-edge/rules/branches/main --jq '[.[].type]'
 ```
 
 Then run the #7 test PRs. Each must be refused: a failing required check; a code-owned path with
-no owner approval; an approval made stale by a new push; a branch behind `main`; a direct push and
-a force push to `main` as `Ferrisfy`. Also run one clean PR that merges. Record the PR numbers,
+no owner approval; an approval made stale by a new push; a direct push and
+a force push to `main` as `Ferrisfy`. Also run one clean PR that merges, and one board-only PR that merges without approval. Record the PR numbers,
 head SHAs and check URLs in `ENGINEERING_SETUP_REPORT.md` and on #7. Never treat a merge test as
 evidence while the ruleset is absent. No such demonstration has been done yet. Only after it may
 the ADR-004 waiver be revisited.

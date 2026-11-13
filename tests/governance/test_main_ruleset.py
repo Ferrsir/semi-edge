@@ -58,7 +58,8 @@ def test_ruleset_blocks_deletion_force_push_and_direct_push() -> None:
 
 def test_required_checks_are_the_four_aggregates_bound_to_actions() -> None:
     checks = _rule(_ruleset()["rules"], "required_status_checks")["parameters"]
-    assert checks["strict_required_status_checks_policy"] is True
+    # Owner delegated, lead chose 2026-11-13 (#92): not strict; push CI on main re-checks merges.
+    assert checks["strict_required_status_checks_policy"] is False
     contexts = checks["required_status_checks"]
     assert {c["context"] for c in contexts} == {
         "ci-required",
