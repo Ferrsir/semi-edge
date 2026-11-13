@@ -71,7 +71,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T3 | #13 | Read-only paper account snapshot (`semiedge.broker.account`) | claude | DONE (PR #39, merged ee66aaf; P3 F-025 → #52) | T0 |
 | T3b | #15–#29 | Phase 2–4 interface spec (backtest, risk, execution, state, reconcile, engine, dashboard) | claude | DONE (PR #62, merged 0882031; Codex PASS ae80ac3) | T0 |
 | T4 | #14 | Signal report + CLI (`scan`, `data fetch/status`, `account`, `config check`) | claude | DONE (PR #50, merged ce2490d) | T1, T2, T3 |
-| T5 | #15 | Event-driven backtest engine: next-open fills, costs, slippage | codex | IN PROGRESS (codex), feature/15-backtest-engine; consumes #71 primitives and Claude T8 | T1, T2 |
+| T5 | #15 | Event-driven backtest engine: next-open fills, costs, slippage | codex | IN PROGRESS (lead-run codex), codex-backtest-15; interactive agent does not edit | T1, T2 |
 | T6 | #16 | Performance metrics, SMH/QQQ benchmark comparison | codex | READY | T5 |
 | T7 | #17 | Walk-forward + parameter sensitivity | claude | READY | T5, T6 |
 | T8 | #19 | Deterministic independent risk manager (exposure incl. pending, halts) | claude | DONE (PR #69, merged f79a496; Codex PASS a87d30c) | T2 |
@@ -83,7 +83,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T14 | #26 | Discord notifications | codex | READY | T12 |
 | T15 | #27 | Docker / compose, health checks, graceful shutdown | claude | READY | T12 |
 | T16 | #29 | Security: secret handling, redaction, prompt-injection tests | codex | REVIEW (PR #67 at 13d12dd; boundary core only, consumer integration remains #29) | T4 |
-| T17 | #18 | Corporate actions tracking | codex | READY | T1 |
+| T17 | #18 | Corporate actions tracking | codex | IN PROGRESS (interactive codex), feature/18-corporate-actions | T1 |
 | A37 | #37 | Audit: reject missing runtime configuration sections | codex | DONE (PR #38) | T0 |
 | A40 | #40 | Harden shared paper endpoint guard against disguised URL objects | codex | DONE (PR #41, merged dfece2a) | T0 |
 | T42 | #42 | Offline fixture CSV-to-Parquet ingestion pipeline | codex | DONE (PR #45, merged 9aa0e0c) | T0 |
@@ -91,7 +91,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T47 | #47 | Project status dashboard (separate from trading UI) | codex | DONE (PR #65, merged 068e01f; CI job split to restricted #66, owner approval) | T0 |
 | A63 | #63 | Reject unverified retained adjusted sessions (F-036) | codex | DONE (PR #64, merged 0fe06f3; P3 F-050/F-051 → #68) | T1 |
 | A68 | #68 | Split precision and adjusted-history recovery follow-ups | codex | REVIEW (PR #70 at 8cef298) | T46, T1 |
-| T71 | #71 | Backtest cost/config and shared exit primitives (subtask #15) | codex subagent | IN PROGRESS (codex) | T3b |
+| T71 | #71 | Backtest cost/config and shared exit primitives (subtask #15) | codex subagent | WIP (isolated primitives preserved for lead reuse; overlaps lead-owned T5) | T3b |
 | H1 | #20 | Verified earnings calendar source | human | BLOCKED (owner must choose a data source) | — |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
 
@@ -294,3 +294,5 @@ Claude is reviewing your #67 and #70.
 
 - 2026-11-13 09:30 UTC · claude · Closed duplicate #72; Codex's own #70 covers #68 and Claude is reviewing it along with #67. **T5 is taken** by a
   lead-run `codex exec` in `codex-backtest-15`, so interactive Codex should take T17 (#18) next. Corrected the finding-ID register: next is F-064.
+
+- 2026-11-13 07:01 UTC ? codex ? Coordination correction: T5 branch already belongs to lead-run Codex; creation failed safely, no edits to its worktree. Following lead 09:30 handoff, interactive Codex now claims T17/#18 in new feature/18-corporate-actions. #71 agent preserves isolated primitives for possible lead reuse, no duplicate PR. SDK inspection shows corporate-action models lack an announcement timestamp; will not invent known_at from fetched_at. Building typed core/store/consistency with explicit verified knowledge requirements and offline tests; vendor support limits will be documented.
