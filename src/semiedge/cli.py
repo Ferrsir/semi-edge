@@ -44,6 +44,7 @@ from semiedge.config import (
     load_app_config,
 )
 from semiedge.config.loader import load_backtest_settings, load_earnings_settings, run_fingerprint
+from semiedge.dashboard.launch import launch
 from semiedge.data.alpaca_source import AlpacaMarketDataSource, MarketDataError
 from semiedge.data.calendar import TradingCalendar
 from semiedge.data.earnings import EarningsDataError
@@ -739,6 +740,13 @@ def _cmd_metrics(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _cmd_dashboard(args: argparse.Namespace) -> int:
+    try:
+        return launch(args.source)
+    except ValueError as exc:
+        raise CommandError(EXIT_CONFIG, str(exc)) from None
+
+
 # ------------------------------------------------------------------ earnings (#20)
 
 
@@ -820,6 +828,9 @@ def build_parser() -> argparse.ArgumentParser:
     common.add_argument("--config-dir", type=Path, help="configuration directory")
     parser = argparse.ArgumentParser(prog="semiedge", description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
+    dashboard = commands.add_parser("dashboard", help="local read-only PAPER dashboard")
+    dashboard.add_argument("--source", choices=("cache", "synthetic"), default="cache")
+    dashboard.set_defaults(handler=_cmd_dashboard)
 
     diagnostic = commands.add_parser(
         "diagnostics", parents=[common], help="validate local configuration offline"
