@@ -6,6 +6,7 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from fractions import Fraction
 
 import numpy as np
 import pandas as pd
@@ -97,6 +98,17 @@ def _values(frame: pd.DataFrame) -> None:
         raise SplitDataError("trade_count must be a nonnegative integer")
 
 
+def _cumulative_ratio(session: date, events: tuple[SplitEvent, ...]) -> float:
+    factor = Fraction(1)
+    for event in events:
+        if session < event.effective_session:
+            factor *= Fraction(event.new_shares, event.old_shares)
+    ratio = float(factor)
+    if ratio == 0:
+        raise FloatingPointError
+    return ratio
+
+
 def normalize_raw_splits(
     frame: pd.DataFrame,
     events: Iterable[SplitEvent],
@@ -122,7 +134,10 @@ def normalize_raw_splits(
     _values(result)
     for stamp in result.index:
         _session(stamp.date(), calendar)
-    events = tuple(events)
+    try:
+        events = tuple(events)
+    except TypeError:
+        raise SplitDataError("events must be an iterable of SplitEvent values") from None
     seen: set[date] = set()
     for event in events:
         if not isinstance(event, SplitEvent) or event.symbol != symbol:
@@ -142,12 +157,13 @@ def normalize_raw_splits(
     prices = ["open", "high", "low", "close", *(["vwap"] if "vwap" in frame else [])]
     try:
         with np.errstate(over="raise", under="raise", invalid="raise", divide="raise"):
-            for event in applied:
-                before = result.index < pd.Timestamp(event.effective_session)
+            for stamp in result.index:
+                ratio = _cumulative_ratio(stamp.date(), applied)
+                # Apply the exact cumulative factor once, avoiding chained rounding.
                 # NumPy operations honour errstate; Pandas arithmetic may suppress it.
-                result.loc[before, prices] = result.loc[before, prices].to_numpy() / event.ratio
-                result.loc[before, "volume"] = result.loc[before, "volume"].to_numpy() * event.ratio
-    except FloatingPointError:
+                result.loc[stamp, prices] = result.loc[stamp, prices].to_numpy() / ratio
+                result.loc[stamp, "volume"] = np.multiply(result.loc[stamp, "volume"], ratio)
+    except (FloatingPointError, OverflowError):
         raise SplitDataError("split adjustment overflowed or underflowed") from None
     _values(result)
     result.attrs["adjustment"] = Adjustment.SPLIT.value

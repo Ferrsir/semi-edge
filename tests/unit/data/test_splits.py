@@ -272,3 +272,17 @@ def test_early_close_and_maximum_share_count_boundaries():
     assert result.frame.iloc[0].close == pytest.approx(100 / 2**53)
     with pytest.raises(SplitDataError, match="session"):
         normalize(events=[event(date(1987, 1, 2))])
+
+
+def test_cancelling_fractional_splits_preserve_exact_original_values():
+    original = bars()
+    result = normalize(original, [event(DAYS[1], 3, 2), event(DAYS[2], 2, 3)])
+    assert result.frame.iloc[0].close == 100.0
+    pd.testing.assert_series_equal(result.frame.iloc[0], original.iloc[0])
+    assert result.frame.iloc[1].close == 150.0
+    assert_frame_equal(result.frame.iloc[2:], original.iloc[2:])
+
+
+def test_none_events_raise_split_data_error():
+    with pytest.raises(SplitDataError, match="events must be an iterable"):
+        normalize(events=None)

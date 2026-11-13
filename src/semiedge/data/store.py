@@ -217,10 +217,12 @@ def _check_adjustment_basis(
         if not np.allclose(stored, fresh, rtol=1e-9, atol=0.0):
             raise ValueError(
                 f"{symbol}: adjustment basis changed at {anchor.date()}; "
-                "refetch the full stored range before merging"
+                "refetch the full stored range before merging; "
+                "if unavailable, delete the series Parquet file and rebuild from available history"
             )
     if not retained.difference(incoming.index).empty:
         raise ValueError(
             f"{symbol}: adjustment basis is unverified for retained sessions missing from "
-            "incoming history; refetch the full stored range before merging"
+            "incoming history; refetch the full stored range before merging; "
+            "if unavailable, delete the series Parquet file and rebuild from available history"
         )

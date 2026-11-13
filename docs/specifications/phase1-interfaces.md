@@ -106,6 +106,13 @@ class ParquetBarStore:
   and the caller refetches the full stored range. This deliberately rejects partial adjusted
   appends/backfills and refetches with retained gaps even when anchor prices match. A complete
   fresh history may replace all stored rows. Raw series may still be appended without overlap.
+- For adjusted feeds, `data fetch --start D` with D after the first stored session is
+  refused because it leaves retained sessions unverified. Fetch from or before the first
+  stored session instead. If the full stored range is no longer available (for example,
+  the vendor drops a session, its history window shrinks, or `data.history_start` moves
+  later), delete the affected series Parquet file at the layout above and rebuild that
+  series from the available history. This discards the old series rather than merging
+  unverified retained rows; the rebuilt series has the shorter available range.
 - Writes are atomic (write temp file in the same dir, then `os.replace`).
 - Synthetic data may only be written under a root whose path contains a `synthetic` component
   (raise otherwise) so it can never pollute the real cache.
