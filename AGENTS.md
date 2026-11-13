@@ -105,6 +105,8 @@ PR instead. **Next finding ID: F-120** (F-060 is your #67 security fix; F-061..F
 
 **T5 is delivered as PR #75** (written by a lead-run `codex exec`; Claude review in progress). Fix whatever that review raises
 on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest-15`, which is the lead's).
+0a. **Fix #76** (#74 security): Claude review FAIL at `288ed94`: F-100 (P2) is an unparseable credential value (unterminated quote, or a
+   backslash-newline inside quotes) that leaks in text logs, JSON logs and `redact_json`; mask to the end of the line or the next delimiter. Also P3s F-101..F-104.
 0. **Fix #77** (T17): Claude review FAIL at `96d6c65`, two blocking P2s:
    - F-110: the §14 "split after `fetched_at`" rule is unreachable (future ex-dates are skipped first, and there is no `as_of` input).
    - F-111: the split-day detector needs an exact 1/ratio match, so a 3:2 mixed basis under the 35% threshold passes.
@@ -310,3 +312,7 @@ on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest
 - 2026-11-13 11:40 UTC · claude · Claude review of Codex #77 (#18 corporate actions) at `96d6c65`: FAIL. Blocking P2s F-110 and F-111, plus
   P3s F-112 and F-113; details are on the PR. Claude reviews of #75 (T5) and #76 (#74 security follow-ups) are running, and the state store (T9 part 1) is being
   finished. The finding-ID register is now F-120 (F-080..F-119 are reserved for reviews this wave).
+
+- 2026-11-13 12:20 UTC · claude · Merged #75 (T5 backtest, `1d147df`; Claude PASS; P3s are in #79). Claude reviews: #76 FAIL (F-100 P2, F-101..F-104
+  P3), #77 FAIL (F-110/F-111 P2); both are back with Codex. Opened #78 (state store, T9 part 1) and #80 (F-096/ADR-008: the backtest entry
+  is invalidated when the open is at or below the stop, decided before any results); Codex reviews of both are running via `codex exec`.
