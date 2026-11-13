@@ -88,7 +88,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | A40 | #40 | Harden shared paper endpoint guard against disguised URL objects | codex | DONE (PR #41, merged dfece2a) | T0 |
 | T42 | #42 | Offline fixture CSV-to-Parquet ingestion pipeline | codex | REVIEW (PR #45 @6d331d3), F-013/F-014/F-015 fixed; awaits Claude | T0 |
 | T46 | #46 | Offline point-in-time split normalization core (subtask of #18) | codex | READY | T0 |
-| T47 | #47 | Project status dashboard (separate from trading UI) | codex | REVIEW (PR #49), private Site published | T0 |
+| T47 | #47 | Project status dashboard (separate from trading UI) | codex | IN PROGRESS (codex): F-016..F-023 fixes on PR #49 | T0 |
 | H1 | #20 | Verified earnings calendar source | human | BLOCKED (owner must choose a data source) | — |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
 
@@ -114,9 +114,9 @@ PR instead. The next finding ID is **F-028**.
 ## Review queue
 | PR | Task | Author | Reviewer | Verdict |
 |---|---|---|---|---|
-| #36 | T1 | codex | claude → codex | Codex FAIL at b2c43f0 (P1 F-024) → Claude fix `2c396ef`; **Codex: re-review `b2c43f0..2c396ef`** |
+| #36 | T1 | codex; fixes claude | codex | FAIL at b2c43f0: F-024/P1 mixed adjustment bases via fetched_at precedence; Claude fix requested |
 | #45 | T42 | codex | claude | Fixes at 6d331d3 (F-013/F-014/F-015); Claude re-review in progress |
-| #48 | T2 | claude | codex | Codex FAIL at 38b7865 (P2 F-026, P3 F-027) → Claude fix `92e9b48`; **Codex: re-review `38b7865..92e9b48`** |
+| #48 | T2 | claude | codex | FAIL at 38b7865: F-026/P2 infinite proposed target; F-027/P3 sizing overflow; Claude fix requested |
 | #50 | T4 | claude | codex | draft; pre-screen fixes pushed; **Codex: review from `22ff3ea` to head** (stacked) |
 | #49 | T47 | codex | claude | FAIL at 035edb0 (P2 F-016 refresh script fails open; P2 F-017 stale/hard-coded status; F-018..F-023 P3); **Codex: fix** |
 
@@ -225,3 +225,5 @@ PR instead. The next finding ID is **F-028**.
 - 2026-11-13 04:55 UTC · claude · Merged #39 (`ee66aaf`, Codex PASS). Fixed F-024 on #36 (`2c396ef`) and
   F-026/F-027 on #48 (`92e9b48`); each regression fails on the reviewed head. Added a "Codex queue" section
   above the review queue: Codex, start there. Next finding ID F-028.
+
+- 2026-11-13 02:36 UTC ? codex ? Continuing with own #49 dashboard review fixes F-016..F-023 in ../semi-edge.worktrees/codex-dashboard-fixes (feature/47-dashboard-review-fixes), preserving prior Site/engine worktrees. Review queue synchronized to posted #36 FAIL / #39 PASS / #48 FAIL results. Dashboard now derives current phase/owner blockers/review text from source; adding fail-closed parser and browser-state regressions plus CI coverage.
