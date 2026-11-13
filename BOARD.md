@@ -39,7 +39,8 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | A68 | #68 | Split precision and adjusted-history recovery follow-ups | codex | DONE (PR #70, merged 00be4fa) | T46, T1 |
 | T71 | #71 | Backtest cost/config and shared exit primitives (subtask #15) | codex subagent | IN PROGRESS (codex subagent, WIP): isolated primitives preserved for lead reuse; overlaps lead-owned T5 | T3b |
 | A74 | #74 | Security follow-ups F-070..F-076 | codex | REVIEW (PR #76 at c529059; F-100..F-104 addressed; Claude re-review requested) | T16 |
-| A79 | #79 | Backtest review follow-ups F-090..F-095 and F-154 | codex | IN PROGRESS (codex): feature/79-backtest-followups | T5, T6 |
+| A79 | #79 | Backtest review follow-ups F-090..F-095 and F-154 | codex | REVIEW (PR #97 at 6a4f802; 2045 passed/two skips; Claude review requested) | T5, T6 |
+| A98 | #98 | Remaining free-text credential forms (F-102) | codex | IN PROGRESS (codex): feature/98-redaction-forms | T16 |
 | H1 | #20 | Verified earnings calendar source (owner chose Finnhub primary + Alpha Vantage cross-check) | claude | REVIEW (PR #88) | T8 |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
 | H3 | — | GitHub Actions billing/spending limit: since ~12:00 UTC 2026-11-13 no CI job starts, so nothing can merge | human | DONE (repo made public 2026-11-13; #81 CI re-run green 16:45 UTC) | — |
@@ -51,7 +52,7 @@ log and move to the next one. Work in your own worktree under `../semi-edge.work
 `.t3` checkout and not in a Claude worktree. Never push to a Claude branch. Report findings on the
 PR instead. **Next finding ID: F-175** (F-160..F-164 used in the Claude review of #82; F-060 is your #67 security fix; F-061..F-063 were used in your #69 review).
 
-Codex is implementing #79 (F-090..F-095 and F-154) in `codex-backtest-followups-79`. Claude owns the dashboard UI follow-ups F-168..F-174 and existing PR reviews.
+Codex delivered #79 as PR #97 for Claude review and is implementing #98 redaction follow-ups. Claude owns the dashboard UI follow-ups F-168..F-174.
 
 ## Review queue
 | PR | Task | Author | Reviewer | Verdict |
@@ -304,3 +305,5 @@ Codex is implementing #79 (F-090..F-095 and F-154) in `codex-backtest-followups-
 - 2026-11-13 21:30 UTC · codex · Verified Ferrisfy connector identity and write/non-admin access. Published existing validated fixes through that identity, preserving original PR histories and exact tested Git trees: #82 873b589 (1632 passed/two skips, all ten Streamlit AppTests), #76 c529059 (1700/two), #77 ab3ff1a (1666/two); Ruff check/format, mypy and Bandit pass. Claude exact-head re-review requested on all three. #94 post-merge PASS (original board preserved; 15 snapshot regressions); #95 PASS 96f8fa6 (130 governance/one skip; owner approval/activation/#7 remain); #88 PASS 0b9a0e9 after F-166/F-167 fixes (1763/one opt-in skip, source/R16 104, Ruff/types pass). No broker/vendor/credential access, merge, ruleset activation or deployment. Main snapshot and other agents' work preserved. UI P3 F-168..F-174 remain follow-ups for lead allocation; next finding F-175.
 
 - 2026-11-13 21:34 UTC · codex · Owner asks to keep progressing and take unblocked work. Claude PASS on #82/#76 observed, #76 merged; lead owns dashboard UI follow-ups and #77 review. Claimed Codex-owned #79 (F-090..F-095, F-154) in isolated feature/79-backtest-followups, codex-backtest-followups-79. F-096 remains the lead's ADR-008 spec scope; no results tuning or risk/strategy changes.
+
+- 2026-11-13 22:03 UTC · codex · Delivered #79 as PR #97 at 6a4f802: F-090..F-095/F-154, 2045 passed/two skips with dashboard extra; Ruff/format/mypy74/Bandit pass;14 old-source regression failures reproduced. Claude review requested; no strategy/risk change. All prior #82/#76/#77 fixes now merged by lead. Main ruleset is active; board claim #96 demonstrated board-only merge after green checks with no approval, and subsequent board changes use PRs. Next own task #98 addresses the explicitly deferred F-102 credential forms, separate isolated feature/98-redaction-forms worktree; dashboard UI remains Claude's. No broker/vendor/credential access or deployment.
