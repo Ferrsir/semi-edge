@@ -21,6 +21,26 @@ error. The actual persisted mode and source appear above every page. A database
 without a run has an explicit unavailable mode, rather than an assumed mode.
 Synthetic databases always carry `SYNTHETIC DATA — NOT MARKET DATA`.
 
+## Layout and formatting
+
+The synthetic banner, when present, is the first thing on every page, as a warning box. Each
+page has one heading, with the mode and data source on a line under it. Section names are
+subheadings. Overview opens with a stale-heartbeat alert for each stale component (naming
+the component, its age and its expected interval), then an "At a glance" table: equity,
+change since the previous close, open positions, active halts, and the last run. Next to it
+is an equity line for the last sessions, drawn only when at least four snapshots exist. The
+equity table stays below it as the readable fallback.
+
+Tables show readable values. Times are `YYYY-MM-DD HH:MM UTC`, money has thousands
+separators and two decimals, ranks and quantities are whole numbers, eligibility is yes/no,
+and ages read like `45 s` or `22 min`. A missing value shows as `—` and is never filled in.
+Signals show close, ATR, stop, target and rejection reasons as columns instead of the raw
+payload JSON; an unreadable payload says so in those columns. Formatting lives in
+`semiedge.dashboard.format` and runs before `display`, so it never decides what is safe to
+show. Widgets that render Markdown (subheaders, captions, alerts) only receive fixed text,
+validated enums, numbers, or a component name that matches a strict pattern. Streamlit's
+developer toolbar is hidden (`client.toolbarMode = "viewer"`).
+
 Overview, Signals, Positions, Trade history and Operations render persisted records
 in plain-text tables (Overview also shows the desk; see below). Signals select the newest run that actually contains evaluations,
 irrespective of the job kind. Trade history is limited to the newest 500 orders/fills;

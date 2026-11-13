@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import secrets
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
@@ -22,11 +20,14 @@ from semiedge.backtest.data import (
 )
 from semiedge.backtest.fills import market_price, protective_fill
 from semiedge.backtest.results import BacktestResult, CancelledEntry, EquityPoint, ExitReason, Trade
+from semiedge.config.loader import run_fingerprint
 from semiedge.config.models import (
+    AppConfig,
     BacktestSettings,
     DataConfig,
     MomentumV1Params,
     RiskLimits,
+    ScannerConfig,
     UniverseConfig,
 )
 from semiedge.data.calendar import TradingCalendar
@@ -76,6 +77,7 @@ class BacktestRequest:
     settings: BacktestSettings
     data_settings: DataConfig
     command: str
+    scanner_settings: ScannerConfig
 
 
 @dataclass
@@ -267,9 +269,7 @@ class _Simulation:
     def mark(self, day: date) -> float:
         for symbol, pos in sorted(self.positions.items()):
             row = self.row(symbol, day)
-            if row is None:
-                self.gaps.append((day, symbol))
-            else:
+            if row is not None:
                 pos.mark = float(row["close"])
         gross = checked(
             sum(
@@ -380,13 +380,20 @@ def run_backtest(  # noqa: PLR0912 - validation and mandatory labels follow the 
         calendar=calendar,
         lookback_sessions=request.params.required_history(),
         feed=data.feed,
-        max_missing_sessions=0,
+        max_missing_sessions=request.data_settings.max_missing_sessions_in_lookback,
     )
     if not quality.is_actionable:
         raise BacktestInputError(f"regime_warmup_unavailable: {quality.issues}")
     sim = _Simulation(request, data, gate, calendar)
     sim.decide(previous, sim.cash)
     for day in calendar.sessions_in_range(request.start, request.end):
+        # Missing bars are data gaps even when the symbol is unheld or only a benchmark.
+        symbols = {
+            *request.universe.tradable_symbols,
+            request.universe.regime_benchmark,
+            *request.universe.comparison_benchmarks,
+        }
+        sim.gaps.extend((day, symbol) for symbol in sorted(symbols) if sim.row(symbol, day) is None)
         sim.open_session(day)
         equity = sim.mark(day)
         if day == request.end:
@@ -413,6 +420,8 @@ def run_backtest(  # noqa: PLR0912 - validation and mandatory labels follow the 
         labels.insert(0, SYNTHETIC_BANNER)
     if data.source == DataSource.FIXTURE:
         labels.insert(0, f"FIXTURE DATA — OFFLINE IMPORT, PROVENANCE: {data.fixture_manifest}")
+    if sim.gaps:
+        labels.append(f"DATA GAPS: {len(sim.gaps)} symbol-sessions; missing bars not filled")
     if sim.overshoots:
         labels.append(
             f"GAP OVERSHOOT OF EXPOSURE CAPS: {len({d for d, _, _ in sim.overshoots})} sessions"
@@ -426,9 +435,16 @@ def run_backtest(  # noqa: PLR0912 - validation and mandatory labels follow the 
         "data": request.data_settings.model_dump(mode="json"),
         "BacktestSettings": request.settings.model_dump(mode="json"),
     }
-    fingerprint = hashlib.sha256(
-        json.dumps(config, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
-    ).hexdigest()
+    fingerprint = run_fingerprint(
+        AppConfig(
+            universe=request.universe,
+            strategy=request.params,
+            risk=request.risk,
+            data=request.data_settings,
+            scanner=request.scanner_settings,
+        ),
+        request.settings,
+    )
     result = BacktestResult(
         1,
         new_run_id(calendar.session_close(request.end), secrets.token_hex(4)),

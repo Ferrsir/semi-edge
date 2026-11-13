@@ -25,11 +25,11 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T10 | #22 | Broker reconciliation + restart recovery | codex | READY | T9 |
 | T11 | #23 | Position management, stop/target, time exits | claude | READY | T9 |
 | T12 | #24 | Exchange-calendar scheduler / trading loop | codex | READY | T9, T10, T11 |
-| T13 | #25 | Streamlit dashboard (dark theme) | codex | REVIEW (PR #82 at 873b589; F-160..F-164 fixed; Claude re-review requested; UI P3 F-168..F-174 remain follow-ups) | T4 |
+| T13 | #25 | Streamlit dashboard (dark theme) | codex | DONE (PR #82 merged e3f0767; UI follow-ups F-168..F-174 in Claude PR #100) | T4 |
 | T14 | #26 | Discord notifications | codex | READY | T12 |
 | T15 | #27 | Docker / compose, health checks, graceful shutdown | claude | READY | T12 |
 | T16 | #29 | Security: secret handling, redaction, prompt-injection tests | codex | IN PROGRESS (codex): core merged (PR #67, f0b093d); follow-ups #74; §13 e2e test open | T4 |
-| T17 | #18 | Corporate actions tracking | codex | REVIEW (PR #77 at ab3ff1a; F-110..F-113 fixed; #18 remains open for integration) | T1 |
+| T17 | #18 | Corporate actions tracking | codex | DONE (core PR #77 merged 5178a1e; #18 stays open for coverage and integration) | T1 |
 | A37 | #37 | Audit: reject missing runtime configuration sections | codex | DONE (PR #38) | T0 |
 | A40 | #40 | Harden shared paper endpoint guard against disguised URL objects | codex | DONE (PR #41, merged dfece2a) | T0 |
 | T42 | #42 | Offline fixture CSV-to-Parquet ingestion pipeline | codex | DONE (PR #45, merged 9aa0e0c) | T0 |
@@ -38,9 +38,11 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | A63 | #63 | Reject unverified retained adjusted sessions (F-036) | codex | DONE (PR #64, merged 0fe06f3; P3 F-050/F-051 → #68) | T1 |
 | A68 | #68 | Split precision and adjusted-history recovery follow-ups | codex | DONE (PR #70, merged 00be4fa) | T46, T1 |
 | T71 | #71 | Backtest cost/config and shared exit primitives (subtask #15) | codex subagent | IN PROGRESS (codex subagent, WIP): isolated primitives preserved for lead reuse; overlaps lead-owned T5 | T3b |
-| A74 | #74 | Security follow-ups F-070..F-076 | codex | REVIEW (PR #76 at c529059; F-100..F-104 addressed; Claude re-review requested) | T16 |
-| A79 | #79 | Backtest review follow-ups F-090..F-095 and F-154 | codex | IN PROGRESS (codex): feature/79-backtest-followups | T5, T6 |
-| H1 | #20 | Verified earnings calendar source (owner chose Finnhub primary + Alpha Vantage cross-check) | claude | REVIEW (PR #88) | T8 |
+| A74 | #74 | Security follow-ups F-070..F-076 | codex | DONE (PR #76 merged c7698dc; F-102 forms continue in #98) | T16 |
+| A79 | #79 | Backtest review follow-ups F-090..F-095 and F-154 | codex | DONE (owner-approved PR #97 merged cac61bb) | T5, T6 |
+| A98 | #98 | Remaining free-text credential forms (F-102) | codex | REVIEW (PR #101 refreshed dd16c05 after #97; 2150 passed/two skips; Claude review requested) | T16 |
+| A103 | #103 | Equity-chart observation/session handling | codex | REVIEW (draft #105 needs rescope/rebase after #100; core F-175 already fixed in author head 12b1607) | T13 |
+| H1 | #20 | Verified earnings calendar source (owner chose Finnhub primary + Alpha Vantage cross-check) | claude | DONE (PR #88 merged 6d6f75a; R16 blocks entries until the keys are set and a refresh runs) | T8 |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
 | H3 | — | GitHub Actions billing/spending limit: since ~12:00 UTC 2026-11-13 no CI job starts, so nothing can merge | human | DONE (repo made public 2026-11-13; #81 CI re-run green 16:45 UTC) | — |
 
@@ -49,22 +51,17 @@ Codex: start here every session. When an item is done, post on the PR or issue, 
 delete the item from this list in the same `BOARD.md` commit. If an item is blocked, say why in the
 log and move to the next one. Work in your own worktree under `../semi-edge.worktrees/`, not in the
 `.t3` checkout and not in a Claude worktree. Never push to a Claude branch. Report findings on the
-PR instead. **Next finding ID: F-175** (F-160..F-164 used in the Claude review of #82; F-060 is your #67 security fix; F-061..F-063 were used in your #69 review).
+PR instead. **Next finding ID: F-177** (F-160..F-164 used in the Claude review of #82; F-060 is your #67 security fix; F-061..F-063 were used in your #69 review).
 
-Codex is implementing #79 (F-090..F-095 and F-154) in `codex-backtest-followups-79`. Claude owns the dashboard UI follow-ups F-168..F-174 and existing PR reviews.
+#100 re-review PASS at 12b1607 (F-175/F-176 fixed; base/extra checks pass, CI green); lead merge checks remain. #101 refreshed dd16c05 after merged #97; Claude review next. Codex must rescope/rebase #105 to retain only useful latest-observation/distinct-session refinements after #100.
 
 ## Review queue
 | PR | Task | Author | Reviewer | Verdict |
 |---|---|---|---|---|
-| #88 | H1/#20 | claude | codex | Codex PASS 0b9a0e9; F-166/F-167 fixed; 1763 passed/one opt-in skip; lead merge checks remain |
-| #87 | #85 | claude | codex (post-merge) | Codex post-merge PASS 7f6e2b6 (merged 56cd3a8); classifier/gates verified offline |
-| #91 | #5 | claude | codex + owner | Codex PASS 01d80fa; 125 governance tests passed / 1 skipped; owner approval remains |
-| #92 | #4 | claude | codex + owner | Owner merged despite Codex FAIL 28fd2b9 (F-165 P2); fix is #95 |
-| #95 | #4 | claude | codex + owner | Codex PASS 96f8fa6; 130 governance passed/one skip; restricted owner approval/merge then import and #7 tests remain |
-| #94 | #93 | claude | codex + owner | Codex post-merge PASS 2198e29 (squash 4c947d4); board migration preserved; 15 snapshot tests pass |
-| #82 | T13 | codex | claude | Fixes published 873b589; 1632 passed/two skips including all ten AppTests; Claude re-review requested |
-| #76 | #74 | codex | claude | Fixes published c529059; 1700 passed/two skips; Claude re-review requested |
-| #77 | T17 | codex | claude | Fixes published ab3ff1a; 1666 passed/two skips; Claude re-review requested |
+| #100 | #25 | claude | codex | PASS 12b1607; F-175/F-176 fixed; base2018/12 skips, extra49 dashboard passed, both mypy75; CI green |
+| #105 | #103 | codex | claude | Dependent draft needs rebase/rescope after #100; avoid duplicating author's F-175 fix |
+| #101 | #98 | codex | claude | Refreshed dd16c05; conflict-only keep-both audit merge; full2150/two, Ruff/format/mypy74 pass; review requested |
+| #97 | #79 | codex | claude + owner | DONE owner approved, merged cac61bb; Claude PASS and CI green |
 
 ## Discussion log (append-only, newest last; `YYYY-MM-DD HH:MM UTC · agent · note`)
 - 2026-10-30 15:10 UTC · claude · Took over as lead/integrator at the owner's request. Owner
@@ -304,3 +301,13 @@ Codex is implementing #79 (F-090..F-095 and F-154) in `codex-backtest-followups-
 - 2026-11-13 21:30 UTC · codex · Verified Ferrisfy connector identity and write/non-admin access. Published existing validated fixes through that identity, preserving original PR histories and exact tested Git trees: #82 873b589 (1632 passed/two skips, all ten Streamlit AppTests), #76 c529059 (1700/two), #77 ab3ff1a (1666/two); Ruff check/format, mypy and Bandit pass. Claude exact-head re-review requested on all three. #94 post-merge PASS (original board preserved; 15 snapshot regressions); #95 PASS 96f8fa6 (130 governance/one skip; owner approval/activation/#7 remain); #88 PASS 0b9a0e9 after F-166/F-167 fixes (1763/one opt-in skip, source/R16 104, Ruff/types pass). No broker/vendor/credential access, merge, ruleset activation or deployment. Main snapshot and other agents' work preserved. UI P3 F-168..F-174 remain follow-ups for lead allocation; next finding F-175.
 
 - 2026-11-13 21:34 UTC · codex · Owner asks to keep progressing and take unblocked work. Claude PASS on #82/#76 observed, #76 merged; lead owns dashboard UI follow-ups and #77 review. Claimed Codex-owned #79 (F-090..F-095, F-154) in isolated feature/79-backtest-followups, codex-backtest-followups-79. F-096 remains the lead's ADR-008 spec scope; no results tuning or risk/strategy changes.
+
+- 2026-11-13 22:03 UTC · codex · Delivered #79 as PR #97 at 6a4f802: F-090..F-095/F-154, 2045 passed/two skips with dashboard extra; Ruff/format/mypy74/Bandit pass;14 old-source regression failures reproduced. Claude review requested; no strategy/risk change. All prior #82/#76/#77 fixes now merged by lead. Main ruleset is active; board claim #96 demonstrated board-only merge after green checks with no approval, and subsequent board changes use PRs. Next own task #98 addresses the explicitly deferred F-102 credential forms, separate isolated feature/98-redaction-forms worktree; dashboard UI remains Claude's. No broker/vendor/credential access or deployment.
+
+- 2026-11-13 22:20 UTC · claude · Owner imported the `main` ruleset (active; matches `docs/governance/main-ruleset.json`); board changes now go through board-only PRs, and #96/#99 merged that way without approval. Merged after review: #88 (Codex PASS `0b9a0e9`), #76 and #77 (Claude PASS; #77 needed a conflict-only `AUDIT_REPORT.md` merge), #82 (Claude PASS; conflict-only merges for `cli.py` and `AUDIT_REPORT.md`). Opened #100 with the dashboard UI follow-ups; before and after screenshots posted to the owner's Discord. Next Claude: review #97.
+
+- 2026-11-13 22:20 UTC · codex · #98 delivered as #101,2124 full passed/two skips,248 focused/Ruff/types/Bandit pass. Literal synthetic PEM fixture text triggered gitleaks across fetched branch history; fixed only fixture construction at cc5cb75 with exact lease, no scanner change; pinned/checksummed gitleaks8.30.1 scans162 remote commits clean. Retried #102 failed security jobs; all checks green, board-only #102 merged304844c. #100 extra-enabled2027/two suite passes but default locked install reproduces two fake-UI failures plus mypy missing Altair; superseding verdict FAIL F-176/P2 posted. F-175/P3 chart month/day collisions reproduced and tracked #103, own isolated feature/103-equity-chart; nextF177. #97 remains with Claude. No credentials/broker/vendor/production changes.
+
+- 2026-11-13 22:27 UTC · codex · #97 Claude PASS at6a4f802 and CI green; owner approval remains for code-owned backtest path. #101 cc5cb75 CI now green after fixture-only PEM marker construction; no scanner/allowlist change. #100 remains author FAIL F-176 (two base locked fake-UI errors and mypy missing Altair); #103 F-175 prepared as dependent draft #105 d7f3f12, three old-source failures fixed, full2030/two with extra, focused51/Ruff/format/mypy75/Bandit pass. Draft waits on repaired #100 base and revalidation, not ready to merge. Main snapshot/other worktrees preserved; no broker/vendor/credentials, protection changes or deployment. NextF177.
+
+- 2026-11-13 23:23 UTC · codex · Owner approved #97; confirmed merged cac61bb, no further owner approval pending for it. Refreshed own #101 to dd16c05 after that merge, preserving both conflicting audit sections; full2150/two, Ruff/format/mypy74 pass, Claude review requested at new head. #100 new12b1607 re-reviewed PASS: pure Vega-Lite spec removes optional Altair dependency and fixes core F-175; base full2018/12 skips, extra dashboard49 including ten AppTests, base/extra mypy75 and CI green. #105 remains draft and must be rebased/rescoped to avoid duplicating author's fix. Owner to-do list: confirm local PAPER/Finnhub/AlphaVantage setup if not already done; no additional approval currently requested. Agent priorities: #100 lead merge, #101 Claude review, #105 cleanup, finish #21 then #22/#23/#24; #17 is also unblocked. Governance setup report/#4 descriptions are stale about already-active ruleset; update status docs and complete remaining #3/#6/#7 work without claiming full enforcement proof. No credentials read or broker/vendor calls.
