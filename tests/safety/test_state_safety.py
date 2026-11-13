@@ -19,7 +19,6 @@ from pathlib import Path
 import pytest
 
 import semiedge
-from semiedge.clock import FrozenClock
 from semiedge.risk.types import EntryProposal, HaltKind, OrderSide, RiskCheck, RiskDecision
 from semiedge.safety.modes import TradingMode
 from semiedge.state.models import TERMINAL_STATUSES, BrokerFillInput, OrderIntent
@@ -250,9 +249,7 @@ SESSION = date(2026, 11, 12)
 
 @pytest.fixture
 def entry_store(tmp_path: Path) -> Iterator[tuple[StateStore, str]]:
-    store = StateStore(
-        tmp_path / "state" / "semiedge.sqlite3", data_source="synthetic", clock=FrozenClock(T0)
-    )
+    store = StateStore(tmp_path / "state" / "semiedge.sqlite3", data_source="synthetic", now=T0)
     store.start_run("run-1", "post_close", TradingMode.PAPER, "c" * 64, None, T0)
     p = EntryProposal(
         "NVDA", SESSION, SESSION, "momentum_v1", "1.0.0", 1, 80.0, 100.0, 2.0, 96.0, 108.0, 100

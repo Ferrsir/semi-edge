@@ -17,7 +17,6 @@ from pathlib import Path
 
 import pytest
 
-from semiedge.clock import FrozenClock
 from semiedge.risk.types import EntryProposal, OrderSide, RiskCheck, RiskDecision
 from semiedge.safety.modes import TradingMode
 from semiedge.state.models import OrderIntent
@@ -174,7 +173,7 @@ def open_store(db_path: Path) -> Iterator[Callable[..., StateStore]]:
     opened: list[StateStore] = []
 
     def _open(path: Path = db_path, data_source: str = "real") -> StateStore:
-        store = StateStore(path, data_source=data_source, clock=FrozenClock(T0))  # type: ignore[arg-type]
+        store = StateStore(path, data_source=data_source, now=T0)  # type: ignore[arg-type]
         opened.append(store)
         return store
 

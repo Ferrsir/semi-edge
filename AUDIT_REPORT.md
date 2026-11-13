@@ -305,6 +305,15 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Fix:** tests for batch approvals exhausting gross exposure and cash with exact sizes, equal-rank
   symbol ties, a rejected earlier duplicate, and a property test with pending BUY/SELL orders.
 
+### F-096 · P3 · Backtest entry could be stopped out better than its open (Claude review of #75; fixed in #80)
+- **Fix:** ADR-008 also invalidates the entry when `open_d ≤ stop`. Regression: `test_f096_open_below_stop_invalidates_even_if_slipped_fill_is_above`.
+
+### F-130 · P2 · ADR-008 broke the stated backtest/paper parity (Codex review, PR #80)
+- **Fix (spec):** ADR-008 is a backtest-only conservative adjustment. §6.3 documents the parity
+  exception (paper has no trustworthy opening price at fill time), and the §10 parity test excludes
+  exactly that case. §19 item 4 and ADR-008 are updated.
+- **F-131 (P2, Codex re-review):** the §18 checklist still claimed unconditional parity; it now carries the same exception.
+
 ### F-120 · P2 · Recovery `unknown → staged` wrote a supplied broker id and trusted stale lookups (Codex review, PR #78)
 - **Reproduce (9060783):** recovery with `broker_order_id="known-broker-order"` succeeded and
   stored that id. 404 lookup timestamps from before the submission attempt were accepted, and
@@ -426,7 +435,7 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - This is a new isolated research utility, not a newly discovered production bug. Contract: `docs/specifications/split-normalization.md`; implementation: `data.splits.normalize_raw_splits`.
 - Only explicitly RAW bars are accepted; the output is tagged split-adjusted and rejected on a second invocation. Events require symbol, effective session, exact positive integer share counts and aware knowledge timestamps. Duplicate/conflicting effective sessions fail explicitly.
 - Applied events must be both effective by as_of and known by the caller's cutoff. Future rows are excluded; the as_of session must have closed at that cutoff. Pre-effective prices/VWAP divide and volume multiplies by new/old shares; trade counts remain unchanged. Invalid inputs and numeric overflow/underflow raise; inputs remain unchanged.
-- Evidence: 35 deterministic unit cases cover forward/reverse/fractional/multiple splits, conservation, effective boundaries, historical prefixes, information cutoffs, timezone boundaries, malformed events/frames and arithmetic failures. Full offline suite: 806 passed, one opt-in paper smoke skipped; Ruff check/format, mypy and Bandit passed.
+- Historical evidence at initial a225f7c implementation: 35 deterministic unit cases covered forward/reverse/fractional/multiple splits, conservation, effective boundaries, historical prefixes, information cutoffs, timezone boundaries, malformed events/frames and arithmetic failures. Full offline suite: 806 passed, one opt-in paper smoke skipped; Ruff check/format, mypy and Bandit passed.
 - Limitations: no vendor event ingestion or ledger-coverage claim; no positions/orders/store/scanner integration; knowledge timestamps must be supplied from genuine historical availability evidence. This utility does not establish strategy performance or readiness for execution. Claude cross-provider review required.
 
 ### PR #61 cross-provider review fixes (F-031..F-035)
@@ -437,3 +446,17 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **F-034 / P3:** validate numerical values and session membership on the historical prefix. Future NaNs/non-sessions no longer change earlier results. Full-frame structural schema validation remains required and documented.
 - **F-035 / P3:** added applied-event prefix/effective-date equality, nested nonempty attrs isolation, early-close equality, maximum accepted share count and unsupported pre-1990 ledger cases.
 - Old-source regression evidence: four selected tests all FAIL when PYTHONPATH points to the unchanged a225f7c review checkout; they all PASS on the new implementation. Focused suite: 39 passed. No network, credentials, broker requests or risk/strategy changes.
+
+## #68 follow-ups (F-041, F-050, F-051)
+- **F-041 / P3:** Split normalization composes each row's later-event ratios exactly with Fraction, then applies the final factor once. A net factor one leaves floats unchanged; float64 representation/rounding and explicit numeric overflow/underflow refusal remain. Exact-equality inverse-chain regression fails on the old source and passes now. Cumulative factors outside float64 representation raise rather than clamp. Focused split suite:43 passed.
+- **F-050 / P3:** docs/ADJUSTED_CACHE_RECOVERY.md and the Phase1 interface contract describe start/end coverage constraints, permanently omitted vendor sessions, preserved original provenance and deliberate rebuild in a new empty cache root. Fetch success is not quality/actionability proof; no automatic deletion, unofficial replacement or invented bar is permitted. No cache was deleted or network contacted to write this guidance.
+- **F-051 / P3:** Gap/partial-append tests match the specific "unverified for retained sessions" refusal rather than the ambiguous "full stored range" text shared by older anchor failures.
+- **Additional review notes:** events=None now raises explicit SplitDataError; initial test totals above are marked historical. The two new inverse-chain/None regressions both failed against the unchanged pre-fix source, and now pass. No new strategy, risk ceiling, broker or credential changes. Claude cross-provider review required.
+
+## F-060 / P2 / Nested JSON log credentials escaped pattern redaction (#29)
+- **Where:** logconfig._PATTERNS / _RedactingFormatter; reproduced by the independent security boundary harness.
+- **Reproduction:** configure_logging with registered fixture secrets, then log extra={"payload":{"authorization":"unregistered-fixture-token"}}. Existing post-format patterns did not recognize quoted JSON credential keys, so the token remained in the rendered JSON line. The new assertion failed on the old implementation; all inputs are hand-written fakes.
+- **Impact:** credential-labelled broker/HTTP metadata not already registered in settings could appear in nested log extras. Registered settings secrets were already masked; this closes the defense-in-depth gap rather than claiming they had leaked.
+- **Fix:** mask quoted JSON credential fields including escaped value characters and plaintext bearer authorization headers, preserving the JSON envelope. Regression tests verify nested APCA/API/token/authorization fields and valid JSON after redaction.
+- **Additional #29 primitives:** security.redaction builds the configured redactor (including NFC display representations), deep-copies/redacts strict JSON values/keys, rejects cycles/nonfinite/unsupported/colliding/oversized structures without echoing inputs; security.untrusted normalizes and bounds exact strings, strips controls/bidi and escapes display/mentions. No command/SQL/path/order use is permitted.
+- **Evidence/scope:** deterministic logs + temporary parameterized SQLite boundary harness, malicious text fixtures, large/control strings, unchanged settings/input assertions, AST evaluation-call guard with one SafeLoader exception. This is not a claim of engine/outbox/dashboard integration: those modules do not yet exist; #29 remains open for consumer integration and the full end-to-end scenario. No broker or credential access, governance change or risk/strategy modification. Claude cross-provider review required.

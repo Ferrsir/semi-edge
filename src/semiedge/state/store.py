@@ -14,8 +14,8 @@ the outermost transaction ends, even when the caller swallows the exception (§5
 halt write is idempotent per kind, so callers that also set the halt (§5.1 "caller sets a
 RECONCILIATION halt") do not create a second row.
 
-Nothing here reads the wall clock except through :mod:`semiedge.clock` (store creation only);
-every mutating method takes an explicit ``now``. Nothing here talks to a broker.
+Nothing here reads the wall clock: the constructor and every mutating method take an
+explicit ``now`` (§0.3, §18). Nothing here talks to a broker.
 """
 
 from __future__ import annotations
@@ -36,7 +36,6 @@ from pathlib import Path
 from typing import Any, Final, Literal, cast
 from zoneinfo import ZoneInfo
 
-from semiedge.clock import Clock, SystemClock
 from semiedge.reporting.signal_report import evaluation_to_dict
 from semiedge.risk.sizing import SizingResult
 from semiedge.risk.types import EntryProposal, HaltKind, OrderSide, RiskCheck, RiskDecision
@@ -277,12 +276,13 @@ class StateStore(StateReaderBase):
         path: Path,
         *,
         data_source: Literal["real", "synthetic"],
-        clock: Clock | None = None,
+        now: datetime,
     ) -> None:
         """Take the writer lock (§5.3), create or migrate the DB and set the PRAGMAs.
 
-        ``clock`` (default :class:`semiedge.clock.SystemClock`) is read only to stamp
-        ``meta.created_at`` and ``schema_version.applied_at`` when the DB is created/migrated.
+        ``now`` (tz-aware; callers pass ``Clock.now()``) stamps ``meta.created_at`` and
+        ``schema_version.applied_at`` when the DB is created or migrated; it is required so that
+        ``semiedge.state`` never reads the wall clock.
         An existing DB whose ``meta.data_source`` differs, an unknown newer schema version, or a
         file that is not a SEMI-EDGE state DB is refused with :class:`StateStoreError`.
         """
@@ -292,7 +292,7 @@ class StateStore(StateReaderBase):
             raise StateStoreError("path must be a pathlib.Path")
         self._depth = 0
         self._pending_halts: list[_PendingHalt] = []
-        clock = clock if clock is not None else SystemClock()
+        ts_text(now, "now")  # validate before touching the filesystem
         path.parent.mkdir(parents=True, exist_ok=True)
         self._lock: WriterLock | None = WriterLock(path.parent / LOCK_FILE_NAME)
         try:
@@ -302,7 +302,7 @@ class StateStore(StateReaderBase):
             raise StateStoreError(f"cannot open state database: {exc}") from None
         try:
             _configure(conn)
-            self._store_id, self._data_source = _migrate(conn, data_source, clock.now())
+            self._store_id, self._data_source = _migrate(conn, data_source, now)
         except BaseException:
             conn.close()
             self._release_lock()
@@ -1584,7 +1584,7 @@ def _migrate(
     conn: sqlite3.Connection, data_source: Literal["real", "synthetic"], now: datetime
 ) -> tuple[str, Literal["real", "synthetic"]]:
     """Create or migrate inside one transaction; forward only; refuse unknown newer versions."""
-    ts = ts_text(now, "clock.now()")
+    ts = ts_text(now, "now")
     try:
         conn.execute("BEGIN IMMEDIATE")
         tables = {

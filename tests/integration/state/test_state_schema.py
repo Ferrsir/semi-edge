@@ -193,6 +193,9 @@ def test_halt_control_never_creates_a_database(tmp_path: Path) -> None:
 
 def test_constructor_rejects_bad_arguments(tmp_path: Path) -> None:
     with pytest.raises(StateStoreError, match="pathlib"):
-        StateStore("x.sqlite3", data_source="real")  # type: ignore[arg-type]
+        StateStore("x.sqlite3", data_source="real", now=T0)  # type: ignore[arg-type]
+    with pytest.raises(StateStoreError, match="timezone-aware"):
+        StateStore(tmp_path / "s" / "x.sqlite3", data_source="real", now=T0.replace(tzinfo=None))
+    assert not (tmp_path / "s").exists()  # refused before touching the filesystem
     with pytest.raises(StateStoreError, match="pathlib"):
         ReadOnlyStateStore("x.sqlite3")  # type: ignore[arg-type]

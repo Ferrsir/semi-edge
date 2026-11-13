@@ -71,8 +71,8 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T3 | #13 | Read-only paper account snapshot (`semiedge.broker.account`) | claude | DONE (PR #39, merged ee66aaf; P3 F-025 → #52) | T0 |
 | T3b | #15–#29 | Phase 2–4 interface spec (backtest, risk, execution, state, reconcile, engine, dashboard) | claude | DONE (PR #62, merged 0882031; Codex PASS ae80ac3) | T0 |
 | T4 | #14 | Signal report + CLI (`scan`, `data fetch/status`, `account`, `config check`) | claude | DONE (PR #50, merged ce2490d) | T1, T2, T3 |
-| T5 | #15 | Event-driven backtest engine: next-open fills, costs, slippage | codex | IN PROGRESS (codex via `codex exec`, run by the lead) `feature/15-backtest-engine` | T1, T2 |
-| T6 | #16 | Performance metrics, SMH/QQQ benchmark comparison | codex | READY | T5 |
+| T5 | #15 | Event-driven backtest engine: next-open fills, costs, slippage | codex | DONE (PR #75, merged 1d147df; ADR-008 in #80, merged 03ce186; P3s #79) | T1, T2 |
+| T6 | #16 | Performance metrics, SMH/QQQ benchmark comparison | codex | IN PROGRESS (codex via lead-run `codex exec`) `feature/16-metrics`, worktree `codex-metrics-16`: interactive Codex, don't start it | T5 |
 | T7 | #17 | Walk-forward + parameter sensitivity | claude | READY | T5, T6 |
 | T8 | #19 | Deterministic independent risk manager (exposure incl. pending, halts) | claude | DONE (PR #69, merged f79a496; Codex PASS a87d30c) | T2 |
 | T9 | #21 | Paper order lifecycle: idempotent client IDs, partial fills, brackets | claude | READY | T3, T8 |
@@ -82,15 +82,17 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T13 | #25 | Streamlit dashboard (dark theme) | codex | READY | T4 |
 | T14 | #26 | Discord notifications | codex | READY | T12 |
 | T15 | #27 | Docker / compose, health checks, graceful shutdown | claude | READY | T12 |
-| T16 | #29 | Security: secret handling, redaction, prompt-injection tests | codex | REVIEW (PR #67 at 13d12dd; boundary core only, consumer integration remains #29) | T4 |
-| T17 | #18 | Corporate actions tracking | codex | READY | T1 |
+| T16 | #29 | Security: secret handling, redaction, prompt-injection tests | codex | IN PROGRESS: core merged (PR #67, f0b093d); follow-ups #74; §13 e2e test open | T4 |
+| T17 | #18 | Corporate actions tracking | codex | REVIEW (PR #77 core; #18 remains open for integration) | T1 |
 | A37 | #37 | Audit: reject missing runtime configuration sections | codex | DONE (PR #38) | T0 |
 | A40 | #40 | Harden shared paper endpoint guard against disguised URL objects | codex | DONE (PR #41, merged dfece2a) | T0 |
 | T42 | #42 | Offline fixture CSV-to-Parquet ingestion pipeline | codex | DONE (PR #45, merged 9aa0e0c) | T0 |
 | T46 | #46 | Offline point-in-time split normalization core (subtask of #18) | codex | DONE (PR #61, merged ae01934; P3 F-041 → #68) | T0 |
 | T47 | #47 | Project status dashboard (separate from trading UI) | codex | DONE (PR #65, merged 068e01f; CI job split to restricted #66, owner approval) | T0 |
 | A63 | #63 | Reject unverified retained adjusted sessions (F-036) | codex | DONE (PR #64, merged 0fe06f3; P3 F-050/F-051 → #68) | T1 |
-| A68 | #68 | Split precision and adjusted-history recovery follow-ups | codex | IN PROGRESS (codex) | T46, T1 |
+| A68 | #68 | Split precision and adjusted-history recovery follow-ups | codex | DONE (PR #70, merged 00be4fa) | T46, T1 |
+| T71 | #71 | Backtest cost/config and shared exit primitives (subtask #15) | codex subagent | WIP (isolated primitives preserved for lead reuse; overlaps lead-owned T5) | T3b |
+| A74 | #74 | Security follow-ups F-070..F-076 | codex subagent | REVIEW (PR #76 at 288ed94; redaction regression fixed) | T16 |
 | H1 | #20 | Verified earnings calendar source | human | BLOCKED (owner must choose a data source) | — |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
 
@@ -99,17 +101,24 @@ Codex: start here every session. When an item is done, post on the PR or issue, 
 delete the item from this list in the same `AGENTS.md` commit. If an item is blocked, say why in the
 log and move to the next one. Work in your own worktree under `../semi-edge.worktrees/`, not in the
 `.t3` checkout and not in a Claude worktree. Never push to a Claude branch. Report findings on the
-PR instead. The next finding ID is **F-061** (F-041..F-059 reserved for Claude reviews; F-060 security fix).
+PR instead. **Next finding ID: F-120** (F-060 is your #67 security fix; F-061..F-063 were used in your #69 review).
 
-1. **#62** (Phase 2–4 spec): the lead runs your re-review via `codex exec` (F-043..F-045 fixed at `481f8b5`). Then T5 starts.
-2. **#68** P3 follow-ups (F-041 exact chained splits, F-050 doc recovery path, F-051 test match strings).
-3. **T5 #15** backtest engine against #62 once it PASSes. **T13 #25** (Streamlit trading dashboard) after T5.
-4. Review Claude's T8 risk-manager PR (#19) when it opens.
+**T5 is delivered as PR #75** (written by a lead-run `codex exec`; Claude review in progress). Fix whatever that review raises
+on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest-15`, which is the lead's).
+0a. **Fix #76** (#74 security): Claude review FAIL at `288ed94`: F-100 (P2) is an unparseable credential value (unterminated quote, or a
+   backslash-newline inside quotes) that leaks in text logs, JSON logs and `redact_json`; mask to the end of the line or the next delimiter. Also P3s F-101..F-104.
+0. **Fix #77** (T17): Claude review FAIL at `96d6c65`, two blocking P2s:
+   - F-110: the §14 "split after `fetched_at`" rule is unreachable (future ex-dates are skipped first, and there is no `as_of` input).
+   - F-111: the split-day detector needs an exact 1/ratio match, so a 3:2 mixed basis under the 35% threshold passes.
+   Also F-112 and F-113 (P3). Show the regressions failing on `96d6c65`.
 
 ## Review queue
 | PR | Task | Author | Reviewer | Verdict |
 |---|---|---|---|---|
-| #67 | T16 | codex | claude | boundary core/F-060 at 13d12dd; cross-provider review requested |
+| #76 | #74 | codex | claude | Updated 288ed94; cross-provider re-review requested |
+| #77 | T17 | codex | claude | Core 96d6c65; cross-provider review requested; #18 integration open |
+| #75 | T5 | codex | claude | Claude review running |
+| #73 | #54 | claude | codex + owner | Codex PASS at c24c43b (F-077..F-079 fixed); **owner: approve** (restricted) |
 | #66 | #47 | claude (Codex job) | owner | restricted `ci.yml`, **owner: approve** |
 | #53 | #1 | claude | codex + owner | Codex PASS (source); owner approval required |
 
@@ -281,3 +290,32 @@ PR instead. The next finding ID is **F-061** (F-041..F-059 reserved for Claude r
   interactively, so the lead is driving it through `codex exec`. Codex is implementing T5 (#15) in `../semi-edge.worktrees/codex-backtest-15` and
   #68 P3s in `codex-p3-68`. The sandbox cannot write git metadata, so the lead commits its work labelled `Implemented-by: codex` and a
   Claude reviewer reviews it. Leftover: `../semi-edge.worktrees/codex-run-69/.review-pytest-tmp` is permission-locked (harmless).
+
+- 2026-11-13 06:52 UTC ? codex ? Delivered lead-queue #68 as PR #70 at8cef298, own feature/68-data-followups. Fraction composition applies each row once; inverse-chain exact equality and events=None regressions fail on old source/pass now; numeric refusal guards preserved. Added manual no-delete cache recovery guide, tightened F-051 error matches, marked initial counts historical. Full1088 passed/1 skipped; split43 cases; Ruff/format/mypy/Bandit clean. Claude exact-head review requested. #62 is merged; next T5 can use the resolved contract, subject to lead review priorities.
+
+- 2026-11-13 06:56 UTC ? codex ? Started T5/#15 against merged #62. Own feature/15-backtest-engine in codex-backtest-engine. Delegated bounded #71 primitives to Codex agent in a separate feature/71-backtest-primitives worktree; public helper signatures coordinated, root owns shared risk types/proposals and engine/results. Claude retains T8. No fake/permissive gate in shipped CLI; test gates only in fixtures. No market performance result or live/credential access.
+
+- 2026-11-13 09:30 UTC · claude · Closed duplicate #72; Codex's own #70 covers #68 and Claude is reviewing it along with #67. **T5 is taken** by a
+  lead-run `codex exec` in `codex-backtest-15`, so interactive Codex should take T17 (#18) next. Corrected the finding-ID register: next is F-064.
+
+- 2026-11-13 07:01 UTC ? codex ? Coordination correction: T5 branch already belongs to lead-run Codex; creation failed safely, no edits to its worktree. Following lead 09:30 handoff, interactive Codex now claims T17/#18 in new feature/18-corporate-actions. #71 agent preserves isolated primitives for possible lead reuse, no duplicate PR. SDK inspection shows corporate-action models lack an announcement timestamp; will not invent known_at from fetched_at. Building typed core/store/consistency with explicit verified knowledge requirements and offline tests; vendor support limits will be documented.
+
+- 2026-11-13 10:40 UTC · claude · Merged #70 (#68, `00be4fa`) and #67 (#29 security core, `f0b093d`), both Claude PASS. Follow-ups F-070 (P2) through F-076 are in
+  #74 for Codex. #73 (#54 governance tooling): Codex FAIL F-077, then F-078/F-079 (P2 reviewer-config bypasses via a truncated diff,
+  renames and quoted paths), all fixed, then Codex PASS at `c24c43b`. It is restricted, so it waits for the owner. T5 backtest delivered by `codex exec` as #75;
+  Claude review running. Next finding ID F-080 (F-090..F-099 reserved for the #75 review).
+
+- 2026-11-13 07:18 UTC ? codex ? #74 security follow-ups delegated to isolated Codex agent feature/74-security-followups while root handles T17. Agent reports1283 full tests/1 skipped and65 new security regressions; no approval claimed, PR/Claude review pending. Root T17 typed ledger/raw read-only adapter has48 focused tests passing; exact counts, atomic ledger, explicit knowledge resolver and bounded pagination. Corporate adjusted-split contract concern on #18 is proposed F077 (not F064 already used on #70); not integrated into scanner/engine. #71 coordination WIP83798f0 is pushed for lead reuse, no duplicate PR.
+
+- 2026-11-13 07:32 UTC · codex · Delivered T17 core PR #77 at96d6c65: exact corporate-action DTO/ledger, bounded read-only data adapter requiring separate announcement evidence, adjustment consistency checker;66 safety cases,1273 full passed/1 opt-in smoke skipped, Ruff/types/Bandit pass. No consumer activation or verified coverage claim; #18 remains open. Proposed policy clarification has no finding ID (F077..79 belong to governance). #76 refreshed288ed94 fixes confirmed backslash-suffix leak;1292 passed/1 skipped, nine regressions (eight fail on prior head). Both exact-head Claude reviews requested. T5 and other worktrees untouched; #71 remains preserved coordination WIP.
+
+- 2026-11-13 11:40 UTC · claude · Claude review of Codex #77 (#18 corporate actions) at `96d6c65`: FAIL. Blocking P2s F-110 and F-111, plus
+  P3s F-112 and F-113; details are on the PR. Claude reviews of #75 (T5) and #76 (#74 security follow-ups) are running, and the state store (T9 part 1) is being
+  finished. The finding-ID register is now F-120 (F-080..F-119 are reserved for reviews this wave).
+
+- 2026-11-13 12:20 UTC · claude · Merged #75 (T5 backtest, `1d147df`; Claude PASS; P3s are in #79). Claude reviews: #76 FAIL (F-100 P2, F-101..F-104
+  P3), #77 FAIL (F-110/F-111 P2); both are back with Codex. Opened #78 (state store, T9 part 1) and #80 (F-096/ADR-008: the backtest entry
+  is invalidated when the open is at or below the stop, decided before any results); Codex reviews of both are running via `codex exec`.
+
+- 2026-11-13 11:35 UTC · claude · Merged #80 (ADR-008, `03ce186`; Codex FAIL F-130/F-131 parity-spec gaps, fixed, then PASS). The lead claimed T6 (#16) for a
+  `codex exec` run. #78 (state store) is being fixed for Codex's F-120..F-123.
