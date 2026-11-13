@@ -3,6 +3,8 @@
 Shared by **Claude Code** (lead / integrator) and **Codex / ChatGPT** (independent auditor and
 implementer). Read this file at the start of every session, before touching code. It records who is
 working on what, what is done, and what is waiting for review. GitHub issues hold the detailed scope.
+Codex CLI reads this file natively; Claude Code reads it through `CLAUDE.md` (`@AGENTS.md`). Keep
+all shared rules here, not in tool-specific files. Terminal setup: `docs/AGENT_TERMINAL_SETUP.md`.
 
 Owner: Ferrsir (human). **PAPER trading only. Live trading is prohibited in code, config and policy.**
 
@@ -15,21 +17,47 @@ Owner: Ferrsir (human). **PAPER trading only. Live trading is prohibited in code
    change in `docs/specifications/` with rationale, made before looking at the new results.
 4. Fail closed: missing or invalid inputs produce explicit reasons or exceptions, never defaults.
 5. No fabricated results. A backtest number is quoted only with the command that reproduces it.
+6. Third-party skills, plugins and MCP servers (e.g. `day-trader-skill`, `alpaca-mcp-server`) never
+   place, change or cancel orders, and never get trading credentials. Their data (Yahoo, Stooq,
+   other unofficial feeds) is for the owner's manual research only and never feeds SEMI-EDGE code,
+   fixtures, tests or backtests. See "Third-party skills" below.
+7. Preserve other agents' worktrees and uncommitted work. Never claim profitability, integration
+   readiness or background automation without demonstrated, reproducible evidence.
 
 ## How to work
-- One task = one GitHub issue = one branch `feature/<issue>-<slug>` = one worktree at
-  `C:/Users/ferri/.t3/projects/semi-edge.worktrees/<slug>`. Never edit another agent's worktree.
+- One task = one GitHub issue = one branch `feature/<issue>-<slug>` = one worktree in the sibling
+  folder `../semi-edge.worktrees/<slug>` (`git worktree add ../semi-edge.worktrees/<slug> -b
+  feature/<issue>-<slug> origin/main`). Never edit another agent's worktree.
 - Claim: set the board row to `IN PROGRESS (<agent>)`, commit only `AGENTS.md` to `main`
   (`git pull --rebase && git push`), comment on the issue.
-- Setup in a worktree: `C:/Users/ferri/.t3/projects/semi-edge/.venv/Scripts/uv.exe sync --locked --system-certs`
-- Validate: `.venv/Scripts/python -m pytest -q`, `.venv/Scripts/ruff.exe check .`,
-  `.venv/Scripts/ruff.exe format --check .`, `.venv/Scripts/mypy.exe`.
+- Setup in a worktree: `uv sync --locked` (add `--system-certs` behind a TLS-intercepting proxy).
+- Validate: `uv run pytest -q`, `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy`.
+  On Windows without `uv` on PATH, the equivalents are `.venv/Scripts/python -m pytest -q`,
+  `.venv/Scripts/ruff.exe check .`, `.venv/Scripts/ruff.exe format --check .`, `.venv/Scripts/mypy.exe`.
 - Finish: push the branch, open a PR to `main` linked to the issue, set the row to `REVIEW`.
 - Review is cross-provider: Codex reviews Claude PRs and Claude reviews Codex PRs. The reviewer
   posts PASS/FAIL with findings on the PR. The lead merges when CI is green and review is PASS
   with no open P0/P1 (ADR-004). Findings go to `AUDIT_REPORT.md`.
 - Usage limits: if you stop mid-task, commit WIP to your branch, push it, and write a
   `Handoff:` line in the Discussion log (branch, SHA, what is left).
+
+## Agents and tools
+- **Claude Code** (`claude`): lead / integrator. Project settings in `.claude/settings.json` deny
+  reading `.env` and deny broker order tools. Runs in its own worktree.
+- **Codex CLI** (`codex`): independent auditor / implementer. Runs in its own worktree.
+- Two agents never run in the same worktree at once. The owner starts each CLI in a separate
+  terminal tab; no background, scheduled or overnight agents exist unless the owner sets one up.
+
+## Third-party skills
+`Jakeschincariol/day-trader-skill` (MIT) may be installed by the owner as a **research aid only**:
+- Allowed: `trader-scanner`, `trader-news`, `trader-entry`, `trader-exit`, `trader-timemachine`,
+  `trader-budget`, `trader-risk`, `trader-alerts`, `trader-analyst` for manual idea research.
+- Not installed in this project: `trader-broker` (leads to real orders through an Alpaca MCP server).
+  No broker MCP server is configured for agents working on this repo.
+- Its outputs go to `trader/` (git-ignored). Nothing in `trader/` is a SEMI-EDGE signal, fixture,
+  earnings source (#20) or evidence of edge, and SEMI-EDGE code never imports or calls these tools.
+- Its strategy ideas (e.g. opening-range breakouts) enter SEMI-EDGE only through a new spec in
+  `docs/specifications/`, written before any backtest, per rule 3.
 
 ## Board
 
@@ -110,3 +138,10 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 - 2026-10-30 20:49 UTC ? codex ? Completed #40/F-010: shared paper URL guard accepts only exact builtin strings or SDK paper enum, rejecting disguised URL objects; PR #41, branch feature/40-paper-endpoint-guard, commit 04f38a3. Full suite 219 passed; Ruff check/format and mypy passed. Supplemental independent Codex review PASS (19 factory tests); Claude cross-review requested. No requests/orders or changes to Claude worktrees. PR #39 existing F-009 independently reconfirmed; no duplicate finding.
 
 - 2026-10-30 21:02 UTC ? codex ? Claimed #42 independent offline fixture ingestion pipeline; dedicated data.csv_import module, no edits to Claude signal/account/CLI work. Fixture provenance and explicit completed-session cutoff; no API credentials needed.
+
+- 2026-11-13 01:40 UTC · claude · Owner moved off T3 to running Claude Code and Codex CLI directly in a
+  Windows terminal. Replaced T3 paths with repo-relative worktrees and `uv run` commands, added
+  rules 6–7, the "Agents and tools" and "Third-party skills" sections, `.claude/settings.json` deny
+  rules and `docs/AGENT_TERMINAL_SETUP.md` (branch `feature/agent-terminal-setup`). Handoff: #42
+  implementation is still uncommitted only on the owner's machine in
+  `C:/Users/ferri/.t3/projects/semi-edge.worktrees/offline-ingestion`; do not delete that folder.

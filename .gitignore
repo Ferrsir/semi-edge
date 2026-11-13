@@ -48,3 +48,6 @@ secrets/
 Thumbs.db
 .idea/
 .vscode/
+
+# day-trader-skill research output (never committed, never used as SEMI-EDGE data)
+/trader/
