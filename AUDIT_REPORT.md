@@ -276,6 +276,13 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - Rebased on current main, preserving both ingestion and dashboard audit sections. Hosted publishing remains blocked by Sites Git client availability; no updated deployment is claimed.
 
 
+## F-036 / P2 / Unverified retained adjusted sessions (#63)
+- **Where:** data.store._check_adjustment_basis. Independently found by the Codex data-boundary audit and reproduced by the coordinator on merged main.
+- **Reproduction:** stored Jan2..5 OHLC100/volume100. A reverse1:2 split Jan3 followed by forward2:1 Jan4 restates only Jan3 to OHLC50/volume200. A new refetch missing Jan3 has matching Jan2/Jan4 anchors; the old guard accepted [100,100,100,100] instead of [100,50,100,100]. Fetch timestamps arbitrate correctly; this is distinct from F-024.
+- **Impact:** a retained historical row can remain on the wrong basis, distorting indicators and P&L, despite matching neighboring closes. The price-anchor proof in the old contract was insufficient for multiple opposite events.
+- **Fix:** until verified corporate-action/basis evidence exists, every retained adjusted session must occur in incoming history. Missing retained rows require a full stored-range refetch; existing overlapping close comparisons remain. Raw append semantics, source checks and atomic publication are unchanged. This intentionally rejects formerly accepted partial adjusted appends/backfills and gapped refetches, even when surrounding prices match.
+- **Evidence:** new reverse/forward gap test failed before the fix (DID NOT RAISE); now verifies rejection leaves exact original Parquet bytes and frame unchanged, followed by successful full-history recovery. Existing adjustment-basis and timestamp tests retained, with legacy mixed fetch timestamps seeded explicitly; generic correction tests supply full coverage. No strategy/risk ceiling or trading permissions changed. Claude cross-provider review pending.
+
 ## Offline split normalization implementation (#46)
 - This is a new isolated research utility, not a newly discovered production bug. Contract: `docs/specifications/split-normalization.md`; implementation: `data.splits.normalize_raw_splits`.
 - Only explicitly RAW bars are accepted; the output is tagged split-adjusted and rejected on a second invocation. Events require symbol, effective session, exact positive integer share counts and aware knowledge timestamps. Duplicate/conflicting effective sessions fail explicitly.

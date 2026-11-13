@@ -189,13 +189,10 @@ def _check_adjustment_basis(
 ) -> None:
     """Refuse merges that would splice two vendor adjustment bases into one series.
 
-    Adjusted history is restated retroactively (splits, dividends): a corporate action rescales
-    every session before its ex-date. Stored rows that the incoming frame does not replace are only
-    kept when shared sessions prove they are on the incoming basis: each retained row is anchored
-    by the nearest shared session on each side that exists (only the following one for older rows,
-    only the preceding one for newer rows). Stored sessions missing *inside* the incoming range
-    (vendor gaps) need both, because an ex-date right after the gap rescales the preceding session
-    but not the following one.
+    Price anchors cannot establish the basis of absent sessions: opposite corporate actions can
+    cancel on both anchors but rescale rows between them (F-036). Without verified event/basis
+    evidence every retained session must itself be present in incoming history. Partial adjusted
+    appends/backfills and vendor gaps require a complete refetch; raw appends remain supported.
 
     ``retained`` holds the stored sessions that survive the merge's fetch-time tie-breaking:
     sessions the refetch lacks *and* shared sessions whose stored fetch is newer. A retained
@@ -222,3 +219,8 @@ def _check_adjustment_basis(
                 f"{symbol}: adjustment basis changed at {anchor.date()}; "
                 "refetch the full stored range before merging"
             )
+    if not retained.difference(incoming.index).empty:
+        raise ValueError(
+            f"{symbol}: adjustment basis is unverified for retained sessions missing from "
+            "incoming history; refetch the full stored range before merging"
+        )
