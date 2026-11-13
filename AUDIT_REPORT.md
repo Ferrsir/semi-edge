@@ -272,6 +272,21 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
   `known_at ≤ now`. §14 imports `semiedge.data.splits` and documents the two meanings of
   "split-adjusted".
 
+### F-043 · P2 · Split verification needed a read missing from `StateReader` (Codex re-review, PR #62)
+- **Fix (spec):** `data_source()` is part of `StateReader`, implemented identically by both stores and
+  used by §9.4 verification. Parity acceptance covers matching and mismatching source classes.
+
+### F-044 · P2 · Available but incomplete fill activities left confirmed fills unaccounted (Codex re-review, PR #62)
+- **Example:** provisional 30, broker cumulative 50, activities `[A(30)]` → watermark 30, then a
+  reconciliation halt. Likewise an empty activities response with `B > 0`.
+- **Fix (spec):** ingestion step 2 always inserts a provisional remainder when `B > W`, whether
+  activities were available or not, priced at the broker's order-level average. Order notional is
+  defined while provisional rows are active. Acceptance covers partial, empty and catch-up
+  responses, plus replay.
+
+### F-045 · P3 · Acceptance example used the removed float split API (Codex re-review, PR #62)
+- **Fix (spec):** the example uses `new_shares`/`old_shares`; a 1:3 case was added.
+
 ---
 
 ## Speculative concerns (not demonstrated; tracked for the relevant phase)

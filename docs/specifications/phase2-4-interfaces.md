@@ -910,6 +910,9 @@ class StateReader(Protocol):               # F-037: the ONE read surface used by
     # parameter names and return types (no adapters, no positional-only variants).
     @property
     def store_id(self) -> str: ...
+    def data_source(self) -> Literal["real", "synthetic"]: ...
+        # F-043: the DB's source class, recorded at creation; §9.4 split verification compares a
+        # CorporateAction's source class with this (SYNTHETIC/FIXTURE ↔ "synthetic", else "real").
     def orders(self, *, statuses: Collection[OrderStatus] | None = None, symbol: str | None = None,
                kinds: Collection[OrderKind] | None = None,
                limit: int | None = None) -> list[OrderRecord]: ...
@@ -1017,7 +1020,6 @@ class ReadOnlyStateStore:                  # implements StateReader (same signat
     def __init__(self, path: Path) -> None: ...
         # sqlite3.connect(f"file:{path}?mode=ro", uri=True) + PRAGMA query_only=ON;
         # missing file -> StateStoreError (never creates a DB)
-    def data_source(self) -> Literal["real", "synthetic"]: ...
     def heartbeats(self) -> tuple[tuple[str, datetime, str, str], ...]: ...   # component, ts, status, detail
     def latest_run(self, kind: str) -> tuple[str, str, datetime, datetime | None, str] | None: ...
         # run_id, status, started_at, ended_at, detail
@@ -1192,11 +1194,23 @@ Test paths derive from `tmp_path` (CWD is `tmp_path` via `tests/conftest.py`).
   with activity `B(20)` → local 50, exactly one `superseded` row, no StateStoreError. Replaying
   each step (same broker data) leaves byte-identical rows. Activities reporting 60 against a
   broker cumulative of 50 → `StateStoreError`, nothing written in that transaction.
-- Corporate-action adjustment (F-039): applying `(S, ev1, 4.0)` to a 100-share position →
-  qty 400, `avg_entry_price`/`stop`/`target` ÷ 4, `split_ratio` 4.0, one adjustments row with
+- Corporate-action adjustment (F-039): `apply_corporate_action_adjustment("S", event_id="ev1",
+  ex_date=d, new_shares=4, old_shares=1, now=t)` on a 100-share position → qty 400,
+  `avg_entry_price`/`stop`/`target` ÷ 4, `split_ratio` 4.0, one adjustments row with
   `qty_before=100, qty_after=400`; a second call returns `False` and changes nothing; reopening
   the store and calling again → still `False`; a ratio giving a non-integer qty → `StateStoreError`
-  and no change.
+  and no change. Non-binary ratio (F-045): a 1:3 reverse split (`new_shares=1, old_shares=3`) on
+  300 shares → qty 100 and prices × 3 exactly (no float round-trip); on 100 shares →
+  `StateStoreError` (100/3 is not an integer).
+- Fill ingestion with incomplete activities (F-044): stored provisional `cum_qty=30`, broker
+  `B=50`, available activities `[A(30)]` → the 30-row is superseded, one provisional row
+  `cum_qty=50, qty=20` is inserted, `W=50`, no halt; an available **empty** response with `B=40`
+  → one provisional `qty=40`; later activities `A(30), C(20)` → both provisional rows superseded,
+  `W=50`; replaying any step through ingestion, `sync_open_orders` and `reconcile` adds nothing
+  and raises no halt.
+- `data_source()` parity (F-043): `StateStore` and `ReadOnlyStateStore` return the same value; a
+  `FIXTURE` split against a `"real"` DB is not verified (no adjustment, mismatch halts) and both
+  stores give identical `diff_state` reports for that case.
 
 ---
 
@@ -1405,12 +1419,18 @@ For broker order `O` with broker-reported cumulative `B = BrokerOrder.filled_qty
   (0 if none). The **local cumulative (watermark)** is `W = max(A, P)`; `orders.filled_qty = W`.
   Position and exposure arithmetic counts each order at `W`, never a raw sum of rows; `superseded`
   rows are excluded everywhere.
-- Activities available: insert each unseen activity (key = activity id) as `final`; recompute `A`;
-  mark every `provisional` row of `O` with `cum_qty ≤ A` as `superseded`. A provisional row with
-  `cum_qty > A` stays (it still covers quantity not yet reported as activities).
-- Activities unavailable: if `B > W`, insert one row `f"{client_order_id}:{B}"`, `qty = B − W`,
-  `price` = the increment's average implied by `filled_avg_price`, `cum_qty = B`, `provisional`;
-  if `B ≤ W`, nothing.
+- Step 1, activities available (possibly empty or incomplete): insert each unseen activity
+  (key = activity id) as `final`; recompute `A`; mark every `provisional` row of `O` with
+  `cum_qty ≤ A` as `superseded`. A provisional row with `cum_qty > A` stays (it still covers
+  quantity not yet reported as activities). Activities unavailable: skip step 1.
+- Step 2, always (F-044): recompute `W`; if `B > W`, insert one row `f"{client_order_id}:{B}"`,
+  `qty = B − W`, `cum_qty = B`, `provisional`, `price = filled_avg_price` (the broker's order-level
+  average). This covers an empty or partial activities response as well as an unavailable one, so
+  a confirmed broker fill is never left unaccounted and never double counted (the remainder is
+  superseded once activities reach it). If `B ≤ W`, nothing.
+- Order notional (price accounting): while `O` has an active `provisional` row, its notional is
+  `W · filled_avg_price` (broker order-level average at the latest ingestion); otherwise
+  `Σ qty·price` of its `final` rows. Position `avg_entry_price` uses these order notionals.
 - `B` is the upper bound: if the new `W` would exceed `B` (or `B` is below the stored `W`), the
   transaction is rolled back → `StateStoreError`, FILL_MISMATCH, RECONCILIATION halt (fail closed).
 - Added quantity per call = `W_new − W_old` ≥ 0 only; replaying the same inputs adds 0.
@@ -1674,7 +1694,7 @@ halt and an immediate cancel of the non-protective sell.
 an open position's symbol with kind `split` or `reverse_split`; non-empty `event_id`; finite
 share counts (`new_shares`, `old_shares` positive and unequal; ratio = `Fraction(new_shares,
 old_shares)`, exact); `entry_session < ex_date ≤ today`; knowledge-verified, i.e. `known_at ≤ now`
-and `fetched_at ≤ now` (known before it is used) and `source` of the same class as the state DB
+and `fetched_at ≤ now` (known before it is used) and `source` of the same class as the state DB (`StateReader.data_source()`, F-043)
 (`SYNTHETIC`/`FIXTURE` only with a synthetic DB); and `local qty · ratio` an exact integer.
 Anything else is not a verified split and adjusts nothing.
 
