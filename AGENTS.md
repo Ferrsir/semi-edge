@@ -86,7 +86,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T17 | #18 | Corporate actions tracking | codex | READY | T1 |
 | A37 | #37 | Audit: reject missing runtime configuration sections | codex | DONE (PR #38) | T0 |
 | A40 | #40 | Harden shared paper endpoint guard against disguised URL objects | codex | DONE (PR #41, merged dfece2a) | T0 |
-| T42 | #42 | Offline fixture CSV-to-Parquet ingestion pipeline | codex | REVIEW (PR #45 @6d331d3), F-013/F-014/F-015 fixed; awaits Claude | T0 |
+| T42 | #42 | Offline fixture CSV-to-Parquet ingestion pipeline | codex | DONE (PR #45, merged 9aa0e0c) | T0 |
 | T46 | #46 | Offline point-in-time split normalization core (subtask of #18) | codex | READY | T0 |
 | T47 | #47 | Project status dashboard (separate from trading UI) | codex | IN PROGRESS (codex): F-016..F-023 fixes on PR #49 | T0 |
 | H1 | #20 | Verified earnings calendar source | human | BLOCKED (owner must choose a data source) | — |
@@ -105,9 +105,9 @@ PR instead. The next finding ID is **F-028**.
 3. **Review #50** (CLI, #14), commits after `22ff3ea` only. The earlier commits are the stacked #36/#39/#48.
    Focus: synthetic/market isolation, exit codes 0/2/3/4, no echoed secrets, read-only `account`.
 4. **Review #51** (docs only: `.t3` migration status).
+   Also **review #53** (governance docs reconcile; restricted paths, so the owner must approve too).
 5. **Fix #49** F-016 and F-017 (blocking), then the F-018..F-023 P3s. Ask Claude for a re-review.
-6. **#45**: wait for Claude's re-review of `6d331d3` (running), then fix whatever it raises.
-7. Then **#46** (T46, READY, split normalization). It may build on `feature/9-data-layer` until #36
+6. Then **#46** (T46, READY, split normalization). It may build on `feature/9-data-layer` until #36
    merges. After that, **T5 #15** (backtest engine) once the Phase 2–4 interface spec (T3b,
    `feature/15-phase2-4-spec`) is in review.
 
@@ -115,7 +115,6 @@ PR instead. The next finding ID is **F-028**.
 | PR | Task | Author | Reviewer | Verdict |
 |---|---|---|---|---|
 | #36 | T1 | codex; fixes claude | codex | FAIL at b2c43f0: F-024/P1 mixed adjustment bases via fetched_at precedence; Claude fix requested |
-| #45 | T42 | codex | claude | Fixes at 6d331d3 (F-013/F-014/F-015); Claude re-review in progress |
 | #48 | T2 | claude | codex | FAIL at 38b7865: F-026/P2 infinite proposed target; F-027/P3 sizing overflow; Claude fix requested |
 | #50 | T4 | claude | codex | draft; pre-screen fixes pushed; **Codex: review from `22ff3ea` to head** (stacked) |
 | #49 | T47 | codex | claude | FAIL at 035edb0 (P2 F-016 refresh script fails open; P2 F-017 stale/hard-coded status; F-018..F-023 P3); **Codex: fix** |
@@ -227,3 +226,8 @@ PR instead. The next finding ID is **F-028**.
   above the review queue: Codex, start there. Next finding ID F-028.
 
 - 2026-11-13 02:36 UTC ? codex ? Continuing with own #49 dashboard review fixes F-016..F-023 in ../semi-edge.worktrees/codex-dashboard-fixes (feature/47-dashboard-review-fixes), preserving prior Site/engine worktrees. Review queue synchronized to posted #36 FAIL / #39 PASS / #48 FAIL results. Dashboard now derives current phase/owner blockers/review text from source; adding fail-closed parser and browser-state regressions plus CI coverage.
+
+- 2026-11-13 05:20 UTC · claude · Claude re-review of #45 at `6d331d3`: PASS. Merged #45 (`9aa0e0c`).
+  Phase 0 audit: #2 meets its criteria. #3 is a code-complete disabled prototype, blocked on #4–#6. #1 has
+  docs drift, fixed in PR #53 (restricted, needs the owner). Governance tooling defects are filed as #54. Next
+  finding ID F-028.
