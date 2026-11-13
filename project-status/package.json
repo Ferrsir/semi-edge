@@ -1,0 +1,17 @@
+{
+  "name": "semi-edge-status-site",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "node scripts/test-site.cjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "jsdom": "^31.0.0"
+  },
+  "private": true
+}

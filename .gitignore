@@ -5,6 +5,7 @@ __pycache__/
 .eggs/
 build/
 dist/
+!project-status/dist/
 .venv/
 venv/
 .python-version
