@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 
+import numpy as np
 import pytest
 
 from backtest_fixtures import scenario as scenario  # noqa: PLC0414 - pytest fixture export
@@ -15,27 +16,43 @@ pytestmark = pytest.mark.safety
 def test_future_poisoning_and_deletion(scenario):
     request, data, gate, calendar = scenario([(12, 13, 9, 12, 100)] + [(12, 13, 11, 12, 100)] * 3)
     baseline = run_backtest(request, data, gate=gate, calendar=calendar)
-    cutoff = calendar.next_session(request.start)
-    bars = {s: f.copy() for s, f in data.bars.items()}
-    for f in bars.values():
-        f.loc[f.index > str(cutoff), ["open", "high", "low", "close", "volume"]] = 1e6
-    poisoned = run_backtest(request, replace(data, bars=bars), gate=gate, calendar=calendar)
-    deleted = run_backtest(
-        request,
-        replace(data, bars={s: f.loc[: str(cutoff)] for s, f in bars.items()}),
-        gate=gate,
-        calendar=calendar,
-    )
-    for other in (poisoned, deleted):
-        assert [d for d in baseline.risk_decisions if d.proposal.decision_session < cutoff] == [
-            d for d in other.risk_decisions if d.proposal.decision_session < cutoff
-        ]
-        assert [e for e in baseline.equity_curve if e.session < cutoff] == [
-            e for e in other.equity_curve if e.session < cutoff
-        ]
-        assert [t for t in baseline.trades if t.exit_session <= cutoff] == [
-            t for t in other.trades if t.exit_session <= cutoff
-        ]
+    rng = np.random.default_rng(79094)  # fixed seed: failures reproduce exactly
+    cutoffs = [
+        calendar.previous_session(request.start),
+        *calendar.sessions_in_range(
+            request.start,
+            request.end,
+        ),
+    ]
+    for cutoff in cutoffs:
+        bars = {s: f.copy() for s, f in data.bars.items()}
+        for frame in bars.values():
+            future = frame.index > str(cutoff)
+            count = int(future.sum())
+            opened = rng.uniform(1.0, 1000.0, count)
+            closed = rng.uniform(1.0, 1000.0, count)
+            frame.loc[future, "open"] = opened
+            frame.loc[future, "close"] = closed
+            frame.loc[future, "high"] = np.maximum(opened, closed) + rng.uniform(0, 10, count)
+            frame.loc[future, "low"] = np.minimum(opened, closed) * rng.uniform(0.5, 1, count)
+            frame.loc[future, "volume"] = rng.integers(0, 1000000, count)
+        poisoned = run_backtest(request, replace(data, bars=bars), gate=gate, calendar=calendar)
+        deleted = run_backtest(
+            request,
+            replace(data, bars={s: f.loc[: str(cutoff)] for s, f in bars.items()}),
+            gate=gate,
+            calendar=calendar,
+        )
+        for other in (poisoned, deleted):
+            assert [d for d in baseline.risk_decisions if d.proposal.decision_session < cutoff] == [
+                d for d in other.risk_decisions if d.proposal.decision_session < cutoff
+            ]
+            assert [e for e in baseline.equity_curve if e.session < cutoff] == [
+                e for e in other.equity_curve if e.session < cutoff
+            ]
+            assert [t for t in baseline.trades if t.exit_session <= cutoff] == [
+                t for t in other.trades if t.exit_session <= cutoff
+            ]
 
 
 def test_limits_must_match(scenario):

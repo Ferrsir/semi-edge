@@ -26,6 +26,33 @@ from semiedge.data.store import ParquetBarStore
 class BacktestInputError(ValueError):
     """Missing, inconsistent or invalid simulation inputs."""
 
+    @property
+    def reason_code(self) -> str:
+        """Only fixed diagnostic codes may reach the CLI; never echo a cache/vendor message."""
+        known = {
+            "invalid_window",
+            "missing_benchmark",
+            "mixed_provenance",
+            "mixed_or_missing_sources",
+            "fixture_manifest_unavailable",
+            "invalid_provenance",
+            "mixed_synthetic_provenance",
+            "split_adjustment_required",
+            "fixture_manifest_required",
+            "reproducing_command_required",
+            "verified_point_in_time_earnings_unavailable",
+            "configured_adjustment_mismatch",
+            "configured_feed_mismatch",
+            "regime_warmup_unavailable",
+            "end_of_window_no_bar",
+            "incomplete_window",
+        }
+        # The code is either the message prefix or the final colon-delimited field.
+        for field in str(self).split(":"):
+            if field.strip() in known:
+                return field.strip()
+        return "invalid_backtest_input"
+
 
 @dataclass(frozen=True)
 class BacktestData:
@@ -78,6 +105,9 @@ def load_backtest_data(
             raise BacktestInputError(f"{symbol}: mixed_provenance")
         sources.add(series.source)
         bars[symbol] = series.frame.loc[: pd.Timestamp(end)].copy()
+        frame = bars[symbol]
+        if frame.empty or frame.index[0].date() > start or frame.index[-1].date() < end:
+            raise BacktestInputError(f"{symbol}: incomplete_window")
     if len(sources) != 1:
         raise BacktestInputError("mixed_or_missing_sources")
     source = sources.pop()
