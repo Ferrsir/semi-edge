@@ -305,6 +305,14 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Fix:** tests for batch approvals exhausting gross exposure and cash with exact sizes, equal-rank
   symbol ties, a rejected earlier duplicate, and a property test with pending BUY/SELL orders.
 
+### F-077 · P2 · A truncated diff could hide excluded reviewer-config changes (Codex review, PR #73)
+- **Reproduce:** pad an earlier file so that a later `z/.claude/settings.json` change falls beyond
+  `MAX_DIFF_CHARS`. The sanitized review copy omits that path, so the change was in neither the prompt nor the copy.
+- **Fix:** if the diff is truncated and any changed path has an excluded component (case-insensitive),
+  the review fails closed with a request to split the PR.
+- **Regression:** `tests/governance/test_ai_review.py::test_truncated_diff_hiding_excluded_config_fails_closed`
+  (the reviewer ran on `fcdb423`); a large ordinary diff is still reviewed.
+
 ---
 
 ## Speculative concerns (not demonstrated; tracked for the relevant phase)

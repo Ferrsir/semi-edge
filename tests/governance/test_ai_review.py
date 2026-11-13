@@ -372,3 +372,50 @@ def test_redact_patterns() -> None:
 )
 def test_glob_to_regex(pattern: str, path: str, expected: bool) -> None:
     assert bool(glob_to_regex(pattern).match(path)) is expected
+
+
+def test_truncated_diff_hiding_excluded_config_fails_closed(
+    repo: tuple[Path, str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F-077: padding the diff must not push an excluded-config change out of review."""
+    import ai_review
+
+    r, base, _ = repo
+    monkeypatch.setattr(ai_review, "MAX_DIFF_CHARS", 200)
+    (r / "a_padding.py").write_text("x = 1\n" * 200)
+    (r / "z" / ".claude").mkdir(parents=True)
+    (r / "z" / ".claude" / "settings.json").write_text('{"permissions": {}}')
+    _git(r, "add", ".")
+    _git(r, "commit", "-qm", "pad then config")
+    head = _git(r, "rev-parse", "HEAD")
+
+    def fake_codex(prompt: str, **kw: Any) -> tuple[dict[str, Any], dict[str, str]]:
+        pytest.fail("the reviewer must not run when excluded changes cannot be shown")
+
+    monkeypatch.setattr(ai_review, "run_codex", fake_codex)
+    rep = run_review(_args(r, base, head))
+    assert rep["effective_verdict"] == "FAIL"
+    assert "truncated" in rep["error"]
+
+
+def test_truncated_diff_without_excluded_config_still_reviews(
+    repo: tuple[Path, str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import ai_review
+
+    r, base, _ = repo
+    monkeypatch.setattr(ai_review, "MAX_DIFF_CHARS", 200)
+    (r / "a_padding.py").write_text("x = 1\n" * 200)
+    _git(r, "add", ".")
+    _git(r, "commit", "-qm", "large ordinary change")
+    head = _git(r, "rev-parse", "HEAD")
+    calls: list[str] = []
+
+    def fake_codex(prompt: str, **kw: Any) -> tuple[dict[str, Any], dict[str, str]]:
+        calls.append(prompt)
+        return {"verdict": "PASS"}, {"cli": "x", "model": "m"}
+
+    monkeypatch.setattr(ai_review, "run_codex", fake_codex)
+    run_review(_args(r, base, head))
+    assert calls
+    assert "truncated" in calls[0]

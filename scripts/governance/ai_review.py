@@ -80,6 +80,13 @@ def _is_link_like(path: Path) -> bool:
     return path.is_symlink() or path.is_junction()
 
 
+def _excluded_path(rel: str) -> bool:
+    """True if any component of a repo-relative path is excluded from the review copy."""
+    return any(
+        part.lower() in EXCLUDED_FROM_REVIEW_COPY for part in rel.replace("\\", "/").split("/")
+    )
+
+
 def sanitized_copy(src: Path, dest: Path) -> list[str]:
     """Copy the regular files of ``src`` into the new directory ``dest``.
 
@@ -369,6 +376,15 @@ def run_review(args: argparse.Namespace) -> dict[str, Any]:
             if ln
         ]
         diff = _git(repo, "diff", "--no-color", "--no-ext-diff", f"{args.base}...{args.head}")
+        hidden = [f for f in changed if _excluded_path(f)]
+        if len(diff) > MAX_DIFF_CHARS and hidden:
+            # F-077: the review copy omits excluded paths, so a truncated diff could hide their
+            # changes from the reviewer entirely. Fail closed instead of reviewing partially.
+            raise ReviewError(
+                "refusing to review: the diff is truncated and the PR changes excluded reviewer "
+                "config paths whose content the reviewer could not see; split the PR: "
+                + ", ".join(hidden)
+            )
         role_prompt = (trusted / spec["prompt"]).read_text(encoding="utf-8")
         schema_path = trusted / ".github/review/review-schema.json"
         before = workspace_state(repo)
