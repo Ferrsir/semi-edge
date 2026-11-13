@@ -70,7 +70,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T2 | #11, #12 | Indicators, `momentum_v1` features/evaluation/score, position sizing | claude | REVIEW (PR #48) `feature/11-signals-strategy`; awaits Codex review | T0 |
 | T3 | #13 | Read-only paper account snapshot (`semiedge.broker.account`) | claude | REVIEW (PR #39 @ da04e38, F-009 fixed; awaits Codex re-review) | T0 |
 | T3b | #15–#29 | Phase 2–4 interface spec (backtest, risk, execution, state, reconcile, engine, dashboard) | claude | IN PROGRESS (claude) `feature/15-phase2-4-spec` | T0 |
-| T4 | #14 | Signal report + CLI (`scan`, `data fetch/status`, `account`, `config check`) | claude | IN PROGRESS (claude) `feature/14-signal-report`, stacked on #36/#39/#48 | T1, T2, T3 |
+| T4 | #14 | Signal report + CLI (`scan`, `data fetch/status`, `account`, `config check`) | claude | REVIEW (draft PR #50, stacked on #36/#39/#48; review `22ff3ea..45ab740`) | T1, T2, T3 |
 | T5 | #15 | Event-driven backtest engine: next-open fills, costs, slippage | codex | READY | T1, T2 |
 | T6 | #16 | Performance metrics, SMH/QQQ benchmark comparison | codex | READY | T5 |
 | T7 | #17 | Walk-forward + parameter sensitivity | claude | READY | T5, T6 |
@@ -99,6 +99,8 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | #39 | T3 | claude | codex | F-009 fixed at `da04e38` (rebased); **Codex: re-review** |
 | #45 | T42 | codex | claude | FAIL at 5df112e (P2 F-013 future/in-progress bars blocking; F-014 P2, F-015 P3); **Codex: fix** |
 | #48 | T2 | claude | codex | **Codex: review** |
+| #50 | T4 | claude | codex | draft; **Codex: review `22ff3ea..45ab740`** (stacked) |
+| #49 | T47 | codex | claude | in progress (claude) |
 
 ## Discussion log (append-only, newest last; `YYYY-MM-DD HH:MM UTC · agent · note`)
 - 2026-10-30 15:10 UTC · claude · Took over as lead/integrator at the owner's request. Owner
@@ -185,3 +187,9 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 - 2026-11-13 02:09 UTC ? codex ? Delivered #47 project status dashboard: https://semi-edge-project-status.ferrislavigne.chatgpt.site (owner-private), PR #49, branch feature/47-project-status @035edb0. Overview/roadmap/task filters/review queue/owner checklist; dated board+GitHub snapshot, not automatic live sync. Source under project-status/, update instructions docs/PROJECT_STATUS_DASHBOARD.md. DOM interaction tests pass; existing suite 219 passed, Ruff/type/format pass. Visual browser layout QA unavailable. Claude source cross-review requested. #46 remains READY; no implementation lost.
 
 - 2026-11-13 02:12 UTC ? codex ? Acknowledged Claude assignment of PR #45 F-013/F-014/F-015 and asked next review priority on issue #42. Working from new ../semi-edge.worktrees/codex-ingestion-fixes (feature/42-ingestion-review-fixes) based on PR head 5df112e. Original .t3 worktrees and Claude worktrees stay untouched; will push fixes as fast-forward commits to existing PR branch.
+
+- 2026-11-13 03:50 UTC · claude · T4 → draft PR #50 (CLI signal report, closes #14). Stacked on
+  #36/#39/#48 via merge commits; only `45ab740` is new. Validation: 930 passed, 1 skipped; ruff/mypy clean.
+  Codex review requested. Claude is reviewing Codex PR #49 (dashboard). Still waiting for Codex
+  reviews of #36 (`492b75e..b2c43f0`), #39 (`da04e38`), #48 and #50. Merge order once they PASS: #36, #39,
+  #48, then rebase #50.
