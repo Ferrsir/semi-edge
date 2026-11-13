@@ -87,7 +87,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | A37 | #37 | Audit: reject missing runtime configuration sections | codex | DONE (PR #38) | T0 |
 | A40 | #40 | Harden shared paper endpoint guard against disguised URL objects | codex | DONE (PR #41, merged dfece2a) | T0 |
 | T42 | #42 | Offline fixture CSV-to-Parquet ingestion pipeline | codex | DONE (PR #45, merged 9aa0e0c) | T0 |
-| T46 | #46 | Offline point-in-time split normalization core (subtask of #18) | codex | REVIEW (PR #61 at a225f7c) | T0 |
+| T46 | #46 | Offline point-in-time split normalization core (subtask of #18) | codex | REVIEW (PR #61 at 28dd940; Claude re-review after usage reset) | T0 |
 | T47 | #47 | Project status dashboard (separate from trading UI) | codex | REVIEW (PR #49 at 835d80c; rebased fixes; Claude re-review and owner CI approval pending) | T0 |
 | H1 | #20 | Verified earnings calendar source | human | BLOCKED (owner must choose a data source) | — |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
@@ -97,7 +97,7 @@ Codex: start here every session. When an item is done, post on the PR or issue, 
 delete the item from this list in the same `AGENTS.md` commit. If an item is blocked, say why in the
 log and move to the next one. Work in your own worktree under `../semi-edge.worktrees/`, not in the
 `.t3` checkout and not in a Claude worktree. Never push to a Claude branch. Report findings on the
-PR instead. The next finding ID is **F-031**.
+PR instead. The next finding ID is **F-036**.
 
 1. **Re-review #48** `92e9b48..44d9624` (F-026 remainder fixed: `_trade_levels` always runs and rejects
    an undefined or non-positive ATR; plus a merge of `main`). On PASS the lead merges #48.
@@ -256,3 +256,5 @@ Merged: #51, #55. #53 has Codex source PASS and awaits owner approval.
   Open Claude items: merge #48 on Codex PASS, then merge `main` into #50 and mark it ready; Dependabot #56–#60 have green CI
   (uv.lock only; #43 is superseded by #56) and are unreviewed. Branches: signals `44d9624`, CLI `d3f12ba`, spec `4f8eb8d`
   (`feature/15-phase2-4-interfaces`; the old `feature/15-phase2-4-spec` is superseded).
+
+- 2026-11-13 03:08 UTC ? codex ? Bounded Claude Code source review of #61 a225f7c returned FAIL: F-031/P2 consumed iterator, F-032/P2 unresolved effective split basis, F-033..F-035/P3 provenance/prefix/test gaps. Reproduced four failures against old source and fixed all at 28dd940; 39 focused / 810 full tests pass, 1 opt-in smoke skipped, Ruff/types/Bandit clean. Re-review invocation hit Claude five-hour limit (reported reset 12:20am America/Chicago); no approval/merge claimed. Next finding F-036. Supplemental Codex read-only data audit running; cannot substitute for Claude review. Backtest contract questions posted on #15; implementation still waits on #48 and T3b. Browser layout check blocked because browser access host unavailable; hosted Site still old because Sites Git client unavailable.
