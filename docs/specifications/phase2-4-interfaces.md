@@ -65,8 +65,8 @@ T14 needs the `notifications_outbox` table (T9).
 L6  semiedge.cli, semiedge.dashboard                                  (entry points)
 L5  semiedge.engine  ·  semiedge.notify
 L4  semiedge.execution
-L3  semiedge.broker  ·  semiedge.state  ·  semiedge.backtest
-L2  semiedge.risk  ·  semiedge.strategy
+L3  semiedge.broker  ·  semiedge.state  ·  semiedge.backtest  ·  semiedge.reporting (exists, Phase 1)
+L2  semiedge.risk  ·  semiedge.strategy   (lateral: only semiedge.risk → semiedge.strategy)
 L1  semiedge.data  ·  semiedge.indicators
 L0  semiedge.safety  ·  semiedge.config  ·  semiedge.data.schema  ·  semiedge.logconfig  ·  semiedge.security  ·  semiedge.clock
 ```
@@ -77,10 +77,18 @@ because `semiedge.execution` (L4) needs it and must not import `semiedge.engine`
 `semiedge.execution` enqueue notifications and must not import `semiedge.notify` (`semiedge.notify`
 re-exports them). The engine obtains a gateway only via `semiedge.broker.gateway.build_paper_gateway`
 so that no module outside `semiedge.broker.*`/`semiedge.safety.broker` imports `alpaca.trading`.
+Lateral imports within L2 are allowed only from `semiedge.risk` to `semiedge.strategy`
+(`semiedge.risk.proposals` reads `SignalEvaluation`/`MomentumV1Params`); `semiedge.strategy`
+never imports `semiedge.risk` (deny row in §0.2). `semiedge.reporting` (Phase 1 signal reports)
+imports `semiedge.config`, `semiedge.data`, `semiedge.risk.sizing` and `semiedge.strategy`.
+Lateral imports within L3 are allowed only into `semiedge.reporting`: `semiedge.backtest` →
+`semiedge.reporting` (`new_run_id`, `SYNTHETIC_BANNER`, §3.5/§3.6) and `semiedge.state` →
+`semiedge.reporting` (`evaluation_to_dict`, §5.1); `semiedge.reporting` imports neither.
 
 ### 0.2 Import allow/deny table (enforced by `tests/safety/test_import_boundaries.py`)
 
-The test parses every `src/semiedge/**.py` with `ast` (static; no import execution), resolves
+The test parses every `**/*.py` under `Path(semiedge.__file__).parent` (never a CWD-relative
+`src/` path: `tests/conftest.py` chdirs every test to `tmp_path`) with `ast` (static; no import execution), resolves
 absolute and relative imports, and fails on any forbidden edge. Rows for packages that do not
 exist yet are skipped. The table is **append-only**: a PR may add rows or tighten, never loosen
 (loosening needs a spec change). The first Phase 2 PR to merge creates the test.
@@ -89,6 +97,8 @@ exist yet are skipped. The table is **append-only**: a PR may add rows or tighte
 |---|---|
 | `semiedge.risk` | `alpaca`, `semiedge.broker`, `semiedge.execution`, `semiedge.engine`, `semiedge.state`, `semiedge.backtest`, `semiedge.notify`, `semiedge.dashboard`, `semiedge.data.alpaca_source`, `semiedge.data.store`, `sqlite3`, `requests`, `httpx`, `urllib.request`, `socket` |
 | `semiedge.strategy`, `semiedge.indicators` | everything above plus `semiedge.data.alpaca_source`, `semiedge.data.store`, `semiedge.data.synthetic` |
+| `semiedge.strategy` | `semiedge.risk` (the only lateral L2 edge is `semiedge.risk` → `semiedge.strategy`) |
+| `semiedge.reporting` | `alpaca`, `semiedge.broker`, `semiedge.execution`, `semiedge.engine`, `semiedge.state`, `semiedge.notify`, `semiedge.dashboard`, `semiedge.backtest` |
 | `semiedge.backtest` | `alpaca`, `semiedge.broker`, `semiedge.execution`, `semiedge.engine`, `semiedge.state`, `semiedge.notify`, `semiedge.dashboard`, `semiedge.data.alpaca_source`, network modules |
 | `semiedge.state` | `alpaca`, `semiedge.broker`, `semiedge.execution`, `semiedge.engine`, `semiedge.notify`, `semiedge.dashboard`, `semiedge.backtest`, network modules |
 | `semiedge.broker` | `semiedge.execution`, `semiedge.engine`, `semiedge.notify`, `semiedge.dashboard`, `semiedge.backtest` |
@@ -100,7 +110,8 @@ exist yet are skipped. The table is **append-only**: a PR may add rows or tighte
 | every module except `semiedge.broker.*` and `semiedge.safety.broker` | `alpaca.trading` |
 | every module except `semiedge.data.alpaca_source` and `semiedge.data.corporate_actions` | `alpaca.data` |
 
-Acceptance (all `@pytest.mark.safety`):
+Acceptance (module-level `pytestmark = pytest.mark.safety`; markers are always explicit, there
+is no auto-marking by directory):
 - A synthetic module tree written to `tmp_path` with one forbidden edge per row is detected
   (proves the checker works); the real tree passes.
 - Relative imports (`from ..broker import x`) and `importlib.import_module("...")` with a literal
@@ -125,7 +136,9 @@ class FrozenClock:                            # tests; naive datetime -> ValueEr
 # semiedge/data/calendar.py — additive method on the Phase 1 TradingCalendar
     def session_open(self, session: date) -> datetime: ...   # tz-aware UTC; ValueError if not a session
 ```
-No other module reads the wall clock: everything below takes a `Clock` or an explicit `now`.
+No other *new* module reads the wall clock: everything below takes a `Clock` or an explicit `now`.
+(Phase 1 `semiedge.cli` and `semiedge.data.alpaca_source` already call `datetime.now(UTC)`; they
+are not in the §18 no-wall-clock AST scan.)
 
 ### 0.4 Configuration files
 
@@ -146,11 +159,18 @@ the engine fingerprints `(app, EngineConfig)`. `config_fingerprint(app)` stays u
 
 ### 0.5 Amendments to existing safety tests (allowed, and only these)
 
-PR #39 (`semiedge.broker.account`) adds AST scans asserting that no module in `semiedge`
-references an order method (`tests/safety/test_broker_readonly.py`). T9 narrows those scans to
-exclude **exactly** `src/semiedge/broker/gateway.py` (path-equality allowlist of one file, asserted
-by a test that the allowlist has length 1). Every other module stays scanned. No other existing
-safety test may be relaxed by Phase 2–4 work.
+PR #39 (`semiedge.broker.account`) added three AST scans in `tests/safety/test_broker_readonly.py`:
+(a) no module in `semiedge.broker` references any `TradingClient` method name except `get`;
+(b) in `semiedge.broker`, a name `client` is used only as `client.get("<literal in READ_PATHS>")`
+or handed to a paper guard, with no network/dynamic-lookup identifiers; (c) no file anywhere in
+`src/semiedge` contains an identifier, attribute, keyword or string equal to a `TradingClient`
+method name matching `order|cancel|close|replace|exercise`. T9 applies **one** single-file
+allowlist, exactly `src/semiedge/broker/gateway.py` (path equality, asserted by a test that the
+allowlist has length 1), to **all three** scans; every other file stays scanned by all three.
+Only `gateway.py` may reference or call SDK order methods (it calls exactly `submit_order` and
+`cancel_order_by_id`; its reads use `get`, §6.1). Consequently no `BrokerGateway` method name (§6.1) equals any
+`TradingClient` method name, so callers in `semiedge.execution`/`.engine` pass scan (c)
+unchanged. No other existing safety test may be relaxed by Phase 2–4 work.
 
 ---
 
@@ -172,7 +192,7 @@ class OrderSide(StrEnum):
 
 class HaltKind(StrEnum):
     MANUAL = "manual"                 # owner via dashboard/CLI
-    DAILY_LOSS = "daily_loss"         # auto; clears at the next decision cycle (see §4.4)
+    DAILY_LOSS = "daily_loss"         # auto; clears at the next decision cycle (see §8)
     DRAWDOWN = "drawdown"             # auto; latched until a human clears it
     RECONCILIATION = "reconciliation" # irreconcilable broker/local state; human clears
     BROKER = "broker"                 # repeated broker failures / account blocked; human clears
@@ -260,7 +280,7 @@ class RiskDecision:
     approved_shares: int          # 0 if rejected; 1 <= approved_shares <= proposal.proposed_shares if approved
     reasons: tuple[str, ...]      # reason codes; empty iff approved with approved_shares == proposed_shares
     checks: tuple[RiskCheck, ...] # every check evaluated, in §2.2 order
-    limits_fingerprint: str       # sha256 of RiskLimits.model_dump_json(); matches config fingerprinting style
+    limits_fingerprint: str       # semiedge.risk.manager.limits_fingerprint(limits) (§2.1, the one definition)
     decided_at: datetime          # == portfolio.as_of
 ```
 
@@ -278,7 +298,10 @@ def build_entry_proposals(evaluations: Sequence[SignalEvaluation], *, equity: fl
     (must equal ev.proposed_stop/ev.proposed_target within 1e-9 relative, else ValueError — a
     divergence between scanner and exits is a bug, not a rejection), proposed_shares =
     propose_position_size(equity, ev.close, stop, max_risk_per_trade_pct=..., max_position_pct=...).shares.
-    Evaluations with proposed_shares == 0 are still emitted (the risk manager records the rejection)."""
+    Evaluations with proposed_shares == 0 are still emitted (the risk manager records the rejection).
+    Raises ValueError if, for an eligible ev, any of ev.session/score/close/atr/proposed_stop/
+    proposed_target is None, or ev.session != decision_session (eligible evaluations guarantee
+    proposed_stop > 0 and a finite proposed_target > close: momentum_v1._trade_levels, F-026)."""
 ```
 Both the backtest (§3.2 step 6c) and the engine (§10.3 POST_CLOSE) must call this function;
 neither may build `EntryProposal`s any other way (parity).
@@ -303,8 +326,12 @@ class RiskManager:
                  earnings_waiver: Literal["none", "backtest_unavailable"] = "none") -> None:
         """Raises SafetyViolation if any limit exceeds RISK_LIMIT_CEILINGS (defence in depth,
         re-checked field by field even though RiskLimits validated; also if any allow_* flag is
-        not False). An earnings_waiver != "none" is accepted here but makes R01 reject every
-        proposal whose portfolio.mode is not BACKTEST."""
+        not False; also if limits.require_verified_earnings_data is False — fail closed, R16
+        is never relaxed). An earnings_waiver != "none" is accepted here but makes R01 reject
+        every proposal whose portfolio.mode is not BACKTEST."""
+
+    @property
+    def limits(self) -> RiskLimits: ...      # read-only; the validated limits passed in
 
     def evaluate_entries(self, proposals: Sequence[EntryProposal],
                          portfolio: PortfolioView) -> tuple[RiskDecision, ...]:
@@ -314,6 +341,7 @@ class RiskManager:
         """Halts implied by the portfolio itself (DAILY_LOSS, DRAWDOWN) plus portfolio.halts."""
 
 def limits_fingerprint(limits: RiskLimits) -> str: ...
+    # the ONE definition (used by RiskDecision.limits_fingerprint §1, run_backtest §3.4, the store):
     # sha256 hex of json.dumps(limits.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
 ```
 
@@ -337,9 +365,9 @@ against every later proposal in the same batch.
 | R06_fresh | `data_as_of == decision_session == portfolio.session` | `stale_data` |
 | R07_levels | `0 < stop < entry_reference < target`, `atr > 0` | `invalid_levels` |
 | R08_duplicate | no position, no pending order (either side), no earlier proposal in this batch for the symbol | `duplicate_or_conflict` |
-| R09_max_positions | `#positions + #pending entries (+ approved in batch) < max_positions` | `max_positions` |
-| R10_risk_per_trade | sized: `floor(equity·max_risk_per_trade_pct / (entry_reference − stop))` | (downsize) |
-| R11_position_cap | sized: `floor(equity·max_position_pct / entry_reference)` | (downsize) |
+| R09_max_positions | `#positions + #pending entries < max_positions` (pending entries of the working copy, which already include this batch's earlier approvals; nothing is counted twice) | `max_positions` |
+| R10_risk_per_trade | sized: `propose_position_size(equity, entry_reference, stop, …).shares_by_risk` | (downsize) |
+| R11_position_cap | sized: `propose_position_size(equity, entry_reference, stop, …).shares_by_allocation` | (downsize) |
 | R12_gross_exposure | sized: `floor((equity·max_gross_exposure_pct − E) / entry_reference)`, `E = Σ qty·mark_price (positions) + Σ remaining_qty·valuation_price (pending BUY)` | (downsize) |
 | R13_cash | sized: `floor((cash − Σ pending BUY notional) / entry_reference)` (no leverage, no margin) | (downsize) |
 | R14_daily_loss | `equity / start_of_day_equity − 1 > −daily_loss_halt_pct` | `daily_loss_halt` |
@@ -350,7 +378,16 @@ against every later proposal in the same batch.
 - R16 with `verified=False`: if `limits.require_verified_earnings_data` → reject
   `earnings_data_unavailable`. With `earnings_waiver="backtest_unavailable"` (BACKTEST only) the
   check is recorded as `passed=True, detail="waived: no point-in-time earnings data"` and the
-  backtest result is labelled (§3.6). There is no waiver path in PAPER.
+  backtest result is labelled (§3.6). There is no waiver path in PAPER. Since
+  `require_verified_earnings_data=False` is refused at construction (§2.1), and the only
+  calendar until owner issue #20 provides a verified source is `UnavailableEarningsCalendar`,
+  **every new PAPER entry is rejected by R16 (`earnings_data_unavailable`) until #20 is resolved**
+  (§19 item 1). This only tightens; no PR may relax it.
+- R10/R11 call `semiedge.risk.sizing.propose_position_size(equity, entry_reference, stop,
+  max_risk_per_trade_pct=limits.max_risk_per_trade_pct, max_position_pct=limits.max_position_pct)`
+  itself (exact `Fraction` floors); the risk manager never re-implements this arithmetic in
+  float. If the result has `shares == 0`, its `SizingResult.reason` is carried into the
+  `RiskCheck.detail` of R10/R11 (whichever is binding).
 - Downsizing (R10–R13) may only lower the size. If `approved_shares < proposed_shares` the
   binding check IDs are appended to `reasons` as `downsized:<check_id>` while `approved=True`.
 - Pending SELL orders never reduce exposure or free cash (conservative); only filled exits do.
@@ -378,7 +415,7 @@ flattening are never blocked by the risk manager. (Order submission as a whole c
 disabled by `ENABLE_ORDER_SUBMISSION=false`; see §6.)
 
 ### 2.5 Persistence
-The caller persists every `RiskDecision` (paper: `risk_decisions` table, §5.3; backtest:
+The caller persists every `RiskDecision` (paper: `risk_decisions` table, §5.2; backtest:
 `BacktestResult.risk_decisions`). Decisions are persisted **before** any order intent derived
 from them is created.
 
@@ -390,6 +427,9 @@ from them is created.
   `max_positions`; order independence of input sequence (shuffled input → same decisions).
 - Missing/NaN/inf/negative inputs → rejection with `invalid_input`, never an exception.
 - `RiskLimits.model_construct(max_position_pct=0.5)` (bypassing validation) → `SafetyViolation`.
+- `RiskLimits(require_verified_earnings_data=False)` → `RiskManager(...)` raises (§2.1).
+- R10/R11 equal `propose_position_size(...).shares_by_risk/.shares_by_allocation` on the same
+  inputs; a 0-share result carries `SizingResult.reason` in the check detail.
 - Waiver with `mode=PAPER` → every proposal rejected `invalid_mode`.
 - Earnings: unverified → reject in PAPER; `k = 0..N` reject, `k = N+1` pass; holiday-spanning
   windows use the calendar.
@@ -454,8 +494,15 @@ from a frame index), in this exact order, symbols processed in ascending order w
 6. **Decision at close d** (skipped on the final session `end`):
    a. time exits: positions with `held_sessions(entry_session, d) ≥ max_holding_sessions` →
       pending market exit for `d+1` (entry session counts as held session 1);
-   b. signals: `evaluate_universe(bars ≤ d, ...)` with `quality` from `assess_quality`
-      (`lookback_sessions = params.required_history()`, configured feed);
+   b. signals, exactly:
+      `evaluate_universe(bars≤d, universe.regime_benchmark, params, d,
+      tradable=universe.tradable_symbols, quality={s: assess_quality(bars[s], symbol=s, as_of=d,
+      calendar=calendar, lookback_sessions=params.required_history(), feed=<BacktestData.feed>,
+      max_missing_sessions=data.max_missing_sessions_in_lookback) for s in tradable ∪ {regime}},
+      expected_sessions=calendar.sessions_in_range(first_bar_session, d))`, where here `data` is
+      the `DataConfig` (`request.data_settings`, not `BacktestData`) and `first_bar_session` the
+      earliest session in the supplied bars. Without `expected_sessions` every symbol is ineligible; precomputed features
+      likewise use `compute_features(..., expected_sessions=...)` with the same sessions;
    c. proposals: `build_entry_proposals(evaluations, equity=equity_d, …, decision_session=d,
       data_as_of=d)` (§1.1);
    d. `RiskManager.evaluate_entries(proposals, PortfolioView(mode=BACKTEST, session=d,
@@ -470,7 +517,7 @@ from a frame index), in this exact order, symbols processed in ascending order w
 `slip = slippage_bps / 10_000`. Costs per fill: `commission_per_order + commission_per_share·qty`,
 plus `sell_fee_rate · notional` on sells. Cash is debited/credited at fill.
 
-Halts in backtest (same semantics as paper, §4.4/§8): DAILY_LOSS is evaluated at each decision
+Halts in backtest (same semantics as paper, §8): DAILY_LOSS is evaluated at each decision
 from `equity_d / equity_{d−1}`; DRAWDOWN latches at the first decision where it triggers and
 blocks entries for the rest of the run (there is no human to clear it); both are recorded with
 their session in `BacktestResult.halts`.
@@ -494,11 +541,17 @@ def time_exit_due(entry_session: date, session: date, max_holding_sessions: int,
                   calendar: TradingCalendar) -> bool:
     """True iff held_sessions(...) >= max_holding_sessions (decision at close of `session`)."""
 ```
+This counting of `max_holding_sessions` (entry session = held session 1, decided at the close,
+exit at the next open) is **new in this spec**: `momentum_v1.md` defines the parameter but not
+how it is counted. It is fixed before any backtest result exists and recorded as ADR-005 in
+`docs/DECISIONS.md`; changing it is a spec change.
 
 ### 3.4 Engine API
 
 ```python
 class EntryGate(Protocol):   # satisfied by semiedge.risk.manager.RiskManager
+    @property
+    def limits(self) -> RiskLimits: ...
     def evaluate_entries(self, proposals: Sequence[EntryProposal],
                          portfolio: PortfolioView) -> tuple[RiskDecision, ...]: ...
 
@@ -528,6 +581,9 @@ def run_backtest(request: BacktestRequest, data: BacktestData, *, gate: EntryGat
 ```
 - `gate` is required (no default). The CLI and walk-forward always pass a real `RiskManager`;
   fake gates are allowed only under `tests/`. A test asserts the CLI path wires `RiskManager`.
+  `run_backtest` raises `ValueError` unless the gate's limits equal `request.risk`, compared as
+  `limits_fingerprint(gate.limits) == limits_fingerprint(request.risk)` (§2.1; `EntryGate`
+  therefore also exposes `limits: RiskLimits`, which `RiskManager` provides).
 - Warm-up: the decision for the first fill session `start` happens at `previous_session(start)`;
   data must cover `required_history()` sessions before it (else that symbol is ineligible; if the
   **regime benchmark** lacks it → `BacktestInputError`, fail closed for the whole run).
@@ -590,7 +646,7 @@ class EquityPoint:
 @dataclass(frozen=True)
 class BacktestResult:
     schema_version: int                # 1
-    run_id: str                        # uuid4 hex; NOT part of the deterministic payload
+    run_id: str                        # semiedge.reporting.new_run_id(...) ("YYYYMMDDTHHMMSSZ-<8 hex>"); NOT part of the deterministic payload
     command: str
     git_sha: str | None
     semiedge_version: str
@@ -609,14 +665,17 @@ class BacktestResult:
     def save(self, directory: Path) -> Path: ...  # {data_dir}/reports/backtests/{start}_{end}_{run_id}.json, exclusive create
 ```
 JSON: floats as `repr`-round-trippable numbers; `NaN`/`inf` forbidden (`allow_nan=False`);
-dates ISO. Synthetic runs save under `{data_dir}/synthetic/reports/backtests/`.
+dates ISO. Synthetic runs save under `{data_dir}/synthetic/reports/backtests/`. Every artifact
+file is created exclusively (`open(path, "x")`, as `semiedge.reporting.persist_report` does);
+an existing file is never overwritten.
 
 ### 3.6 Mandatory labels (rendered first in every report, JSON and text)
 - `SURVIVORSHIP-BIASED UNIVERSE: current hand-picked list, not point-in-time` (always, while
   `universe.yaml` is not point-in-time; S-001).
-- `PRICE RETURN: dividends excluded` (adjustment `split`; D-007).
+- `PRICE RETURN: dividends excluded` (adjustment `split`; ADR-007 (D-007)).
 - `EARNINGS BLACKOUT NOT APPLIED` when waived.
-- `SYNTHETIC DATA — NOT MARKET DATA` for synthetic sources.
+- `SYNTHETIC DATA — NOT MARKET DATA` for synthetic sources: `semiedge.reporting.SYNTHETIC_BANNER`,
+  imported, never redefined.
 - `FIXTURE DATA — OFFLINE IMPORT, PROVENANCE: <manifest>` for `DataSource.FIXTURE` (never mixed
   with `ALPACA` rows; same rule as synthetic).
 - `GAP OVERSHOOT OF EXPOSURE CAPS: <n> sessions` when `cap_overshoots` is non-empty.
@@ -793,6 +852,13 @@ class Notification:                        # re-exported by semiedge.notify
     body: str                              # truncated to 1800 chars after sanitising
     created_at: datetime
 
+@dataclass(frozen=True, slots=True)
+class EquitySnapshot:                      # one equity_snapshots row; built by the engine from
+    ts: datetime; session: date            # semiedge.broker.account.AccountSnapshot (equity,
+    equity: float; last_equity: float      # last_equity, cash, long_market_value), so that
+    cash: float; long_market_value: float  # semiedge.state never imports semiedge.broker
+    source: Literal["broker_close", "broker_intraday"]   # (not even under TYPE_CHECKING, §0.2)
+
 # ReconciliationReport / Discrepancy / DiscrepancyKind (§7) are also defined here, so that the
 # store never imports semiedge.execution; semiedge.execution.reconcile re-exports them.
 
@@ -817,7 +883,13 @@ class StateStore:                          # the single WRITER (engine process; 
     def heartbeat(self, component: str, status: str, detail: str, now: datetime) -> None: ...
     # decisions
     def record_signals(self, run_id: str, session: date,
-                       evaluations: Sequence[SignalEvaluation]) -> None: ...
+                       evaluations: Sequence[SignalEvaluation], *,
+                       sizes: Mapping[str, SizingResult]) -> None: ...
+        # payload_json = json.dumps(evaluation_to_dict(ev, sizes.get(ev.symbol)), allow_nan=False,
+        # sort_keys=True): an explicit dict conversion, never asdict()/repr of the dataclass.
+        # semiedge.reporting.signal_report exposes the public evaluation_to_dict(evaluation, size),
+        # used by both report_to_dict and this store; the first PR that needs it extracts it from
+        # report_to_dict without changing the report JSON (existing report tests stay green).
     def record_risk_decisions(self, run_id: str,
                               decisions: Sequence[RiskDecision]) -> tuple[int, ...]: ...  # row ids, same order
     def risk_decision(self, decision_id: int) -> RiskDecision: ...
@@ -853,8 +925,7 @@ class StateStore:                          # the single WRITER (engine process; 
     # reconciliation / equity
     def record_reconciliation(self, report: ReconciliationReport) -> int: ...
     def last_reconciliation(self) -> ReconciliationReport | None: ...
-    def record_equity_snapshot(self, ts: datetime, session: date, account: AccountSnapshot,
-                               source: Literal["broker_close", "broker_intraday"]) -> None: ...
+    def record_equity_snapshot(self, snapshot: EquitySnapshot) -> None: ...
     def peak_close_equity(self) -> float | None: ...         # max equity over source='broker_close'
     # outbox
     def enqueue_notification(self, n: Notification) -> int: ...
@@ -1009,6 +1080,9 @@ only, numbered, idempotent, applied inside one transaction; an unknown higher `s
   insert a `halts` row with `kind='manual'`.
 
 ### 5.4 Acceptance tests (`tests/integration/state/`)
+Each module declares `pytestmark = pytest.mark.integration` explicitly (no auto-marking by
+directory); safety tests elsewhere declare `pytestmark = pytest.mark.safety` the same way.
+Test paths derive from `tmp_path` (CWD is `tmp_path` via `tests/conftest.py`).
 - Fresh DB → schema matches migration 001 exactly (introspect `sqlite_master`).
 - CHECK constraints reject negative qty, `filled_qty > qty`, entry without decision.
 - `ReadOnlyStateStore` cannot write (attempted `INSERT` via its connection raises).
@@ -1059,29 +1133,48 @@ class SubmitOutcomeUnknown(BrokerError): ...     # timeout / connection reset / 
 class OrderRejected(BrokerError):                # explicit 4xx rejection (reason is UntrustedText)
     duplicate_client_order_id: bool              # True iff the broker says the client id already exists
 
+# Method names deliberately equal NO alpaca TradingClient method name (§0.5 scan (c)).
 class BrokerGateway(Protocol):
-    def submit_order(self, request: OrderRequest) -> BrokerOrder: ...
-    def get_order_by_client_id(self, client_order_id: str) -> BrokerOrder | None: ...  # None only on HTTP 404
+    def send_order(self, request: OrderRequest) -> BrokerOrder: ...
+    def lookup_order(self, client_order_id: str) -> BrokerOrder | None: ...  # by client id; None only on HTTP 404
     def list_orders(self, *, status: Literal["open", "all"], after: datetime | None) -> tuple[BrokerOrder, ...]: ...
         # paginates until exhausted (never silently truncated)
     def list_fills(self, *, after: datetime) -> tuple[BrokerFill, ...]: ...
-    def cancel_order(self, broker_order_id: str) -> None: ...
+    def request_cancel(self, broker_order_id: str) -> None: ...   # sends the cancel; confirmation is §9.2
     def get_positions(self) -> tuple[PositionSnapshot, ...]: ...
     def get_account_snapshot(self) -> AccountSnapshot: ...     # semiedge.broker.account.fetch_account_snapshot
 
-class AlpacaPaperGateway:   # implements BrokerGateway
-    def __init__(self, client: TradingClient, settings: AppSettings, *, namespace: str) -> None:
-        """Re-checks the client with the same type-exact base-URL check as
-        semiedge.broker.account plus assert_paper_client. Never constructs a client itself."""
+# gateway-local read protocol (separate from account.py's ReadOnlyTradingClient, which is unchanged
+# and not reused or widened):
+GatewayReadPath = Literal["/orders", "/orders:by_client_order_id", "/account/activities/FILL",
+                          "/positions"]
+class _GatewayReadClient(Protocol):
+    def get(self, path: GatewayReadPath, data: Mapping[str, str] | None = None) -> object: ...
 
-def build_paper_gateway(settings: AppSettings, *, namespace: str) -> AlpacaPaperGateway: ...
-    # the only wiring path: settings.alpaca_credentials() -> create_paper_trading_client -> gateway.
+class AlpacaPaperGateway:   # implements BrokerGateway
+    def __init__(self, client: TradingClient, settings: Callable[[], AppSettings], *,
+                 namespace: str) -> None:
+        """Checks the client with semiedge.safety.broker.assert_paper_client (type-exact since
+        PR #41 / F-010: accepts only BaseURL.TRADING_PAPER or an exact str equal to the paper URL);
+        never imports account.py's private _assert_exact_paper_endpoint. Never constructs a
+        client itself. `settings` is a callable because AppSettings is frozen: it is called
+        again before every write (tests swap the callable)."""
+
+def build_paper_gateway(settings: Callable[[], AppSettings], *, namespace: str) -> AlpacaPaperGateway: ...
+    # the only wiring path: settings().alpaca_credentials() -> create_paper_trading_client -> gateway.
     # MissingCredentialsError propagates (CLI exit 3).
 ```
+Reads: every gateway read (`list_orders`/`lookup_order` → `/orders`, `/orders:by_client_order_id`;
+`list_fills` → `/account/activities/FILL`; `get_positions` → `/positions`) goes through the paper
+client's `get(path, params)` with a literal `GatewayReadPath` and parses the raw JSON with exact
+types (`type(x) is str`, decimal strings, RFC 3339 UTC), exactly as `semiedge.broker.account`
+does (F-009); SDK model-returning reads (`get_orders`, `get_all_positions`, …) are not used.
+`get_account_snapshot` calls `fetch_account_snapshot(client)` unchanged. Only `gateway.py` calls
+the SDK write methods (`submit_order`, `cancel_order_by_id`).
 Guards inside `AlpacaPaperGateway` (each a `SafetyViolation`, raised before any network call):
-- every write (`submit_order`, `cancel_order`) calls
-  `assert_order_submission_allowed(settings.trading_mode, enable_order_submission=settings.enable_order_submission, allow_live_trading=settings.allow_live_trading)`
-  — read from the `AppSettings` object on every call, never cached in a separate flag;
+- every write (`send_order`, `request_cancel`) first calls `s = settings()` and then
+  `assert_order_submission_allowed(s.trading_mode, enable_order_submission=s.enable_order_submission, allow_live_trading=s.allow_live_trading)`
+  — re-read before every submission, never cached in a separate flag;
 - `extended_hours` is always sent as `False`; `qty` must be a positive `int`; asset class equity
   only; `order_class` only `simple`/`oco` (no `bracket`, no `oto`, no `trailing_stop`);
   `client_order_id` must parse (§6.2) with this gateway's `namespace`;
@@ -1187,7 +1280,9 @@ been sent is impossible by construction.**
 ```python
 class OrderManager:
     def __init__(self, store: StateStore, gateway: BrokerGateway, clock: Clock,
-                 settings: AppSettings, engine: EngineConfig, calendar: TradingCalendar) -> None: ...
+                 settings: Callable[[], AppSettings], engine: EngineConfig,
+                 calendar: TradingCalendar) -> None: ...
+        # `settings` is the same callable the gateway holds (§6.1), re-read before every submission
     def stage_entries(self, decisions: Sequence[RiskDecision], decision_ids: Sequence[int], *,
                       valid_until: datetime) -> tuple[str, ...]: ...   # approved only; returns client ids
     def withdraw_staged_entries(self, reason: str, now: datetime) -> int: ...  # staged entries -> withdrawn
@@ -1217,7 +1312,7 @@ Never assume a fill: positions are created and changed only from broker-reported
 `filled_qty` delta with key `f"{client_order_id}:{cum_qty}"`).
 
 ### 6.5 Acceptance tests (`tests/safety/test_order_lifecycle.py`, fake gateway; `@pytest.mark.safety`)
-- Timeout on submit → `get_order_by_client_id` called before any second `submit_order`; found →
+- Timeout on submit → `lookup_order` called before any second `send_order`; found →
   adopted; 404 confirmed → resubmitted with the **same** ID; never two broker orders for one intent.
 - Crash simulated after the `submitting` commit and before the HTTP call, and after the HTTP call
   before the response is stored → restart performs lookup first; exactly one broker order exists.
@@ -1226,9 +1321,10 @@ Never assume a fill: positions are created and changed only from broker-reported
   point do open sells exceed the position.
 - Entry fill below stop / above target → `flatten`, no OCO.
 - Rejected entry → no position, decision preserved, notification queued.
-- `ENABLE_ORDER_SUBMISSION=false` → zero `submit_order`/`cancel_order` calls; intents `dry_run`.
-- Settings mutated to submission disabled between staging and submitting (new `AppSettings`) →
-  `SafetyViolation` from the gateway, nothing sent.
+- `ENABLE_ORDER_SUBMISSION=false` → zero `send_order`/`request_cancel` calls; intents `dry_run`.
+- The gateway's `settings` callable swapped to return a new `AppSettings` with submission
+  disabled between staging and submitting → `SafetyViolation` from the gateway, nothing sent
+  (the gateway calls `settings()` before every write).
 - Gateway built from a non-paper client → `SafetyViolation`; every write path calls the guard
   (AST test: every public write method's first statement calls the guard helper).
 - BUY with kind ≠ entry, `bracket`/`oto` class, `extended_hours`, fractional qty → refused.
@@ -1472,14 +1568,17 @@ Non-sessions produce no jobs. Entries and time exits staged by `POST_CLOSE(S)` g
 ```python
 class TradingEngine:
     def __init__(self, *, settings: AppSettings, app: AppConfig, engine: EngineConfig,
-                 store: StateStore, gateway: BrokerGateway, data_source: MarketDataSource,
+                 store: StateStore, gateway: BrokerGateway | None, data_source: MarketDataSource,
                  bar_store: ParquetBarStore, calendar: TradingCalendar, clock: Clock,
                  notifier: Notifier) -> None: ...
     def run_forever(self, stop: threading.Event) -> int: ...     # returns exit code
     def run_job(self, job: ScheduledJob) -> JobResult: ...       # unit-testable step
 ```
-`gateway` is `None` exactly in SCANNER mode (see the mode matrix). `notifier` is
-`semiedge.notify.OutboxNotifier`.
+`gateway` is `None` exactly in SCANNER mode (see the mode matrix); `__init__` asserts it
+(`None` with a non-SCANNER mode, or a gateway in SCANNER mode → `SafetyViolation`). `notifier` is
+`semiedge.notify.OutboxNotifier`. `semiedge run --source cache|synthetic` (default `cache`)
+selects the market data: `synthetic` uses the synthetic source and the synthetic DB under
+`{data_dir}/synthetic/` (§5.1), never the real one.
 
 Mode matrix (`semiedge run`; validated at startup, before any job):
 
@@ -1499,9 +1598,15 @@ Rules:
 - `POST_CLOSE(S)`, in this order: reconcile; fetch bars for the universe through `data_source`
   into `bar_store`; decide only if `calendar.last_completed_session(now, bar_settle_minutes) == S`;
   regime benchmark not fresh/actionable → `DATA` halt (no entries) but exits still planned; fresh
-  → clear an active `DATA` halt (actor `engine`); record a `broker_close` equity snapshot;
+  → clear an active `DATA` halt (actor `engine`); record a `broker_close` equity snapshot (the
+  engine converts the `AccountSnapshot` into a `state.models.EquitySnapshot`, §5.1);
   auto-clear `DAILY_LOSS` per §8; `build_portfolio_view`; `evaluate_universe` →
-  `build_entry_proposals` → `RiskManager.evaluate_entries`; persist signals and decisions
+  `build_entry_proposals` → `RiskManager.evaluate_entries`, with exactly the §3.2 step 6b call
+  (`evaluate_universe(bars≤S, universe.regime_benchmark, params, S,
+  tradable=universe.tradable_symbols, quality={s: assess_quality(...,
+  lookback_sessions=params.required_history(), max_missing_sessions=app.data.max_missing_sessions_in_lookback)},
+  expected_sessions=calendar.sessions_in_range(first_bar_session, S))`; without
+  `expected_sessions` every symbol is ineligible); persist signals and decisions
   (`record_risk_decisions`) **then** stage approved entries; plan and stage time exits (§9.1).
   The job reports success only after all of this is committed.
 - `PRE_OPEN(S)`: reconcile; re-check halts from the DB; check the broker clock
@@ -1563,7 +1668,8 @@ class DiscordSender:                  # drains the outbox; runs in the engine pr
   propagate into the trading loop (`notify` catches everything and logs).
 - The notifier never imports execution/broker (§0.2) and has no way to influence trading.
 - `http_post` is injected; the default implementation uses `urllib.request` with an explicit
-  HTTPS-only check against `discord.com` / `discordapp.com` hosts.
+  HTTPS-only check against `discord.com` / `discordapp.com` hosts, performed before the call
+  (bandit `-ll` rule, §13).
 
 Acceptance (mocked HTTP): tag present for every mode; LIVE mode cannot be constructed into a
 message (`ValueError`); 500/timeout/429 → retried, loop unaffected; secret values and the webhook
@@ -1574,7 +1680,9 @@ URL never appear in logs or payloads; `@everyone` in a symbol/broker message is 
 ## 12. Dashboard — `semiedge.dashboard` (#25, T13)
 
 - Entry: `streamlit run src/semiedge/dashboard/app.py` (CLI `semiedge dashboard`); dependency in
-  a new optional group `dashboard = ["streamlit>=1.40"]` (not required by engine/backtest).
+  a new `[project.optional-dependencies]` extra `dashboard = ["streamlit>=1.40"]` (pyproject has
+  only `[dependency-groups] dev` today), installed with `uv sync --locked --extra dashboard`; not
+  required by engine/backtest.
 - Theme: `.streamlit/config.toml` with `[theme] base = "dark"`.
 - Data access: **only** `ReadOnlyStateStore` (§5.1), report JSON files under
   `{data_dir}/reports/` (read-only), and `request_manual_halt` for the halt button. No broker,
@@ -1588,7 +1696,8 @@ URL never appear in logs or payloads; `@everyone` in a symbol/broker message is 
   recent failed runs; notification outbox errors). There is no "clear halt" control.
 - Synthetic separation: the DB `meta.data_source` is shown in the banner; a synthetic DB shows
   `SYNTHETIC DATA — NOT MARKET DATA` on every page; the dashboard opens exactly one DB and never
-  merges sources. Which DB: `semiedge dashboard [--source real|synthetic]` (default `real`) →
+  merges sources. Which DB: `semiedge dashboard [--source cache|synthetic]` (default `cache`;
+  same vocabulary as `semiedge run`/`backtest`/`scan`) →
   `{data_dir}/state/semiedge.sqlite3` or `{data_dir}/synthetic/state/semiedge.sqlite3`.
 - Backtest reports: only JSON files written by `BacktestResult.save`; their §3.6 labels are
   rendered first, above any number.
@@ -1626,7 +1735,12 @@ Rules:
   `UntrustedText` at the boundary and is never used to build: commands, SQL (always
   parameterised), file paths, configuration, order parameters, or prompts with instructions.
 - No code path evaluates strings (`eval`, `exec`, `pickle.loads`, `yaml.load` unsafe) — bandit
-  already runs in CI; T16 adds a test that greps `src/` for these calls.
+  already runs in CI; T16 adds a test that greps `src/` for these calls. Its allowlist is
+  exactly one call: `src/semiedge/config/loader.py`'s `yaml.load(fh, Loader=_UniqueKeyLoader)`
+  (`_UniqueKeyLoader` subclasses `yaml.SafeLoader`); any other `yaml.load` fails the test.
+- The default notify `http_post` (§11) must pass `bandit -ll` (CI `security.yml`): the
+  HTTPS + allowed-host check precedes the `urllib.request.urlopen` call, and that line carries
+  `# nosec B310` with the justification (scheme and host verified on the line before).
 - CI: gitleaks already scans history; T16 adds tests only.
 
 Acceptance (`tests/safety/test_security.py`):
@@ -1667,16 +1781,23 @@ class CorporateActionStore:                # {root}/raw/corporate_actions/{SYMBO
 class AdjustmentCheck:
     symbol: str
     is_consistent: bool
-    issues: tuple[str, ...]      # e.g. "split 2024-06-10 after earliest fetched_at: full refetch required",
+    issues: tuple[str, ...]      # e.g. "split 2024-06-10 after latest fetched_at: full refetch required",
                                  # "unexplained 1-day move -74.9% on 2024-06-10"
 
 def check_adjustment_consistency(stored: StoredSeries, actions: Sequence[CorporateAction],
                                  *, jump_threshold: float = 0.35) -> AdjustmentCheck: ...
 ```
 Policy (documented in DECISIONS.md by T17):
-- Bars are vendor split-adjusted (`adjustment: split`). A split with `ex_date` later than the
-  **earliest `fetched_at`** among stored rows means older rows were adjusted on a different basis
-  → `is_consistent=False` ("full refetch required"). Inconsistent symbols are ineligible
+- T46 (#46, `feature/46-split-normalization`) may implement the offline point-in-time
+  split-normalization core first; this section builds on that code (imports it) and never
+  duplicates it.
+- Bars are vendor split-adjusted (`adjustment: split`). `StoredSeries.fetched_at` is the
+  **latest** fetch (`ParquetBarStore.read` exposes only the max per-row `fetched_at`), so the rule
+  uses that value: a split with `ex_date` later than `StoredSeries.fetched_at` means the stored
+  rows were adjusted on a pre-split basis → `is_consistent=False` ("full refetch required").
+  Mixed-basis rows cannot arise through the store (`ParquetBarStore.write` refuses mixed-basis
+  merges, F-012/F-024); tests therefore write mixed-basis fixtures as raw Parquet directly.
+  Inconsistent symbols are ineligible
   (scanner, backtest data loading and engine POST_CLOSE treat them like stale data) until a full
   history refetch replaces every row.
 - A one-session close-to-close move beyond `±jump_threshold` with no matching action → issue
@@ -1684,7 +1805,8 @@ Policy (documented in DECISIONS.md by T17):
   split ex-date with matching action are accepted.
 - Held-position handling: §9.4.
 
-Acceptance: synthetic 4:1 split fixture — mixed-basis stored series → inconsistent; after full
+Acceptance: synthetic 4:1 split fixture — mixed-basis stored series (written as raw Parquet in
+the test, bypassing `ParquetBarStore.write`) → inconsistent; after full
 refetch → consistent and **no false breakout** (`cond_breakout` false on the split day of the
 consistent adjusted series where the unadjusted series would trigger) and **no false stop** in
 the backtest; unexplained −75% jump flagged; reverse split handled; source errors →
@@ -1754,7 +1876,7 @@ def stress_report(request: BacktestRequest, data: BacktestData, *, gate_factory:
   (`point_id, <axis columns…>, metric, value, reason`) for heatmaps, plus dispersion summary and
   the configured point's percentile rank per metric. Cost axis must include
   `slippage_bps ∈ {0, 5, 10, 20, 50}`; weights/saturations axes must be reported (momentum_v1.md
-  "heuristic priors").
+  "heuristic priors"; ADR-006 (D-006)).
 - Stress: each period run with warm-up; if data does not cover a period (or the regime
   benchmark lacks history) → period reported `unavailable` with reason, never silently omitted.
   Each stress row repeats the survivorship label and lists which universe symbols had no data in
@@ -1770,7 +1892,8 @@ reason) in every report.
 
 ## 16. Docker, health and graceful shutdown (#27, T15)
 
-- `Dockerfile`: multi-stage, `python:3.12-slim`, `uv sync --locked --no-dev`, non-root user
+- `Dockerfile`: multi-stage, `python:3.12-slim`, `uv sync --locked --no-dev` (the dashboard image
+  stage adds `--extra dashboard`, §12), non-root user
   `semiedge`, `WORKDIR /app`, no secrets baked, `HEALTHCHECK` via `semiedge health`.
 - `compose.yaml`: services `engine` (`semiedge run`), `dashboard` (`semiedge dashboard`,
   `ports: ["127.0.0.1:8501:8501"]` — never `0.0.0.0`); named volume `semiedge-data:/app/data`
@@ -1813,18 +1936,20 @@ exit 0, no partial order rows, restart reconciles clean.
 
 | Command | Task | Behaviour / exit codes |
 |---|---|---|
-| `semiedge backtest --start D --end D [--source cache\|synthetic] [--output DIR]` | T5 | runs §3 with real `RiskManager`; prints labels first; 0 ok, 2 config, 4 data |
+| `semiedge backtest --start D --end D [--source cache\|synthetic] [--output DIR]` | T5 | runs §3 with real `RiskManager`; prints labels first; `--output` is a **new directory** created exclusively (an existing path is refused, nothing overwritten), unlike `scan --output`, which is a new file; `EXIT_OK` ok, `EXIT_CONFIG` config, `EXIT_DATA` data |
 | `semiedge metrics RESULT.json` | T6 | §4 report |
 | `semiedge walkforward --plan …` / `semiedge sensitivity --grid FILE` / `semiedge stress` | T7 | §15 |
-| `semiedge run` | T12 | engine loop; 2 config/safety, 3 credentials, 5 lock held |
-| `semiedge reconcile [--dry-run]` | T10 | §7; 0 clean/resolved, 6 halted, 4 broker read error, 5 writer lock held (non-dry-run needs the engine stopped) |
+| `semiedge run [--source cache\|synthetic]` | T12 | engine loop (§10.3; `synthetic` → synthetic DB under `{data_dir}/synthetic/`); 2 config/safety, 3 credentials, 5 lock held |
+| `semiedge reconcile [--dry-run]` | T10 | §7; `EXIT_OK` clean/resolved, 6 halted, `EXIT_DATA` broker read error, 5 writer lock held (non-dry-run needs the engine stopped). `main` does not catch `BrokerError`, so the `reconcile` handler itself maps `BrokerError` → `EXIT_DATA` |
 | `semiedge halt status \| set REASON \| clear ID --actor NAME` | T9 | human halt control via `semiedge.state.halt_control` (works while the engine runs; clear only here) |
 | `semiedge flatten (--symbol S \| --all) --confirm` | T11 | §8.1 level 3; MANUAL halt first; 0 done, 5 lock held, 2 submission disabled |
 | `semiedge health --component C --max-age S` | T15 | §16 |
-| `semiedge dashboard` | T13 | launches Streamlit |
+| `semiedge dashboard [--source cache\|synthetic]` | T13 | launches Streamlit (§12) |
 
-Exit codes 0/2/3/4 keep their Phase 1 meaning; 1 is used only by `semiedge health`; 5 = writer
-lock held; 6 = reconciliation halted.
+Exit codes 0/2/3/4 keep their Phase 1 meaning and are referenced only through the
+`semiedge.cli` constants `EXIT_OK`/`EXIT_CONFIG`/`EXIT_CREDENTIALS`/`EXIT_DATA` (never literals);
+1 is used only by `semiedge health`; 5 = writer lock held; 6 = reconciliation halted (new
+constants added next to them by the owning task).
 
 ---
 
@@ -1841,7 +1966,7 @@ lock held; 6 = reconciliation halted.
 - [ ] All reported numbers carry the reproducing command; labels from §3.6 rendered first.
 - [ ] Safety-marked tests added for every safety invariant; safety test count does not drop.
 - [ ] Order intents only via `StateStore.insert_order_intent`; status only via `transition_order`;
-      the `submitting` commit precedes every `submit_order` call.
+      the `submitting` commit precedes every `send_order` call.
 - [ ] Every risk decision is committed before any intent derived from it.
 - [ ] `EntryProposal`s only via `build_entry_proposals`; exit levels only via `semiedge.strategy.exits`.
 - [ ] In `semiedge.risk`, `.backtest`, `.state`, `.broker.gateway`, `.execution`, `.engine`, `.notify` the wall clock is read only through `semiedge.clock` (AST test: no `datetime.now`/`time.time` calls there).
