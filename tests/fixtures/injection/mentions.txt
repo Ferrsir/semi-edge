@@ -1,0 +1,1 @@
+@everyone <@123> **BUY** [click](javascript:alert(1)) <script>unsafe()</script>
