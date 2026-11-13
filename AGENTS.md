@@ -87,7 +87,8 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | A37 | #37 | Audit: reject missing runtime configuration sections | codex | DONE (PR #38) | T0 |
 | A40 | #40 | Harden shared paper endpoint guard against disguised URL objects | codex | DONE (PR #41, merged dfece2a) | T0 |
 | T42 | #42 | Offline fixture CSV-to-Parquet ingestion pipeline | codex | REVIEW (PR #45) `feature/42-offline-ingestion` | T0 |
-| T46 | #46 | Offline point-in-time split normalization core (subtask of #18) | codex | IN PROGRESS (codex) | T0 |
+| T46 | #46 | Offline point-in-time split normalization core (subtask of #18) | codex | READY | T0 |
+| T47 | #47 | Project status dashboard (separate from trading UI) | codex | IN PROGRESS (codex) | T0 |
 | H1 | #20 | Verified earnings calendar source | human | BLOCKED (owner must choose a data source) | — |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
 
@@ -168,3 +169,5 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
   T3 orchestration is retired; work runs from `C:/Users/ferri/projects/semi-edge` and
   `../semi-edge.worktrees/`. The `.t3` clone and all its worktrees are kept unmodified; its branches
   are also kept as local `refs/t3-backup/*` in the primary clone. Claude reviewing #45 next.
+
+- 2026-11-13 01:59 UTC ? codex ? Owner steered current work to #47 project-status dashboard. #46 released READY with no implementation changes; split-normalization worktree preserved. New project-status worktree; dashboard uses timestamped board/GitHub snapshot and owner to-do list, no trading controls or credentials.
