@@ -137,3 +137,24 @@ def test_account_uses_the_paper_factory(
     monkeypatch.setattr(cli, "create_paper_trading_client", fake_factory)
     assert cli.main(["account", "--config-dir", str(CONFIG_DIR)]) == cli.EXIT_CONFIG
     assert calls == [(fake_credentials.key_id, fake_credentials.secret)]
+
+
+@pytest.mark.parametrize("error", [ValueError, RuntimeError, TypeError])
+def test_account_client_construction_errors_are_sanitised(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    fake_credentials: Any,
+    error: type[Exception],
+) -> None:
+    """F-030: an SDK constructor error exits 4 without echoing its message."""
+
+    def explode(settings: Any) -> Any:
+        raise error("FAKE_SECRET_SENTINEL")
+
+    monkeypatch.setenv("ALPACA_PAPER_API_KEY", fake_credentials.key_id)
+    monkeypatch.setenv("ALPACA_PAPER_SECRET_KEY", fake_credentials.secret)
+    monkeypatch.setattr(cli, "paper_account_client", explode)
+    assert cli.main(["account", "--config-dir", str(CONFIG_DIR)]) == cli.EXIT_DATA
+    captured = capsys.readouterr()
+    assert "FAKE_SECRET_SENTINEL" not in captured.out + captured.err
+    assert error.__name__ in captured.err

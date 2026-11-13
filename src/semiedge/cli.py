@@ -550,7 +550,14 @@ def _cmd_scan(args: argparse.Namespace) -> int:
 
 def _cmd_account(args: argparse.Namespace) -> int:
     settings, _, _ = _load(args)
-    client = paper_account_client(settings)
+    try:
+        client = paper_account_client(settings)
+    except (MissingCredentialsError, SafetyViolation):
+        raise  # exit 3 / exit 2, mapped by main
+    except Exception as exc:  # sanitised (F-030): SDK constructor errors may carry key material
+        raise CommandError(
+            EXIT_DATA, f"Cannot create the paper trading client ({type(exc).__name__})."
+        ) from None
     try:
         snapshot = fetch_account_snapshot(client)
     except BrokerError as exc:  # messages are sanitised by semiedge.broker.account
