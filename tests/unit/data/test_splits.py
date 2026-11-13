@@ -79,6 +79,30 @@ def test_multiple_events_order_and_effective_boundary():
     assert_frame_equal(result.frame, normalize(events=[a, b]).frame)
 
 
+def test_inverse_chained_splits_have_exact_unit_factor():
+    original = bars()
+    result = normalize(original, [event(new=3, old=2), event(DAYS[2], new=2, old=3)])
+    # Both events affect Jan2; exact cancellation must leave every float bit unchanged there.
+    pd.testing.assert_series_equal(result.frame.iloc[0], original.iloc[0], check_exact=True)
+    assert result.frame.iloc[1].close == 150.0  # only the second event affects Jan3
+    assert_frame_equal(result.frame.iloc[2:], original.iloc[2:])
+
+
+@pytest.mark.parametrize(("new", "old"), [(2**53, 1), (1, 2**53)])
+def test_unrepresentable_cumulative_ratio_fails_closed(new, old):
+    dates = TradingCalendar().sessions_window(DAYS[-1], 24)
+    frame = bars().iloc[:1].copy()
+    frame.index = pd.DatetimeIndex([dates[0]], dtype="datetime64[ns]", name="session")
+    events = [event(day, new, old) for day in dates[1:]]
+    with pytest.raises(SplitDataError, match="overflowed or underflowed"):
+        normalize(frame, events)
+
+
+def test_missing_event_iterable_has_explicit_data_error():
+    with pytest.raises(SplitDataError, match="iterable"):
+        normalize(events=None)
+
+
 @pytest.mark.safety
 def test_cutoffs_prevent_future_knowledge_and_effective_leakage():
     future_known = event(DAYS[1], known=CUTOFF + timedelta(seconds=1))

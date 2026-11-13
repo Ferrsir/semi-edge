@@ -78,7 +78,7 @@ def test_adjusted_partial_append_requires_complete_history(tmp_path, bars, caplo
     _write(store, bars.loc[:"2024-06-07"], FIRST)
     tail = bars.loc["2024-06-07":].copy()
     tail.loc[pd.Timestamp("2024-06-14"), "volume"] += 1.0  # ordinary correction, newest session
-    with pytest.raises(ValueError, match="full stored range"):
+    with pytest.raises(ValueError, match="unverified for retained sessions"):
         _write(store, tail, SECOND)
     expected = pd.concat([bars.loc[:"2024-06-06"], tail])
     _write(store, expected, SECOND)
@@ -114,7 +114,7 @@ def test_rebased_refetch_with_interior_gap_is_rejected(tmp_path, bars):
 def test_same_basis_refetch_with_interior_gap_is_unverified(tmp_path, bars):
     store = ParquetBarStore(tmp_path)
     _write(store, bars, FIRST)
-    with pytest.raises(ValueError, match="full stored range"):
+    with pytest.raises(ValueError, match="unverified for retained sessions"):
         _write(store, bars.drop(pd.Timestamp("2024-06-05")), SECOND)
     pd.testing.assert_frame_equal(_read(store).frame, bars)
 
@@ -137,7 +137,7 @@ def test_opposite_splits_cannot_hide_changed_basis_in_retained_gap(tmp_path):
     _write(store, original, FIRST)
     path = next(tmp_path.rglob("A.parquet"))
     saved = path.read_bytes()
-    with pytest.raises(ValueError, match="full stored range"):
+    with pytest.raises(ValueError, match="unverified for retained sessions"):
         _write(store, restated.drop(index[1]), SECOND)
     assert path.read_bytes() == saved
     pd.testing.assert_frame_equal(_read(store).frame, original)

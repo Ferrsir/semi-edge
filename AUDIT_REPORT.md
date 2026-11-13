@@ -305,6 +305,62 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Fix:** tests for batch approvals exhausting gross exposure and cash with exact sizes, equal-rank
   symbol ties, a rejected earlier duplicate, and a property test with pending BUY/SELL orders.
 
+### F-096 · P3 · Backtest entry could be stopped out better than its open (Claude review of #75; fixed in #80)
+- **Fix:** ADR-008 also invalidates the entry when `open_d ≤ stop`. Regression: `test_f096_open_below_stop_invalidates_even_if_slipped_fill_is_above`.
+
+### F-130 · P2 · ADR-008 broke the stated backtest/paper parity (Codex review, PR #80)
+- **Fix (spec):** ADR-008 is a backtest-only conservative adjustment. §6.3 documents the parity
+  exception (paper has no trustworthy opening price at fill time), and the §10 parity test excludes
+  exactly that case. §19 item 4 and ADR-008 are updated.
+- **F-131 (P2, Codex re-review):** the §18 checklist still claimed unconditional parity; it now carries the same exception.
+
+### F-120 · P2 · Recovery `unknown → staged` wrote a supplied broker id and trusted stale lookups (Codex review, PR #78)
+- **Reproduce (9060783):** recovery with `broker_order_id="known-broker-order"` succeeded and
+  stored that id. 404 lookup timestamps from before the submission attempt were accepted, and
+  so were lookups with no spacing evidence.
+- **Fix:** recovery refuses any `broker_order_id`, so the recovered row never has one. Every
+  lookup must be strictly after the order's last submission attempt (`submitted_at`). The
+  caller must supply `detail.monitor_cycle_seconds` (finite > 0), and consecutive lookups must
+  be at least that far apart; without it, recovery is refused.
+- **Regression:** `tests/safety/test_state_review_fixes.py::test_f120_*`.
+
+### F-121 · P2 · Weighted fill average could overflow to inf and be committed (Codex review, PR #78)
+- **Reproduce (9060783):** a 2-share activity at 1.5e308 gave a `fsum` of inf, so inf was
+  committed as `filled_avg_price` and `get_order` could no longer decode the row.
+- **Fix:** averages are computed exactly with `Fraction`. Every derived persisted price
+  (fill average, split-adjusted avg/stop/target/split_ratio) goes through `_derived_float`,
+  which requires finite > 0; otherwise it raises `StateStoreError` and the transaction rolls
+  back. `_apply_transition` re-checks the average before it writes.
+- **Regression:** `test_f121_weighted_average_never_overflows`,
+  `test_f121_non_finite_derived_split_price_rolls_back` (asserts an unchanged DB snapshot).
+
+### F-122 · P2 · Unknown target status raised without a RECONCILIATION halt (Codex review, PR #78)
+- **Reproduce (9060783):** `transition_order(cid, "done", ...)` raised `StateStoreError`, but
+  no halt row was recorded.
+- **Fix:** an unknown status is now an `illegal_transition` through the halting error path.
+  The halt is written after a rollback, and also when an outer transaction swallows the error.
+- **Regression:** `test_f122_*`.
+
+### F-123 · P2 · `ingest_order_fills` updated `orders` outside `transition_order` (Codex review, PR #78)
+- **Reproduce (9060783):** `store.py` had two `UPDATE orders` sites, and `transition_order`
+  could not record a `filled_qty` increase. Both contradict §5.1 ("no other UPDATE path";
+  "filled_qty may only increase").
+- **Fix:** `_apply_transition` is now the only `UPDATE orders` path. `transition_order` uses it
+  after validating the edge, and it accepts any `filled_qty` ≥ the stored value that equals the
+  ingested-fill watermark; a decrease halts. Ingestion records fills through the same path with
+  the status unchanged (`event="fills_ingested"`, from/to = current status). The spec is
+  unchanged: the implementation now conforms to it.
+- **Regression:** `test_f123_orders_rows_have_exactly_one_update_path` (AST) and
+  `test_f123_ingestion_records_filled_qty_through_the_transition_path`.
+
+### F-140 · P2 · Recovery spacing could round to zero (Codex re-review, PR #78)
+- **Reproduce:** `monitor_cycle_seconds=1e-10` became `timedelta(0)`, so two identical post-submission lookups allowed `unknown → staged`.
+- **Fix:** the cycle must be finite and ≥ 1 s, and lookups must be strictly increasing and at least one cycle apart.
+- **Regression:** two new cases in `test_f120_recovery_needs_post_submission_spaced_evidence`.
+- **F-141 (P2) / F-142 (P3), Codex re-review:** `timedelta` rounding (a 1.0000004 s cycle accepted 1 s gaps) and overflow (1e308) are avoided by comparing `total_seconds()` with the unrounded cycle; regressions added.
+- **F-143 (P2), Codex re-review:** `total_seconds()` float rounding accepted a 1,000,002 µs gap for a 1.000002 s cycle; the comparison is now exact (integer microseconds vs `Fraction(cycle)`). Regression `test_f143_spacing_uses_exact_microseconds`.
+- **F-144 (P2), Codex re-review:** `fromisoformat` truncated a 7-digit fraction, inflating a 0.9999991 s gap to 1 s. Lookup timestamps must now match an exact ISO form (≤ 6 fractional digits, `Z`/`±HH:MM` offset). Regression `test_f144_lookup_timestamps_must_not_lose_precision`.
+
 ### F-077 · P2 · A truncated diff could hide excluded reviewer-config changes (Codex review, PR #73)
 - **Reproduce:** pad an earlier file so that a later `z/.claude/settings.json` change falls beyond
   `MAX_DIFF_CHARS`. The sanitized review copy omits that path, so the change was in neither the prompt nor the copy.
@@ -402,7 +458,7 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - This is a new isolated research utility, not a newly discovered production bug. Contract: `docs/specifications/split-normalization.md`; implementation: `data.splits.normalize_raw_splits`.
 - Only explicitly RAW bars are accepted; the output is tagged split-adjusted and rejected on a second invocation. Events require symbol, effective session, exact positive integer share counts and aware knowledge timestamps. Duplicate/conflicting effective sessions fail explicitly.
 - Applied events must be both effective by as_of and known by the caller's cutoff. Future rows are excluded; the as_of session must have closed at that cutoff. Pre-effective prices/VWAP divide and volume multiplies by new/old shares; trade counts remain unchanged. Invalid inputs and numeric overflow/underflow raise; inputs remain unchanged.
-- Evidence: 35 deterministic unit cases cover forward/reverse/fractional/multiple splits, conservation, effective boundaries, historical prefixes, information cutoffs, timezone boundaries, malformed events/frames and arithmetic failures. Full offline suite: 806 passed, one opt-in paper smoke skipped; Ruff check/format, mypy and Bandit passed.
+- Historical evidence at initial a225f7c implementation: 35 deterministic unit cases covered forward/reverse/fractional/multiple splits, conservation, effective boundaries, historical prefixes, information cutoffs, timezone boundaries, malformed events/frames and arithmetic failures. Full offline suite: 806 passed, one opt-in paper smoke skipped; Ruff check/format, mypy and Bandit passed.
 - Limitations: no vendor event ingestion or ledger-coverage claim; no positions/orders/store/scanner integration; knowledge timestamps must be supplied from genuine historical availability evidence. This utility does not establish strategy performance or readiness for execution. Claude cross-provider review required.
 
 ### PR #61 cross-provider review fixes (F-031..F-035)
@@ -413,3 +469,17 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **F-034 / P3:** validate numerical values and session membership on the historical prefix. Future NaNs/non-sessions no longer change earlier results. Full-frame structural schema validation remains required and documented.
 - **F-035 / P3:** added applied-event prefix/effective-date equality, nested nonempty attrs isolation, early-close equality, maximum accepted share count and unsupported pre-1990 ledger cases.
 - Old-source regression evidence: four selected tests all FAIL when PYTHONPATH points to the unchanged a225f7c review checkout; they all PASS on the new implementation. Focused suite: 39 passed. No network, credentials, broker requests or risk/strategy changes.
+
+## #68 follow-ups (F-041, F-050, F-051)
+- **F-041 / P3:** Split normalization composes each row's later-event ratios exactly with Fraction, then applies the final factor once. A net factor one leaves floats unchanged; float64 representation/rounding and explicit numeric overflow/underflow refusal remain. Exact-equality inverse-chain regression fails on the old source and passes now. Cumulative factors outside float64 representation raise rather than clamp. Focused split suite:43 passed.
+- **F-050 / P3:** docs/ADJUSTED_CACHE_RECOVERY.md and the Phase1 interface contract describe start/end coverage constraints, permanently omitted vendor sessions, preserved original provenance and deliberate rebuild in a new empty cache root. Fetch success is not quality/actionability proof; no automatic deletion, unofficial replacement or invented bar is permitted. No cache was deleted or network contacted to write this guidance.
+- **F-051 / P3:** Gap/partial-append tests match the specific "unverified for retained sessions" refusal rather than the ambiguous "full stored range" text shared by older anchor failures.
+- **Additional review notes:** events=None now raises explicit SplitDataError; initial test totals above are marked historical. The two new inverse-chain/None regressions both failed against the unchanged pre-fix source, and now pass. No new strategy, risk ceiling, broker or credential changes. Claude cross-provider review required.
+
+## F-060 / P2 / Nested JSON log credentials escaped pattern redaction (#29)
+- **Where:** logconfig._PATTERNS / _RedactingFormatter; reproduced by the independent security boundary harness.
+- **Reproduction:** configure_logging with registered fixture secrets, then log extra={"payload":{"authorization":"unregistered-fixture-token"}}. Existing post-format patterns did not recognize quoted JSON credential keys, so the token remained in the rendered JSON line. The new assertion failed on the old implementation; all inputs are hand-written fakes.
+- **Impact:** credential-labelled broker/HTTP metadata not already registered in settings could appear in nested log extras. Registered settings secrets were already masked; this closes the defense-in-depth gap rather than claiming they had leaked.
+- **Fix:** mask quoted JSON credential fields including escaped value characters and plaintext bearer authorization headers, preserving the JSON envelope. Regression tests verify nested APCA/API/token/authorization fields and valid JSON after redaction.
+- **Additional #29 primitives:** security.redaction builds the configured redactor (including NFC display representations), deep-copies/redacts strict JSON values/keys, rejects cycles/nonfinite/unsupported/colliding/oversized structures without echoing inputs; security.untrusted normalizes and bounds exact strings, strips controls/bidi and escapes display/mentions. No command/SQL/path/order use is permitted.
+- **Evidence/scope:** deterministic logs + temporary parameterized SQLite boundary harness, malicious text fixtures, large/control strings, unchanged settings/input assertions, AST evaluation-call guard with one SafeLoader exception. This is not a claim of engine/outbox/dashboard integration: those modules do not yet exist; #29 remains open for consumer integration and the full end-to-end scenario. No broker or credential access, governance change or risk/strategy modification. Claude cross-provider review required.

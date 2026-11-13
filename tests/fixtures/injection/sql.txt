@@ -1,0 +1,2 @@
+'; DROP TABLE positions; --
+../../secrets/config.yaml

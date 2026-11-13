@@ -4,6 +4,9 @@ from pathlib import Path
 
 import pytest
 
+# Shared SQLite state-store fixtures (issue #21): tests/state_support.py.
+pytest_plugins = ("state_support",)
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_DIR = REPO_ROOT / "config"
 
