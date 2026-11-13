@@ -75,6 +75,8 @@ def test_f120_recovery_refuses_a_supplied_broker_order_id(harness: Harness) -> N
         _evidence(30, 120, cycle="60"),
         _evidence(30, 30, cycle=1e-10),  # F-140: spacing that rounds to zero, equal timestamps
         _evidence(30, 31, cycle=0.5),  # F-140: sub-second monitor cycle is not credible evidence
+        _evidence(30, 31, cycle=1.0000004),  # F-141: 1 s apart < cycle; no rounding down
+        _evidence(30, 120, cycle=1e308),  # F-142: huge finite cycle -> StateStoreError, no overflow
     ],
 )
 def test_f120_recovery_needs_post_submission_spaced_evidence(

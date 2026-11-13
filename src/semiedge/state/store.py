@@ -29,7 +29,7 @@ import uuid
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from enum import Enum
 from fractions import Fraction
 from pathlib import Path
@@ -1016,9 +1016,11 @@ class StateStore(StateReaderBase):
                 f"{cid}: recovery refused, needs monitor_cycle_seconds (finite >= 1) as "
                 "spacing evidence"
             )
-        spacing = timedelta(seconds=float(cast(float, cycle)))
+        # F-141/F-142: compare elapsed seconds with the unrounded cycle (no timedelta rounding,
+        # no overflow for huge finite cycles).
+        cycle_s = float(cast(float, cycle))
         parsed = _recovery_lookups(cid, lookups, order.submitted_at, now)
-        if any(b <= a or b - a < spacing for a, b in itertools.pairwise(parsed)):
+        if any(b <= a or (b - a).total_seconds() < cycle_s for a, b in itertools.pairwise(parsed)):
             raise StateStoreError(
                 f"{cid}: recovery refused, lookups must be at least one monitor cycle apart"
             )

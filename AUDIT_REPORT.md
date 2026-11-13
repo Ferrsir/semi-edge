@@ -357,6 +357,7 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Reproduce:** `monitor_cycle_seconds=1e-10` became `timedelta(0)`, so two identical post-submission lookups allowed `unknown → staged`.
 - **Fix:** the cycle must be finite and ≥ 1 s, and lookups must be strictly increasing and at least one cycle apart.
 - **Regression:** two new cases in `test_f120_recovery_needs_post_submission_spaced_evidence`.
+- **F-141 (P2) / F-142 (P3), Codex re-review:** `timedelta` rounding (a 1.0000004 s cycle accepted 1 s gaps) and overflow (1e308) are avoided by comparing `total_seconds()` with the unrounded cycle; regressions added.
 
 ---
 
