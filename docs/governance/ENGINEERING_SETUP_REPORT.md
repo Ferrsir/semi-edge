@@ -1,6 +1,6 @@
 # Engineering setup report
 
-Verified facts only, each with how it was checked. Last verified 2026-11-13 against `main` `5da2599`.
+Verified facts only, each with how it was checked. Last verified 2026-11-13 against `main` `7bf7437`.
 When a fact changes, update it here with the date and the check.
 
 ## Operating process in force
@@ -15,15 +15,28 @@ When a fact changes, update it here with the date and the check.
   comments hold the review record.
 
 ## Verified external blockers
-- The repository is private: `gh api repos/Ferrsir/semi-edge --jq .private` → `true`.
-- Branch protection and rulesets are unavailable: `gh api repos/Ferrsir/semi-edge/branches/main/protection`
-  → HTTP 403 "Upgrade to GitHub Pro or make this repository public". No plan or visibility change
-  has been made. Tracked in #4.
-- No repository secrets exist: `gh secret list` is empty, so the AI review workflow cannot run
-  (#6).
-- Agents act through the owner's GitHub account (`gh auth status` → `Ferrsir`, with admin rights).
-  Agent and human identities are not distinct, so identity-based approval cannot be trusted, and
-  the owner cannot formally approve a PR that the same account opened (#5).
+- The repository is public since 2026-11-13 (owner decision, to unblock Actions and rulesets):
+  `gh api repos/Ferrsir/semi-edge --jq .visibility` → `public`.
+- `main` has no protection yet: `gh api repos/Ferrsir/semi-edge/rulesets --jq length` → `0`, and
+  `gh api repos/Ferrsir/semi-edge/branches/main --jq .protected` → `false`. Public visibility makes
+  rulesets available; applying one is the owner's step in #4. Until then the merge rules are
+  followed by process only, and the agent identity below can push to `main`.
+- No repository secrets are configured (`gh secret list` is empty as the agent identity), so the
+  AI review workflow cannot run (#6).
+
+## Agent identity (issue #5), verified 2026-11-13
+- Agents authenticate as the bot account `Ferrisfy` through `GH_TOKEN` (classic token, `repo` and
+  `workflow` scopes), loaded by the owner's agent shell. `gh auth status` → `Ferrisfy (GH_TOKEN)`.
+- `gh api repos/Ferrsir/semi-edge --jq .permissions` → `admin: false, maintain: false, push: true`.
+  The agent identity cannot change settings, protections or visibility.
+- The owner account `Ferrsir` is logged out of `gh` on the agent PCs; approvals, merges of
+  restricted PRs and settings changes happen in the owner's browser.
+- `.github/review/policy.json`: `human_maintainers` is `["Ferrsir"]` and `agent_identities` is
+  `["Ferrisfy"]`. `load_policy` rejects a login listed in both, an empty human list, and missing
+  or malformed identity lists (`tests/governance/test_review_gate.py`).
+- Remaining limits: the bot still has push access, so it can push to `main` and merge PRs until
+  the #4 ruleset is active. Codex and Claude share this one identity, so GitHub cannot tell
+  them apart; the PR comment labels (`Claude review`, `Codex review`) carry that distinction.
 
 ## CI (issue #2), demonstrated on real PRs
 `ci`, `integration`, `trading-safety` and `security` run on every PR. Each ends in a `*-required`
@@ -40,8 +53,8 @@ workflows, so this workflow is not an enforceable independent review integration
 separately administered identity publishes the check.
 
 ## Owner actions required
-1. #4: obtain branch protection (GitHub Pro or public visibility) and apply the main ruleset.
-2. #5: a least-privileged agent GitHub identity, distinct from the owner's account.
+1. #4: apply the main ruleset (`docs/governance/BRANCH_PROTECTION.md`); public visibility now allows it.
+2. #5: done except closing the issue (see "Agent identity" above).
 3. #6: model credentials for isolated review runtimes, outside feature-accessible workflows.
 4. #7: once 1–3 are done, test PRs that must be refused, plus one clean path, recorded here
    with SHAs. Only after that may the ADR-004 waiver be revisited.

@@ -83,6 +83,7 @@ def load_policy(path: Path) -> dict[str, Any]:
         "p2_requires_tracked_issue": bool,
         "max_review_cycles": int,
         "human_maintainers": list,
+        "agent_identities": list,
         "restricted_paths": list,
     }
     for key, typ in required.items():
@@ -91,6 +92,17 @@ def load_policy(path: Path) -> dict[str, Any]:
     roles = [r.get("role") for r in policy["required_reviews"] if isinstance(r, dict)]
     if len(roles) < 2 or len(set(roles)) != len(roles):
         raise PolicyError("policy must require at least two distinct review roles")
+    for key in ("human_maintainers", "agent_identities"):
+        if not all(isinstance(login, str) and login.strip() for login in policy[key]):
+            raise PolicyError(f"policy.{key} must hold non-empty login strings")
+    humans = {login.strip().lower() for login in policy["human_maintainers"]}
+    agents = {login.strip().lower() for login in policy["agent_identities"]}
+    if not humans:
+        raise PolicyError("policy.human_maintainers must name at least one human")
+    if humans & agents:
+        raise PolicyError(
+            f"logins listed as both human maintainer and agent identity: {sorted(humans & agents)}"
+        )
     if policy["max_review_cycles"] < 1:
         raise PolicyError("max_review_cycles must be >= 1")
     if not set(policy["blocking_severities"]) >= {"P0", "P1"}:
