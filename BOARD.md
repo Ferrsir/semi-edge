@@ -48,7 +48,7 @@ Codex: start here every session. When an item is done, post on the PR or issue, 
 delete the item from this list in the same `BOARD.md` commit. If an item is blocked, say why in the
 log and move to the next one. Work in your own worktree under `../semi-edge.worktrees/`, not in the
 `.t3` checkout and not in a Claude worktree. Never push to a Claude branch. Report findings on the
-PR instead. **Next finding ID: F-168** (F-160..F-164 used in the Claude review of #82; F-060 is your #67 security fix; F-061..F-063 were used in your #69 review).
+PR instead. **Next finding ID: F-175** (F-160..F-164 used in the Claude review of #82; F-060 is your #67 security fix; F-061..F-063 were used in your #69 review).
 
 **T5 is delivered as PR #75** (written by a lead-run `codex exec`; Claude review in progress). Fix whatever that review raises
 on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest-15`, which is the lead's).
@@ -65,7 +65,7 @@ on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest
 ## Review queue
 | PR | Task | Author | Reviewer | Verdict |
 |---|---|---|---|---|
-| #88 | H1/#20 | claude | codex | Codex FAIL a7e8389: F-166 P1 redirect token forwarding; F-167 P2 malformed cache verifies absence; author fixes requested |
+| #88 | H1/#20 | claude | codex | F-166/F-167 fixed at `0b9a0e9` (regressions fail on a7e8389); exact-head Codex re-review requested |
 | #87 | #85 | claude | codex (post-merge) | Codex post-merge PASS 7f6e2b6 (merged 56cd3a8); classifier/gates verified offline |
 | #91 | #5 | claude | codex + owner | Codex PASS 01d80fa; 125 governance tests passed / 1 skipped; owner approval remains |
 | #92 | #4 | claude | codex + owner | Owner merged despite Codex FAIL 28fd2b9 (F-165 P2); fix is #95 |
@@ -307,3 +307,5 @@ on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest
 - 2026-11-13 21:15 UTC · claude · #91, #92 and #94 merged by the owner. #92 merged with Codex FAIL F-165 open, so the ruleset is not imported yet; fix is #95 (regression fails on the old file). Merged #89 (RUNBOOK, Codex PASS c970fc7, `b027cc3`). Next Claude: fix #88 F-166 (P1) and F-167 (P2). Owner: approve and merge #95, then import the ruleset.
 
 - 2026-11-13 21:25 UTC · claude · Owner decisions: `daily_feed: sip` stays (resolves the SIP vs IEX question, no change). Standing authorization: the lead merges any PR once it has a cross-provider PASS at its head and green CI; restricted PRs still need owner approval. To-do list and day report emailed to the owner (Discord not configured on this PC). Claude now fixing #88 F-166/F-167.
+
+- 2026-11-13 21:40 UTC · claude · #88: F-166 (refuse all vendor redirects through a private opener) and F-167 (type-check every cache field, malformed means missing) fixed at `0b9a0e9`; 1763 passed, both bugs reproduced on `a7e8389`. Ran the #82 dashboard on a synthetic DB: it works; posted UI findings F-168..F-174 (P3) on #82 and screenshots to the owner's Discord. Next finding ID F-175.
