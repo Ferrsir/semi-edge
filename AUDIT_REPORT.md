@@ -205,6 +205,63 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Regression:** `tests/integration/broker/test_cli_account.py::test_account_client_construction_errors_are_sanitised`
   (3 exception types; fails on `c1f8cf8`).
 
+### F-037 · P2 · `StateReader.orders` had two incompatible signatures (Codex review, PR #62)
+- **Where:** `docs/specifications/phase2-4-interfaces.md` §5.1, §7 (head `4f8eb8d`).
+- **Reproduce:** `StateStore.orders(*, statuses, symbol, kinds)` vs `ReadOnlyStateStore.orders(limit)`;
+  §7 requires both to satisfy one `StateReader` for `diff_state` / `reconcile --dry-run`.
+- **Impact:** dry-run reconciliation could not be implemented against the spec without an
+  undocumented adapter; the two paths could diverge.
+- **Fix (spec):** one `@runtime_checkable StateReader` Protocol in `semiedge.state.models`:
+  `orders(*, statuses, symbol, kinds, limit) -> list[OrderRecord]` (limit `None` or int > 0, newest
+  first when set), `fills`, `positions`, `active_halts`, `corporate_action_adjustments`,
+  `store_id`; identical on both stores.
+- **Acceptance:** signature equality + equal results on one DB (§5.4); `diff_state` on both stores
+  gives equal reports for every reconcile scenario (§7).
+
+### F-038 · P2 · No deduplication between fallback and activity fill sources (Codex review, PR #62)
+- **Where:** §5.2 `fills`, §6.4, §7 (head `4f8eb8d`).
+- **Reproduce:** activities unavailable → cumulative 30 ingested as `cid:30`; activities recover →
+  the same execution arrives as activity `A(30)` with a different key and passes key idempotency:
+  local 60 vs broker 30.
+- **Impact:** spurious reconciliation halt and oversized protection attempts (refused by the
+  gateway's no-short guard).
+- **Fix (spec):** per-order cumulative watermark `W = max(Σ activity qty, max provisional cum_qty)`;
+  broker cumulative `filled_qty` is the upper bound; activity rows are authoritative (`final`);
+  fallback rows record only `B − W` as `provisional`; on recovery, provisional rows covered by
+  activities become `superseded` (kept, excluded) in one transaction; exceeding the broker
+  cumulative → `StateStoreError` + FILL_MISMATCH halt.
+- **Acceptance:** fallback 30 → `A(30)` → `B(20)` ⇒ local 50, no halt, one superseded row; replay
+  idempotent; activities above broker cumulative → error, nothing written (§5.4, §6.5, §7).
+
+### F-039 · P2 · Split recovery contradicted fill-derived quantity and was not idempotent (Codex review, PR #62)
+- **Where:** §7, §9.4 (head `4f8eb8d`).
+- **Reproduce:** 4:1 split, broker 100 → 400 with no executions; §7 declares any qty ≠ entry − exit
+  fills a POSITION_QTY_MISMATCH halt; §9.4 rescaled levels but had no quantity adjustment record
+  or event identity, so a restart could rescale again.
+- **Impact:** every held split either halted or risked double rescaling.
+- **Fix (spec):** verified split (§14 event with `event_id`, knowledge-verified `fetched_at ≤ now`)
+  applied at reconcile step 3b, before the generic check, via
+  `StateStore.apply_corporate_action_adjustment`: new table `corporate_action_adjustments`
+  UNIQUE `(symbol, event_id)`; one transaction scales qty, divides avg price/stop/target, records
+  the non-fill delta used in expected qty; re-application is a no-op. Unverified or inexact →
+  POSITION_QTY_MISMATCH halt.
+- **Acceptance:** 100 → 400 reconciles without halt; second run and restart do not rescale;
+  unverified 100 → 400 halts (§5.4, §7, §9.4).
+
+### F-040 · P2 · `slippage_bps` domain allowed zero/negative sell fills (Codex review, PR #62)
+- **Where:** §3.1, §3.2 (head `4f8eb8d`).
+- **Reproduce:** `slippage_bps=10000` (valid under `>= 0`) → sell fill `open·(1−1) = 0`; larger →
+  negative; `nan`/`inf` unrestricted.
+- **Impact:** nonsensical P&L instead of a fail-closed error.
+- **Fix (spec):** `BacktestSettings` validator: finite `0 <= slippage_bps < 10000`; every computed
+  fill price finite and `> 0`, every cost finite, else `ValueError` naming the trade. Input-domain
+  validation only; no cost value or risk limit changed.
+- **Acceptance:** `10000`, `1e6`, `nan`, `inf` → `ConfigError`; cost overflow → `ValueError` (§3.8).
+- **Also clarified (same review):** entry gap invalidation uses the slipped fill (open 99, target
+  100, 200 bps → 100.98 ⇒ invalidated); end-of-window liquidation costs replace the last equity
+  point (zero positions/exposure); levels must be finite `0 < stop < entry_reference < target`
+  (R07, F-026 boundary); §6.4 states the narrow `unknown → staged` recovery exception.
+
 ---
 
 ## Speculative concerns (not demonstrated; tracked for the relevant phase)

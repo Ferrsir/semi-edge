@@ -363,7 +363,7 @@ against every later proposal in the same batch.
 | R04_long_only | `side == BUY` | `not_long` |
 | R05_tradable | symbol ∈ `tradable_symbols` | `not_tradable` |
 | R06_fresh | `data_as_of == decision_session == portfolio.session` | `stale_data` |
-| R07_levels | `0 < stop < entry_reference < target`, `atr > 0` | `invalid_levels` |
+| R07_levels | `stop`, `entry_reference`, `target`, `atr` finite; `0 < stop < entry_reference < target`, `atr > 0` (same boundary as F-026) | `invalid_levels` |
 | R08_duplicate | no position, no pending order (either side), no earlier proposal in this batch for the symbol | `duplicate_or_conflict` |
 | R09_max_positions | `#positions + #pending entries < max_positions` (pending entries of the working copy, which already include this batch's earlier approvals; nothing is counted twice) | `max_positions` |
 | R10_risk_per_trade | sized: `propose_position_size(equity, entry_reference, stop, …).shares_by_risk` | (downsize) |
@@ -444,7 +444,8 @@ from them is created.
 
 ```python
 class CostSettings(_Frozen):
-    slippage_bps: float           # >= 0; adverse, applied to every MARKET-type fill (entry, stop, time exit)
+    slippage_bps: float           # finite, 0 <= bps < 10_000 (validator, F-040); adverse, applied to
+                                  # every MARKET-type fill (entry, stop, time exit, end of window)
     commission_per_share: float   # >= 0
     commission_per_order: float   # >= 0
     sell_fee_rate: float          # >= 0; fraction of sell notional (regulatory fees); source cited in YAML comment
@@ -459,6 +460,9 @@ class BacktestSettings(_Frozen):
 def load_backtest_settings(config_dir: Path) -> BacktestSettings: ...   # in semiedge.config.loader
 ```
 All fields are **required** in the YAML (no model defaults; a missing key → `ConfigError`).
+Every numeric field must be finite (`nan`/`inf` → `ConfigError`); `slippage_bps` outside
+`[0, 10_000)` → `ConfigError` (at 10 000 bps a sell fills at 0, above it at a negative price).
+This is input-domain validation, not a cost choice.
 The YAML values are set by T5 in its PR, each with a comment stating its source; no value may be
 chosen or changed after looking at backtest output (record changes in DECISIONS.md).
 
@@ -475,11 +479,13 @@ from a frame index), in this exact order, symbols processed in ascending order w
 3. **Open of d — pending entries** decided at `d−1` (market-on-open):
    if no bar for the symbol on `d` → cancelled, `entry_no_bar`;
    if cash after the entry's costs would be < 0 → cancelled `entry_insufficient_cash`;
-   else fill `approved_shares` at `open_d · (1 + slip)` (an `opg` market order cannot be
+   else fill `approved_shares` at `fill = open_d · (1 + slip)` (an `opg` market order cannot be
    withdrawn after the auction, so a gap does **not** cancel it);
-   then, if `open_d ≤ stop` or `open_d ≥ target`, the position is immediately flattened at
-   `open_d · (1 − slip)` with exit reason `entry_gap_flatten` (both legs' costs charged; this
-   mirrors the paper engine's flatten-on-gap rule, §6.3).
+   then, if `fill ≤ stop` or `fill ≥ target` (the **slipped fill price**, the same quantity the
+   paper engine compares, `filled_avg_price` in §6.3), the entry is invalidated: the position is
+   immediately flattened at `open_d · (1 − slip)` with exit reason `entry_gap_flatten` (both
+   legs' costs charged). Example: `open_d = 99`, `target = 100`, 200 bps → `fill = 100.98 ≥ 100`
+   → invalidated, although `open_d < target`.
    Stop and target stay the decision-time levels from `semiedge.strategy.exits` (anchored at
    `C_t`, not at the fill price).
 4. **Intraday of d** for every open position (including those entered at step 3 and not
@@ -511,11 +517,21 @@ from a frame index), in this exact order, symbols processed in ascending order w
       only (all earlier pending entries were resolved at step 3); `equity_{d−1}` for the first
       decision is `initial_equity`; `as_of = session_close(d) + bar_settle_minutes`;
    e. approved → pending entries for `d+1`, with `approved_shares`.
-7. **End of window:** open positions are closed at `close_end · (1 − slip)`, reason
-   `end_of_window`, and labelled.
+7. **End of window:** after step 5 of `end`, open positions are closed at
+   `close_end · (1 − slip)`, reason `end_of_window`, with the normal sell costs, and labelled.
+   The liquidation **replaces** the `end` `EquityPoint` (it is not appended): its `cash` is the
+   cash after liquidation proceeds and costs, `equity == cash`, `gross_exposure == 0`,
+   `positions == 0`. The final equity therefore includes the liquidation costs.
 
 `slip = slippage_bps / 10_000`. Costs per fill: `commission_per_order + commission_per_share·qty`,
 plus `sell_fee_rate · notional` on sells. Cash is debited/credited at fill.
+Numeric guard (F-040): every computed fill price must be finite and `> 0`, and every computed
+cost, notional and cash/equity value finite; otherwise the run aborts with
+`ValueError` naming the `trade_id` (or symbol and session) and the offending quantity. No
+clamping, no skipped trade, no partial result is saved.
+Trade levels (same boundary as F-026): a proposal is acted on only if `stop`, `entry_reference`
+and `target` are finite with `0 < stop < entry_reference < target`; otherwise it is rejected
+by R07 (`invalid_levels`, §2.2) and never becomes a pending entry.
 
 Halts in backtest (same semantics as paper, §8): DAILY_LOSS is evaluated at each decision
 from `equity_d / equity_{d−1}`; DRAWDOWN latches at the first decision where it triggers and
@@ -532,7 +548,8 @@ class ExitLevels:
 
 def exit_levels(entry_reference: float, atr: float, params: MomentumV1Params) -> ExitLevels:
     """stop = C_t − stop_atr_multiple·ATR_t; target = C_t + target_atr_multiple·ATR_t.
-    Raises ValueError on non-finite/non-positive inputs or stop <= 0."""
+    Raises ValueError on non-finite/non-positive inputs, stop <= 0, or a result that is not
+    finite with 0 < stop < entry_reference < target (F-026 boundary)."""
 
 def held_sessions(entry_session: date, session: date, calendar: TradingCalendar) -> int:
     """Number of XNYS sessions in [entry_session, session] inclusive; ValueError if session < entry_session."""
@@ -695,6 +712,17 @@ an existing file is never overwritten.
   gap-through stop fills at `open·(1−slip)`; same-bar stop+target → stop; gap above target →
   target price; entry gap below stop and entry gap above target → filled then `entry_gap_flatten`; time exit at open of entry+`max_holding_sessions`;
   missing fill-day bar → `entry_no_bar`; end-of-window close.
+- Slipped-fill invalidation: `open = 99`, `target = 100`, `slippage_bps = 200` → entry fill
+  `100.98`, then `entry_gap_flatten` (and with `slippage_bps = 0` the same bar is not invalidated).
+- End of window: the last `EquityPoint` is the post-liquidation point (one point for `end`, not
+  two), `positions == 0`, `gross_exposure == 0`, `equity == cash`, and equals the hand-computed
+  value including the liquidation sell costs.
+- Levels: proposals with `stop <= 0`, `stop >= entry_reference`, `target <= entry_reference` or a
+  non-finite level → R07 `invalid_levels`, no pending entry.
+- Slippage domain (F-040): `slippage_bps` = `10000`, `1e6`, `nan`, `inf` (and `-1`) →
+  `ConfigError` from `BacktestSettings`; `9999.99` is accepted. A cost overflow (e.g.
+  `commission_per_share = 1e308`, a valid finite config value, with `qty ≥ 2`) → `ValueError`
+  naming the trade, no result saved.
 - **Future poisoning** (safety): run on data `D`; run again with every bar after session `T`
   replaced by random garbage (and with sessions after `T` deleted) → all trades with
   `exit_session ≤ T`, all decisions at sessions `< T` and the equity curve up to `T−1` are
@@ -823,9 +851,23 @@ class OrderRecord:                         # one orders row
     filled_qty: int; filled_avg_price: float | None; legs_json: str
     submitted_at: datetime | None; updated_at: datetime; last_error: str | None
 
+FillSource = Literal["activity", "cumulative"]
+FillStatus = Literal["final", "provisional", "superseded"]
+
 @dataclass(frozen=True, slots=True)
-class FillRecord:
-    fill_key: str; client_order_id: str; ts: datetime; qty: int; price: float
+class FillRecord:                          # §6.4 "Fill ingestion" (F-038)
+    fill_key: str                          # activity: broker activity id; cumulative: f"{client_order_id}:{cum_qty}"
+    client_order_id: str; ts: datetime; qty: int; price: float
+    source: FillSource                     # activity rows are "final"; cumulative rows are "provisional"
+    status: FillStatus                     # "superseded": kept for audit, excluded from every quantity
+    cum_qty: int                           # this order's local cumulative after the row was ingested
+    superseded_at: datetime | None
+
+@dataclass(frozen=True, slots=True)
+class CorporateActionAdjustment:           # one corporate_action_adjustments row (§9.4, F-039)
+    symbol: str; ex_date: date; event_id: str; ratio: float
+    qty_before: int; qty_after: int; applied_at: datetime
+    # non-fill quantity delta = qty_after - qty_before
 
 @dataclass(frozen=True, slots=True)
 class PositionRecord:                      # one positions row
@@ -862,10 +904,32 @@ class EquitySnapshot:                      # one equity_snapshots row; built by 
 # ReconciliationReport / Discrepancy / DiscrepancyKind (§7) are also defined here, so that the
 # store never imports semiedge.execution; semiedge.execution.reconcile re-exports them.
 
+@runtime_checkable
+class StateReader(Protocol):               # F-037: the ONE read surface used by diff_state (§7);
+    # StateStore and ReadOnlyStateStore implement every method with exactly these signatures,
+    # parameter names and return types (no adapters, no positional-only variants).
+    @property
+    def store_id(self) -> str: ...
+    def orders(self, *, statuses: Collection[OrderStatus] | None = None, symbol: str | None = None,
+               kinds: Collection[OrderKind] | None = None,
+               limit: int | None = None) -> list[OrderRecord]: ...
+        # filters AND-combined; None = no filter; an empty collection matches nothing.
+        # limit None -> all rows, ordered (created_at, client_order_id) ascending;
+        # limit set -> the newest `limit` rows, ordered (created_at, client_order_id) descending.
+        # limit must be None or an int > 0 (type(limit) is int; bool, 0, negatives -> ValueError).
+    def fills(self, *, client_order_id: str | None = None, include_superseded: bool = False,
+              limit: int | None = None) -> list[FillRecord]: ...
+        # same ordering/limit rules as orders(), keyed on (ts, fill_key)
+    def positions(self, *, include_closed: bool = False) -> tuple[PositionRecord, ...]: ...
+    def active_halts(self) -> tuple[HaltRecord, ...]: ...
+    def corporate_action_adjustments(self, *, symbol: str | None = None
+                                     ) -> tuple[CorporateActionAdjustment, ...]: ...
+        # ordered (symbol, ex_date, event_id)
+
 # semiedge/state/store.py
 class StateStoreError(RuntimeError): ...
 
-class StateStore:                          # the single WRITER (engine process; CLI when engine stopped)
+class StateStore:                          # the single WRITER (engine process; CLI when engine stopped); implements StateReader
     def __init__(self, path: Path, *, data_source: Literal["real", "synthetic"]) -> None: ...
         # takes the writer lock (§5.3), creates/migrates, sets PRAGMAs;
         # an existing DB whose meta.data_source differs -> StateStoreError
@@ -905,18 +969,29 @@ class StateStore:                          # the single WRITER (engine process; 
         # self-transitions are allowed only to record new fills/legs; filled_qty may only increase;
         # writes orders + order_events in one transaction
     def get_order(self, client_order_id: str) -> OrderRecord | None: ...
-    def orders(self, *, statuses: Collection[OrderStatus] | None = None, symbol: str | None = None,
-               kinds: Collection[OrderKind] | None = None) -> tuple[OrderRecord, ...]: ...
-    def ingest_fill(self, fill: FillRecord) -> bool: ...    # False if fill_key already present (idempotent)
+    # StateReader (signatures exactly as in models.StateReader): orders, fills, positions,
+    # active_halts, corporate_action_adjustments, store_id
+    def ingest_order_fills(self, client_order_id: str, *, broker_filled_qty: int,
+                           broker_avg_price: float | None,
+                           activities: Sequence[BrokerFillInput] | None,
+                           now: datetime) -> FillIngestResult: ...
+        # §6.4 "Fill ingestion" (F-038); one transaction per broker order; activities=None means
+        # the activities endpoint was unavailable this cycle. Raises StateStoreError (caller sets a
+        # RECONCILIATION halt, FILL_MISMATCH) if the local cumulative would exceed broker_filled_qty.
+        # BrokerFillInput(activity_id: str, qty: int, price: float, ts: datetime) is defined in
+        # models (the store never imports semiedge.broker); FillIngestResult(added_qty: int,
+        # inserted: tuple[str, ...], superseded: tuple[str, ...], local_filled_qty: int).
+    def apply_corporate_action_adjustment(self, symbol: str, *, event_id: str, ex_date: date,
+                                          ratio: float, now: datetime) -> bool: ...
+        # §9.4 (F-039); one transaction; False (no-op) if (symbol, event_id) is already recorded.
     # positions
     def open_position(self, record: PositionRecord) -> None: ...
     def update_position(self, symbol: str, *, now: datetime, qty: int | None = None,
                         avg_entry_price: float | None = None, stop: float | None = None,
-                        target: float | None = None, split_ratio: float | None = None,
+                        target: float | None = None,
                         status: Literal["open", "exiting", "closed"] | None = None) -> None: ...
-    def positions(self, *, include_closed: bool = False) -> tuple[PositionRecord, ...]: ...
-    # halts
-    def active_halts(self) -> tuple[HaltRecord, ...]: ...   # always read from the DB, never cached
+        # split_ratio is changed ONLY by apply_corporate_action_adjustment (F-039)
+    # halts (active_halts is the StateReader method: always read from the DB, never cached)
     def set_halt(self, kind: HaltKind, reason: str, actor: str, now: datetime) -> int: ...
         # idempotent per kind: an already-active halt of the same kind returns its id
     def clear_halt(self, halt_id: int, actor: str, now: datetime) -> None: ...
@@ -938,19 +1013,17 @@ class StateStore:                          # the single WRITER (engine process; 
 # exactly the edges drawn in §6.4, plus self-edges for partially_filled/accepted/submitted/cancel_pending.
 
 # semiedge/state/readonly.py — dashboard/health
-class ReadOnlyStateStore:
+class ReadOnlyStateStore:                  # implements StateReader (same signatures as StateStore)
     def __init__(self, path: Path) -> None: ...
         # sqlite3.connect(f"file:{path}?mode=ro", uri=True) + PRAGMA query_only=ON;
         # missing file -> StateStoreError (never creates a DB)
     def data_source(self) -> Literal["real", "synthetic"]: ...
     def heartbeats(self) -> tuple[tuple[str, datetime, str, str], ...]: ...   # component, ts, status, detail
-    def active_halts(self) -> tuple[HaltRecord, ...]: ...
     def latest_run(self, kind: str) -> tuple[str, str, datetime, datetime | None, str] | None: ...
         # run_id, status, started_at, ended_at, detail
     def signals(self, run_id: str) -> pd.DataFrame: ...
-    def orders(self, limit: int) -> tuple[OrderRecord, ...]: ...
-    def fills(self, limit: int) -> tuple[FillRecord, ...]: ...
-    def positions(self, *, include_closed: bool) -> tuple[PositionRecord, ...]: ...
+    # StateReader: store_id, orders, fills, positions, active_halts, corporate_action_adjustments
+    # (the dashboard calls e.g. orders(limit=50), fills(limit=50))
     def equity_snapshots(self) -> pd.DataFrame: ...
     def reconciliation_history(self, limit: int) -> tuple[ReconciliationReport, ...]: ...
     def outbox_errors(self, limit: int) -> pd.DataFrame: ...
@@ -1016,17 +1089,31 @@ CREATE TABLE order_events (
   event TEXT NOT NULL, from_status TEXT, to_status TEXT, broker_status TEXT,
   filled_qty INTEGER, price REAL, detail_json TEXT NOT NULL);    -- redacted (§13)
 
-CREATE TABLE fills (
+CREATE TABLE fills (                                   -- §6.4 "Fill ingestion" (F-038)
   fill_key TEXT PRIMARY KEY,                            -- broker activity id, else f"{client_order_id}:{cum_qty}"
   client_order_id TEXT NOT NULL REFERENCES orders, ts TEXT NOT NULL,
-  qty INTEGER NOT NULL CHECK (qty > 0), price REAL NOT NULL);
+  qty INTEGER NOT NULL CHECK (qty > 0), price REAL NOT NULL,
+  source TEXT NOT NULL CHECK (source IN ('activity','cumulative')),
+  status TEXT NOT NULL CHECK (status IN ('final','provisional','superseded')),
+  cum_qty INTEGER NOT NULL CHECK (cum_qty > 0),         -- this order's local cumulative after ingestion
+  superseded_at TEXT,
+  CHECK (source = 'activity' OR status IN ('provisional','superseded')),
+  CHECK (source = 'cumulative' OR status = 'final'),
+  CHECK ((status = 'superseded') = (superseded_at IS NOT NULL)));
+
+CREATE TABLE corporate_action_adjustments (            -- §9.4 (F-039); append-only
+  id INTEGER PRIMARY KEY, symbol TEXT NOT NULL, ex_date TEXT NOT NULL,
+  event_id TEXT NOT NULL, ratio REAL NOT NULL CHECK (ratio > 0 AND ratio <> 1),
+  qty_before INTEGER NOT NULL CHECK (qty_before > 0), qty_after INTEGER NOT NULL CHECK (qty_after > 0),
+  applied_at TEXT NOT NULL,
+  UNIQUE (symbol, event_id));
 
 CREATE TABLE positions (
   symbol TEXT PRIMARY KEY, qty INTEGER NOT NULL CHECK (qty >= 0),
   avg_entry_price REAL NOT NULL, entry_session TEXT NOT NULL,
   entry_client_order_id TEXT NOT NULL REFERENCES orders,
   entry_reference REAL NOT NULL, atr REAL NOT NULL, stop REAL NOT NULL, target REAL NOT NULL,
-  split_ratio REAL NOT NULL DEFAULT 1.0,                -- cumulative applied split ratio (§9.4)
+  split_ratio REAL NOT NULL DEFAULT 1.0,                -- product of applied adjustment ratios (§9.4)
   status TEXT NOT NULL CHECK (status IN ('open','exiting','closed')),
   opened_at TEXT NOT NULL, closed_at TEXT, updated_at TEXT NOT NULL);
 
@@ -1063,7 +1150,12 @@ only, numbered, idempotent, applied inside one transaction; an unknown higher `s
 ### 5.3 Invariants
 - An order intent row (`status='staged'`) is committed **before** the broker submit call.
 - `orders.filled_qty` is monotonic non-decreasing; a decrease → `StateStoreError` + RECONCILIATION halt.
-- `fills.fill_key` makes fill ingestion idempotent (replaying the same broker data is a no-op).
+- `fills.fill_key` makes fill ingestion idempotent (replaying the same broker data is a no-op);
+  deduplication **across** sources (cumulative fallback vs recovered activities) is the per-order
+  watermark rule of §6.4, not the key. `orders.filled_qty` always equals the order's local
+  cumulative (§6.4) and never exceeds the broker-reported cumulative.
+- Fill rows are never deleted or edited except `provisional → superseded` (+ `superseded_at`);
+  `corporate_action_adjustments` rows are never updated or deleted.
 - Exactly one writer process: `StateStore.__init__` takes an exclusive lock file
   `{db_dir}/engine.lock` (OS-level `fcntl`/`msvcrt` lock, non-blocking); a second writer →
   `StateStoreError("writer_lock_held")` → CLI exit 5. `semiedge reconcile` without `--dry-run`
@@ -1088,6 +1180,22 @@ Test paths derive from `tmp_path` (CWD is `tmp_path` via `tests/conftest.py`).
 - `ReadOnlyStateStore` cannot write (attempted `INSERT` via its connection raises).
 - Replaying fills twice leaves identical state; `filled_qty` decrease raises.
 - Second `StateStore` writer lock → refused. Newer schema version → refused.
+- `StateReader` parity (F-037): `StateStore` and `ReadOnlyStateStore` both pass
+  `isinstance(x, StateReader)` under `runtime_checkable` *and* an `inspect.signature` equality
+  check per method; on one fixture DB, every filter/limit combination of `orders()`/`fills()`
+  returns equal lists from both; `limit` = `0`, `-1`, `True`, `1.0` → `ValueError` from both;
+  `limit=2` returns the two newest, newest first.
+- Fill-source migration (F-038), on one order of qty 100: broker cumulative 30 with activities
+  unavailable → one `provisional` row `cid:30` (qty 30), local 30; activities recover with
+  `A(30)` → `A` inserted `final`, `cid:30` `superseded`, local 30 (added 0); broker cumulative 50
+  with activity `B(20)` → local 50, exactly one `superseded` row, no StateStoreError. Replaying
+  each step (same broker data) leaves byte-identical rows. Activities reporting 60 against a
+  broker cumulative of 50 → `StateStoreError`, nothing written in that transaction.
+- Corporate-action adjustment (F-039): applying `(S, ev1, 4.0)` to a 100-share position →
+  qty 400, `avg_entry_price`/`stop`/`target` ÷ 4, `split_ratio` 4.0, one adjustments row with
+  `qty_before=100, qty_after=400`; a second call returns `False` and changes nothing; reopening
+  the store and calling again → still `False`; a ratio giving a non-integer qty → `StateStoreError`
+  and no change.
 
 ---
 
@@ -1270,12 +1378,41 @@ Broker → local mapping: `new`, `pending_new`, `accepted`, `held` → `accepted
 replace orders). For a `canceled`/`expired` order with `filled_qty > 0`, the fills stand and
 the position is the filled qty.
 
-Transitions are forward-only; every transition writes an `order_events` row in the same
-transaction as the `orders` update. An attempted backward/unknown transition →
-`StateStoreError` and RECONCILIATION halt. The `submitting` state closes the crash window: a row
-found in `submitting` at startup is treated exactly like `unknown` (lookup before anything else).
-**No code path submits a row that is not in `staged`, and a `staged` row whose client id has ever
-been sent is impossible by construction.**
+Transitions are forward-only, with **one** exception (below); every transition writes an
+`order_events` row in the same transaction as the `orders` update. An attempted backward/unknown
+transition → `StateStoreError` and RECONCILIATION halt. The `submitting` state closes the crash
+window: a row found in `submitting` at startup is treated exactly like `unknown` (lookup before
+anything else).
+**No code path submits a row that is not in `staged`.** A `staged` row is either never sent, or
+was returned by the recovery exception below after the broker confirmed that no order with its
+client id exists.
+
+**Recovery exception (`unknown → staged`, the only backward edge; a `submitting` row first
+moves to `unknown`).** Allowed only
+when all hold, checked in the transaction that makes the change: the 404 rule above is met
+(`lookup_order` returned `None` twice, ≥ 1 monitor cycle apart, and the client id is absent from
+`list_orders(status="all")` covering the order's `created_at`); `now < valid_until`; no fill row
+exists for the client id. The event row is `event="recovered_unsent"` with both lookup timestamps
+in `detail_json`. The resubmission uses the **same** client id, so if the broker did in fact
+receive the first request, the duplicate is rejected (`OrderRejected(duplicate_client_order_id=True)`
+→ `unknown` → lookup) and no second order can exist. Any other path back to `staged` →
+`StateStoreError`.
+
+**Fill ingestion (F-038; `StateStore.ingest_order_fills`, one transaction per broker order).**
+For broker order `O` with broker-reported cumulative `B = BrokerOrder.filled_qty`:
+- `A` = Σ qty of `final` (activity) rows of `O`; `P` = max `cum_qty` of `provisional` rows of `O`
+  (0 if none). The **local cumulative (watermark)** is `W = max(A, P)`; `orders.filled_qty = W`.
+  Position and exposure arithmetic counts each order at `W`, never a raw sum of rows; `superseded`
+  rows are excluded everywhere.
+- Activities available: insert each unseen activity (key = activity id) as `final`; recompute `A`;
+  mark every `provisional` row of `O` with `cum_qty ≤ A` as `superseded`. A provisional row with
+  `cum_qty > A` stays (it still covers quantity not yet reported as activities).
+- Activities unavailable: if `B > W`, insert one row `f"{client_order_id}:{B}"`, `qty = B − W`,
+  `price` = the increment's average implied by `filled_avg_price`, `cum_qty = B`, `provisional`;
+  if `B ≤ W`, nothing.
+- `B` is the upper bound: if the new `W` would exceed `B` (or `B` is below the stored `W`), the
+  transaction is rolled back → `StateStoreError`, FILL_MISMATCH, RECONCILIATION halt (fail closed).
+- Added quantity per call = `W_new − W_old` ≥ 0 only; replaying the same inputs adds 0.
 
 ```python
 class OrderManager:
@@ -1307,9 +1444,10 @@ every non-terminal local order (`staged`, `submitting`, `submitted`, `unknown`, 
 Failure modes: `SubmitOutcomeUnknown` → status `unknown`, **lookup by client ID before any
 retry**; lookup itself failing → stay `unknown`, retry lookup next cycle, never resubmit;
 `engine.broker_error_halt_threshold` consecutive cycles with broker errors → `BROKER` halt.
-Never assume a fill: positions are created and changed only from broker-reported fills
-(`list_fills` activity ids as `fill_key`; if activities are unavailable, the order's cumulative
-`filled_qty` delta with key `f"{client_order_id}:{cum_qty}"`).
+Never assume a fill: positions are created and changed only from broker-reported fills, ingested
+by the watermark rule above (activity ids as `fill_key`; if activities are unavailable, a
+`provisional` cumulative row keyed `f"{client_order_id}:{cum_qty}"`), and by verified
+corporate-action adjustments (§9.4).
 
 ### 6.5 Acceptance tests (`tests/safety/test_order_lifecycle.py`, fake gateway; `@pytest.mark.safety`)
 - Timeout on submit → `lookup_order` called before any second `send_order`; found →
@@ -1332,6 +1470,13 @@ Never assume a fill: positions are created and changed only from broker-reported
 - Client ID: deterministic, ≤ 48 chars, round-trips through `parse_client_order_id`, distinct
   across namespaces; `next_attempt` refuses while a previous attempt is non-terminal.
 - Broker status `replaced`/`other` → RECONCILIATION halt.
+- Recovery exception: `unknown → staged` only after the two-lookup 404 rule, before
+  `valid_until` and with no fill rows; a single 404, a client id present in `list_orders(all)`,
+  an existing fill row or `now ≥ valid_until` → refused (`StateStoreError`, row unchanged);
+  `staged → submitting` after recovery resends the same client id. No other backward edge is
+  accepted by `transition_order` (exhaustive check over `ALLOWED`).
+- Fill sources (F-038): the §5.4 sequence (fallback 30 → `A(30)` → `B(20)`) driven through
+  `sync_open_orders` → local 50, protection sized 30 then 50, never 60; no RECONCILIATION halt.
 
 ---
 
@@ -1355,6 +1500,7 @@ class DiscrepancyKind(StrEnum):
     ORDER_MISMATCH = "order_mismatch"                   # same client id, different symbol/side/qty
     UNSUPPORTED_BROKER_STATE = "unsupported_broker_state"  # replaced/other status, short or fractional position
     OVERSOLD = "oversold"                               # open sells exceed position (§9.3)
+    CORPORATE_ACTION_ADJUSTED = "corporate_action_adjusted"  # verified split explains the qty change (§9.4)
 
 @dataclass(frozen=True)
 class Discrepancy:
@@ -1368,32 +1514,49 @@ class ReconciliationReport:
     discrepancies: tuple[Discrepancy, ...]
 
 def diff_state(local: StateReader, gateway: BrokerGateway, *, now: datetime,
-               lookback: timedelta) -> ReconciliationReport: ...   # pure comparison, writes nothing
+               lookback: timedelta,
+               corporate_actions: CorporateActionStore) -> ReconciliationReport: ...
+    # pure comparison, writes nothing
 def reconcile(store: StateStore, gateway: BrokerGateway, *, now: datetime,
-              lookback: timedelta) -> ReconciliationReport: ...    # diff_state + apply + record
+              lookback: timedelta,
+              corporate_actions: CorporateActionStore) -> ReconciliationReport: ...
+    # diff_state + apply + record
 ```
-`StateReader` is the read subset (`orders`, `positions`, `active_halts`, `store_id`) implemented by
-both `StateStore` and `ReadOnlyStateStore`; `semiedge reconcile --dry-run` uses `diff_state` on a
-`ReadOnlyStateStore` (works while the engine runs). `lookback` = `engine.reconcile_lookback_days`.
+`StateReader` is the single read Protocol defined in `semiedge.state.models` (§5.1, F-037);
+`diff_state` calls only its methods, with keyword arguments. `StateStore` and
+`ReadOnlyStateStore` implement it with identical signatures; `semiedge reconcile --dry-run` uses
+`diff_state` on a `ReadOnlyStateStore` (works while the engine runs). `lookback` =
+`engine.reconcile_lookback_days`. `corporate_actions` is required (no default; read-only use of
+`CorporateActionStore.read`, §14).
 
 Order of evaluation (fixed): (1) broker orders `list_orders(all, after=now−lookback)` matched by
 client id, (2) local non-terminal orders not in that list looked up individually, (3) fills
-ingested idempotently, (4) positions compared **after** fills are applied, (5) protection check.
+ingested per broker order by the §6.4 watermark rule, (3b) verified corporate-action adjustments
+(§9.4) applied **before** any position comparison, (4) positions compared **after** fills and
+adjustments are applied, (5) protection check.
+
+Expected position qty per open position =
+entry-order watermark − Σ exit-order watermarks + Σ `(qty_after − qty_before)` of the symbol's
+`corporate_action_adjustments` with `ex_date > positions.entry_session` (entry order =
+`positions.entry_client_order_id`; exit orders = rows whose `parent_client_order_id` is that
+entry; watermark `W` from §6.4; superseded fill rows never count).
 Resolution rules (conservative; anything not listed → `halt`):
 | Case | Resolution |
 |---|---|
 | Local `staged`, absent at broker | not a discrepancy (never sent); past `valid_until` → `expired_unsubmitted` |
 | Local `submitting`/`unknown`/`submitted`; broker has the ID | apply mapped broker status/fills (`applied`) |
-| Local `submitting`/`unknown`; 404 confirmed (§6.4) and before `valid_until` | back to `staged` (`applied`) |
+| Local `submitting`/`unknown`; 404 confirmed (§6.4) and before `valid_until` | back to `staged` via the §6.4 recovery exception only (`applied`) |
 | Local `submitting`/`unknown`; 404 confirmed and past `valid_until` | `expired_unsubmitted` (`applied`) |
 | Local `submitted`/`accepted`/`partially_filled`/`cancel_pending`; 404 at broker | `halt` |
 | Broker status `replaced`/`other`, short or fractional position | `halt` |
-| Broker status ahead of local (incl. fills) | ingest fills idempotently, update (`applied`) |
+| Broker status ahead of local (incl. fills) | ingest fills by the §6.4 watermark rule, update (`applied`) |
+| Activities would push an order's local cumulative above the broker `filled_qty` | `halt` (FILL_MISMATCH; nothing ingested for that order) |
 | Broker behind a local terminal status, or `filled_qty` lower | `halt` |
 | Same client ID but symbol/side/qty differ | `halt` |
 | Broker order not in DB, or other namespace / non-`se1` | `halt` (never cancel it automatically) |
-| Positions: broker qty == Σ local fills (entries − exits) | `applied` (sync avg price) |
-| Positions: any other qty difference, unknown broker position, local open position absent at broker without exit fills | `halt` |
+| Positions: broker qty == local qty · ratio for an unrecorded verified split (§9.4) | apply the adjustment atomically (`applied`, CORPORATE_ACTION_ADJUSTED) |
+| Positions: broker qty == expected qty (above) | `applied` (sync avg price) |
+| Positions: any other qty difference (incl. a change with no verified event, or a ratio that does not explain the delta exactly), unknown broker position, local open position absent at broker without exit fills | `halt` (POSITION_QTY_MISMATCH) |
 | Open sells exceed broker position qty (§9.3) | `halt` + immediate cancel of the non-protective sell |
 | Open position lacks an accepted protection order (and no working flatten/time exit) | `action_required` (handed to `OrderManager.ensure_protection`) |
 
@@ -1413,6 +1576,18 @@ simulations — crash after `staged` commit; crash after the `submitting` commit
 HTTP call; stop leg filled while the engine was down (position gone at broker, fill present →
 `applied`, position closed); crash between fill and protection placement; DB restored from older backup (foreign
 namespace) → halt; idempotence: running reconcile twice yields the same DB state.
+- `StateReader` parity (F-037): for every scenario above, `diff_state` on a `StateStore` and on a
+  `ReadOnlyStateStore` opened on the same DB file returns equal `ReconciliationReport`s
+  (timestamps fixed by the fake clock).
+- Fill sources (F-038): fallback 30 (activities unavailable) → activities recover with `A(30)` →
+  additional partial activity `B(20)` (broker cumulative 50) ⇒ local 50, broker 50, outcome not
+  `halted`, exactly one `superseded` provisional row; a second reconcile run with identical
+  broker data changes nothing (row-for-row equal DB).
+- Splits (F-039): held 100, verified 4:1 event (§9.4), broker 400 → outcome `resolved`, qty 400,
+  levels ÷ 4, one adjustments row; a second reconcile run and a restart (new `StateStore` on the
+  same file, reconcile again) → no second adjustment, levels unchanged; broker 400 with **no**
+  verified event → `halt` POSITION_QTY_MISMATCH; verified 4:1 event but broker 399 → `halt`,
+  nothing applied.
 
 ---
 
@@ -1494,11 +1669,31 @@ OCO legs count once (they are mutually exclusive). Checked before every sell sub
 halt and an immediate cancel of the non-protective sell.
 
 ### 9.4 Corporate actions while holding
-If `semiedge.data.corporate_actions` reports a split with ex-date in `(entry_session, today]`
-for a held symbol: on the ex-date pre-open the manager (a) requires reconciliation to show
-`broker qty == local qty · ratio` (else `halt`), (b) rescales `stop`/`target` by `1/ratio`,
-updates `positions.split_ratio`, and (c) replaces protection via §9.2 (`rescale_split`).
-Any other corporate action on a held symbol (spin-off, merger, symbol change) → `halt` + alert.
+**Verified split** (F-039): a `CorporateAction` from `semiedge.data.corporate_actions` (§14) for
+an open position's symbol with kind `split` or `reverse_split`; non-empty `event_id`; finite
+`ratio > 0`, `ratio ≠ 1`; `entry_session < ex_date ≤ today`; knowledge-verified, i.e.
+`fetched_at ≤ now` (known before it is used) and `source` of the same class as the state DB
+(`SYNTHETIC`/`FIXTURE` only with a synthetic DB); and `local qty · ratio` an exact integer.
+Anything else is not a verified split and adjusts nothing.
+
+Application (reconciliation step 3b, §7; the generic quantity check runs only after it): if the
+event's `(symbol, event_id)` is not yet in `corporate_action_adjustments` **and** broker qty ==
+`local qty · ratio` exactly, `reconcile` calls `StateStore.apply_corporate_action_adjustment`,
+which in **one transaction**: inserts the adjustments row (`qty_before = local qty`,
+`qty_after = local qty · ratio`; UNIQUE `(symbol, event_id)`), sets `positions.qty = qty_after`,
+divides `avg_entry_price`, `stop` and `target` by `ratio`, and multiplies `split_ratio` by
+`ratio`. `entry_reference`/`atr` stay as recorded at the decision (audit; `split_ratio` states
+their basis). The row's `qty_after − qty_before` is the non-fill quantity delta in the §7
+expected-qty formula. An already-recorded event is a no-op (returns `False`), so a repeated
+reconciliation or a restart never rescales twice.
+- Broker qty == local qty on/after the ex-date pre-open with an unapplied verified split
+  (broker has not adjusted) → `halt`; any qty change with no verified split, or one the ratio
+  does not explain exactly (e.g. cash in lieu of fractional shares) → `halt` POSITION_QTY_MISMATCH
+  (§7), nothing applied.
+- After application the manager replaces protection via §9.2 (`rescale_split`) for the new qty
+  and levels.
+Any other corporate action on a held symbol (spin-off, merger, symbol change, stock dividend)
+→ `halt` + alert.
 
 ### 9.5 Overnight gaps
 Gaps through a stop are handled by the broker-side stop (fills at/after the open, worse than
@@ -1507,7 +1702,9 @@ log show realised slippage versus the stop level.
 
 Acceptance (`tests/safety/test_positions.py`): cancel-confirm-then-sell ordering asserted on
 the fake gateway call log; leg fills during cancel → sell qty reduced / skipped; cancel timeout
-→ no sell; split 4:1 rescales levels and qty check; no-short property over random event
+→ no sell; split 4:1 (100 → 400) reconciles without halt, rescales levels once and
+`rescale_split` replaces protection with qty 400; a second reconciliation run and a restart do
+not rescale again; an unverified 100 → 400 (no event, or `fetched_at > now`) halts; no-short property over random event
 sequences (hypothesis-style seeded loop, no new dependency required).
 
 ---
@@ -1764,6 +1961,8 @@ class CorporateActionKind(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class CorporateAction:
+    event_id: str                # vendor corporate-action id (non-empty; ValueError otherwise); synthetic/
+                                 # fixture sources use f"{kind}:{symbol}:{ex_date:%Y%m%d}" (§9.4 idempotency key)
     symbol: str; kind: CorporateActionKind; ex_date: date
     ratio: float | None          # new shares per old share for splits (4.0 for 4:1); None otherwise
     cash_amount: float | None
