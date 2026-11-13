@@ -262,6 +262,16 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
   point (zero positions/exposure); levels must be finite `0 < stop < entry_reference < target`
   (R07, F-026 boundary); §6.4 states the narrow `unknown → staged` recovery exception.
 
+### F-042 · P3 · Corporate-action contract did not match the split core (Claude review of #61, fixed in #62)
+- **Where:** `phase2-4-interfaces.md` §14 `CorporateAction`, §9.4, §5.
+- **Issue:** §14 used a float `ratio` and `fetched_at`, while `semiedge.data.splits` (#61) needs exact
+  integer share counts and a separate `known_at`. A float like 0.333… can't round-trip to an exact
+  1:3, and using `fetched_at` as `known_at` misstates point-in-time knowledge. The branch name was also wrong.
+- **Fix (spec):** `CorporateAction` carries `new_shares`, `old_shares` and `known_at`, with the ratio
+  derived exactly as a `Fraction`. Adjustment rows store share counts. A verified split requires
+  `known_at ≤ now`. §14 imports `semiedge.data.splits` and documents the two meanings of
+  "split-adjusted".
+
 ---
 
 ## Speculative concerns (not demonstrated; tracked for the relevant phase)

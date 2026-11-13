@@ -865,7 +865,7 @@ class FillRecord:                          # §6.4 "Fill ingestion" (F-038)
 
 @dataclass(frozen=True, slots=True)
 class CorporateActionAdjustment:           # one corporate_action_adjustments row (§9.4, F-039)
-    symbol: str; ex_date: date; event_id: str; ratio: float
+    symbol: str; ex_date: date; event_id: str; new_shares: int; old_shares: int  # exact ratio (F-042)
     qty_before: int; qty_after: int; applied_at: datetime
     # non-fill quantity delta = qty_after - qty_before
 
@@ -982,7 +982,7 @@ class StateStore:                          # the single WRITER (engine process; 
         # models (the store never imports semiedge.broker); FillIngestResult(added_qty: int,
         # inserted: tuple[str, ...], superseded: tuple[str, ...], local_filled_qty: int).
     def apply_corporate_action_adjustment(self, symbol: str, *, event_id: str, ex_date: date,
-                                          ratio: float, now: datetime) -> bool: ...
+                                          new_shares: int, old_shares: int, now: datetime) -> bool: ...
         # §9.4 (F-039); one transaction; False (no-op) if (symbol, event_id) is already recorded.
     # positions
     def open_position(self, record: PositionRecord) -> None: ...
@@ -1103,7 +1103,8 @@ CREATE TABLE fills (                                   -- §6.4 "Fill ingestion"
 
 CREATE TABLE corporate_action_adjustments (            -- §9.4 (F-039); append-only
   id INTEGER PRIMARY KEY, symbol TEXT NOT NULL, ex_date TEXT NOT NULL,
-  event_id TEXT NOT NULL, ratio REAL NOT NULL CHECK (ratio > 0 AND ratio <> 1),
+  event_id TEXT NOT NULL, new_shares INTEGER NOT NULL CHECK (new_shares > 0),
+  old_shares INTEGER NOT NULL CHECK (old_shares > 0 AND old_shares <> new_shares),
   qty_before INTEGER NOT NULL CHECK (qty_before > 0), qty_after INTEGER NOT NULL CHECK (qty_after > 0),
   applied_at TEXT NOT NULL,
   UNIQUE (symbol, event_id));
@@ -1671,8 +1672,9 @@ halt and an immediate cancel of the non-protective sell.
 ### 9.4 Corporate actions while holding
 **Verified split** (F-039): a `CorporateAction` from `semiedge.data.corporate_actions` (§14) for
 an open position's symbol with kind `split` or `reverse_split`; non-empty `event_id`; finite
-`ratio > 0`, `ratio ≠ 1`; `entry_session < ex_date ≤ today`; knowledge-verified, i.e.
-`fetched_at ≤ now` (known before it is used) and `source` of the same class as the state DB
+share counts (`new_shares`, `old_shares` positive and unequal; ratio = `Fraction(new_shares,
+old_shares)`, exact); `entry_session < ex_date ≤ today`; knowledge-verified, i.e. `known_at ≤ now`
+and `fetched_at ≤ now` (known before it is used) and `source` of the same class as the state DB
 (`SYNTHETIC`/`FIXTURE` only with a synthetic DB); and `local qty · ratio` an exact integer.
 Anything else is not a verified split and adjusts nothing.
 
@@ -1964,9 +1966,14 @@ class CorporateAction:
     event_id: str                # vendor corporate-action id (non-empty; ValueError otherwise); synthetic/
                                  # fixture sources use f"{kind}:{symbol}:{ex_date:%Y%m%d}" (§9.4 idempotency key)
     symbol: str; kind: CorporateActionKind; ex_date: date
-    ratio: float | None          # new shares per old share for splits (4.0 for 4:1); None otherwise
+    new_shares: int | None       # splits: exact share counts (4:1 → new 4, old 1; 1:10 → new 1, old 10);
+    old_shares: int | None       # both positive ints, unequal; None for non-split kinds (F-042)
     cash_amount: float | None
-    source: DataSource; fetched_at: datetime
+    source: DataSource
+    fetched_at: datetime         # when SEMI-EDGE retrieved the record
+    known_at: datetime           # tz-aware; when the event was knowable (vendor announcement/publish
+                                 # time; never derived from fetched_at); point-in-time cutoffs use this
+    # ratio (derived, exact): Fraction(new_shares, old_shares); never a stored float
 
 class CorporateActionSource(Protocol):
     def get_actions(self, symbols: Sequence[str], start: date, end: date) -> tuple[CorporateAction, ...]: ...
@@ -1987,9 +1994,13 @@ def check_adjustment_consistency(stored: StoredSeries, actions: Sequence[Corpora
                                  *, jump_threshold: float = 0.35) -> AdjustmentCheck: ...
 ```
 Policy (documented in DECISIONS.md by T17):
-- T46 (#46, `feature/46-split-normalization`) may implement the offline point-in-time
-  split-normalization core first; this section builds on that code (imports it) and never
-  duplicates it.
+- T46 (#46, PR #61, `feature/46-split-core`) implements the offline point-in-time split core as
+  `semiedge.data.splits` (`SplitEvent(symbol, effective_session, new_shares, old_shares, known_at)`,
+  `normalize_raw_splits(...)`). This section builds on it (imports it) and never duplicates it; a
+  split `CorporateAction` converts to a `SplitEvent` with `effective_session = ex_date` and the same
+  share counts and `known_at` (no float round-trip). Note the two meanings of "split-adjusted":
+  vendor `adjustment: split` bars are adjusted as of their `fetched_at`; `normalize_raw_splits`
+  output is adjusted as of its `as_of`/`known_at` cutoff. They are never mixed in one series.
 - Bars are vendor split-adjusted (`adjustment: split`). `StoredSeries.fetched_at` is the
   **latest** fetch (`ParquetBarStore.read` exposes only the max per-row `fetched_at`), so the rule
   uses that value: a split with `ex_date` later than `StoredSeries.fetched_at` means the stored
