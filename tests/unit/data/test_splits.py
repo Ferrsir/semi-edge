@@ -17,7 +17,7 @@ KNOWN = datetime(2024, 1, 2, 12, tzinfo=UTC)
 
 
 def bars():
-    return pd.DataFrame(
+    frame = pd.DataFrame(
         {
             "open": [100.0] * 4,
             "high": [110.0] * 4,
@@ -29,6 +29,8 @@ def bars():
         },
         index=pd.DatetimeIndex(DAYS, dtype="datetime64[ns]", name="session"),
     )
+    frame.attrs["adjustment"] = "raw"
+    return frame
 
 
 def event(day=DAYS[1], new=2, old=1, known=KNOWN):
@@ -65,7 +67,7 @@ def test_forward_reverse_fractional_conserve_notional(new, old):
     )
     assert_frame_equal(result.frame.iloc[1:], original.iloc[1:])
     assert_frame_equal(original, untouched)
-    assert not original.attrs
+    assert original.attrs == {"adjustment": "raw"}
     assert result.frame.attrs["adjustment"] == "split"
 
 
@@ -82,7 +84,11 @@ def test_cutoffs_prevent_future_knowledge_and_effective_leakage():
     future_known = event(DAYS[1], known=CUTOFF + timedelta(seconds=1))
     future_effective = event(date(2024, 1, 8))
     baseline = normalize()
-    result = normalize(events=[future_known, future_effective])
+    mixed = bars()
+    mixed.loc[mixed.index[1:], ["open", "high", "low", "close", "vwap"]] /= 2
+    with pytest.raises(SplitDataError, match="not known"):
+        normalize(mixed, events=[future_known, future_effective])
+    result = normalize(events=[future_effective])
     assert result.applied == ()
     assert_frame_equal(result.frame, baseline.frame)
     known_boundary = event(known=CUTOFF)
@@ -162,8 +168,9 @@ def test_sessions_and_timezone_boundaries():
         normalize(events=[event(date(2024, 1, 6))])
     frame = bars()
     frame.index = pd.DatetimeIndex([*DAYS[:3], date(2024, 1, 6)], name="session").as_unit("ns")
+    assert len(normalize(frame).frame) == 3  # future non-session is outside the prefix
     with pytest.raises(SplitDataError, match="session"):
-        normalize(frame)
+        normalize(frame, as_of=date(2024, 1, 8), known_at=datetime(2024, 1, 8, 22, tzinfo=UTC))
     offset = timezone(timedelta(hours=-5))
     result = normalize(known_at=datetime(2024, 1, 5, 16, tzinfo=offset))
     assert result.known_at == datetime(2024, 1, 5, 21, tzinfo=UTC)
@@ -198,7 +205,9 @@ def test_schema_and_unknown_columns():
     frame["unpriced_metric"] = 1.0
     with pytest.raises(SplitDataError, match="unknown"):
         normalize(frame)
-    assert normalize(empty_bar_frame(), [event()]).frame.empty
+    empty = empty_bar_frame()
+    empty.attrs["adjustment"] = "raw"
+    assert normalize(empty, [event()]).frame.empty
 
 
 @pytest.mark.parametrize(
@@ -216,3 +225,50 @@ def test_numerical_failures_are_explicit_without_input_mutation(column, value, n
     with pytest.raises(SplitDataError, match="overflowed or underflowed"):
         normalize(frame, [event(new=new, old=old)])
     assert_frame_equal(frame, original)
+
+
+def test_one_shot_events_are_applied_once():
+    split = event()
+    result = normalize(events=(e for e in [split]))
+    assert result.applied == (split,)
+    assert result.frame.iloc[0].close == 50
+
+
+def test_missing_provenance_is_rejected():
+    frame = bars()
+    frame.attrs.clear()
+    with pytest.raises(SplitDataError, match="RAW"):
+        normalize(frame)
+
+
+@pytest.mark.safety
+def test_applied_prefix_ignores_future_values_and_preserves_attrs():
+    frame = bars()
+    frame.attrs["fixture"] = {"label": "hand-written"}
+    frame.loc[frame.index[-1], "close"] = np.nan
+    original = frame.copy(deep=True)
+    args = {"as_of": DAYS[1], "known_at": datetime(2024, 1, 3, 21, tzinfo=UTC)}
+    split = event()
+    full = normalize(frame, [split], **args)
+    prefix = normalize(frame.iloc[:2], [split], **args)
+    assert full.applied == (split,)
+    np.testing.assert_allclose(full.frame.close, [50, 100])
+    assert_frame_equal(full.frame, prefix.frame)
+    assert_frame_equal(frame, original)
+    assert frame.attrs == original.attrs
+    full.frame.attrs["fixture"]["label"] = "changed copy"
+    assert frame.attrs["fixture"]["label"] == "hand-written"
+
+
+def test_early_close_and_maximum_share_count_boundaries():
+    day = date(2024, 11, 29)
+    with pytest.raises(SplitDataError, match="not closed"):
+        normalize(as_of=day, known_at=datetime(2024, 11, 29, 17, 59, tzinfo=UTC))
+    result = normalize(as_of=day, known_at=datetime(2024, 11, 29, 18, tzinfo=UTC))
+    assert result.as_of == day
+    split = event(new=2**53)
+    result = normalize(events=[split])
+    assert result.applied == (split,)
+    assert result.frame.iloc[0].close == pytest.approx(100 / 2**53)
+    with pytest.raises(SplitDataError, match="session"):
+        normalize(events=[event(date(1987, 1, 2))])

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
@@ -99,7 +99,7 @@ def _values(frame: pd.DataFrame) -> None:
 
 def normalize_raw_splits(
     frame: pd.DataFrame,
-    events: Sequence[SplitEvent],
+    events: Iterable[SplitEvent],
     *,
     symbol: str,
     adjustment: Adjustment,
@@ -113,14 +113,16 @@ def normalize_raw_splits(
     _session(as_of, calendar)
     if calendar.session_close(as_of) > cutoff:
         raise SplitDataError("as_of session has not closed at known_at")
-    if adjustment is not Adjustment.RAW or frame.attrs.get("adjustment", Adjustment.RAW) != "raw":
+    if adjustment is not Adjustment.RAW or frame.attrs.get("adjustment") != "raw":
         raise SplitDataError("only explicitly RAW, unadjusted frames may be normalized")
     validate_bar_frame(frame, symbol=symbol)
     if set(frame.columns) - {*REQUIRED_BAR_COLUMNS, *OPTIONAL_BAR_COLUMNS}:
         raise SplitDataError("unknown bar columns cannot be safely adjusted")
-    _values(frame)
-    for stamp in frame.index:
+    result = frame.loc[frame.index <= pd.Timestamp(as_of)].copy(deep=True)
+    _values(result)
+    for stamp in result.index:
         _session(stamp.date(), calendar)
+    events = tuple(events)
     seen: set[date] = set()
     for event in events:
         if not isinstance(event, SplitEvent) or event.symbol != symbol:
@@ -129,13 +131,14 @@ def normalize_raw_splits(
         if event.effective_session in seen:
             raise SplitDataError("duplicate or conflicting effective sessions")
         seen.add(event.effective_session)
+        if event.effective_session <= as_of and event.known_at > cutoff:
+            raise SplitDataError("effective split was not known at the information cutoff")
     applied = tuple(
         sorted(
             (e for e in events if e.known_at <= cutoff and e.effective_session <= as_of),
             key=lambda e: e.effective_session,
         )
     )
-    result = frame.loc[frame.index <= pd.Timestamp(as_of)].copy(deep=True)
     prices = ["open", "high", "low", "close", *(["vwap"] if "vwap" in frame else [])]
     try:
         with np.errstate(over="raise", under="raise", invalid="raise", divide="raise"):
