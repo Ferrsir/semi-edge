@@ -12,6 +12,7 @@ from typing import Any, Literal
 import pandas as pd
 
 from semiedge.backtest.results import BacktestResult
+from semiedge.dashboard.desk import Desk, collect_desk
 from semiedge.dashboard.format import cell
 from semiedge.data.calendar import TradingCalendar
 from semiedge.reporting import SYNTHETIC_BANNER
@@ -30,7 +31,7 @@ def source_root(data_dir: Path, source: Source) -> Path:
 
 
 def display(value: object) -> str:
-    """Clean external text; consumers use plain-text widgets exclusively."""
+    """Clean external text for plain-text widgets; the desk also HTML-escapes it (#108)."""
     return UntrustedText.from_raw("file", str(value)).text
 
 
@@ -44,6 +45,7 @@ class DashboardView:
     mode: str
     sections: dict[str, Any]
     last_run: tuple[str, str] = ("unavailable: no recorded run", "unavailable: no recorded run")
+    desk: Desk | None = None
 
 
 def heartbeat_freshness(detail: str, age: float) -> str:
@@ -121,6 +123,18 @@ def load_view(path: Path, *, source: Source, now: datetime) -> DashboardView:
                 f"{latest['kind']}, {latest['status']}",
                 str(cell("ts", latest["started_at"])),
             )
+        signal_rows = [] if scan is None else _records(store.signals(scan))
+        desk = collect_desk(
+            store,
+            mode=mode,
+            source=actual,
+            scan=scan,
+            signals=signal_rows,
+            equity=equity,
+            heartbeats=heartbeats,
+            positions=positions,
+            last_run=last_run,
+        )
         return DashboardView(
             actual,
             mode,
@@ -132,7 +146,7 @@ def load_view(path: Path, *, source: Source, now: datetime) -> DashboardView:
                 },
                 "Signals": {
                     "latest_scan": scan,
-                    "ranked_evaluations": [] if scan is None else _records(store.signals(scan)),
+                    "ranked_evaluations": signal_rows,
                 },
                 "Positions": positions,
                 "Trade history": {
@@ -146,6 +160,7 @@ def load_view(path: Path, *, source: Source, now: datetime) -> DashboardView:
                 },
             },
             last_run,
+            desk,
         )
     finally:
         store.close()
