@@ -5,7 +5,8 @@ sample standard deviation; Sortino uses the RMS of negative returns (zeros
 included). Drawdown duration includes recovery, or ends at the last session.
 Turnover counts both filled legs, costs include commissions/fees, and holding
 length uses Trade.held_sessions verbatim, including the exit day. Period returns
-are rebased at the first close; trades are attributed by entry session.
+use the equity immediately before the first included session;
+trades are attributed by entry session.
 Undefined quantities carry reasons; no non-finite value can be a Metric.
 """
 
@@ -202,7 +203,7 @@ def _compute(result: BacktestResult, returns: Sequence[float]) -> PerformanceMet
         Metric(None, "fewer_than_2_returns")
         if size < 2
         else Metric(None, "zero_volatility")
-        if sigma == 0
+        if zero_volatility(returns)
         else finite_metric(mean / sigma * math.sqrt(ANNUAL_SESSIONS))
     )
     sortino = (
@@ -232,7 +233,9 @@ def _compute(result: BacktestResult, returns: Sequence[float]) -> PerformanceMet
         Metric(sum(t.net_pnl > 0 for t in result.trades) / count)
         if count
         else Metric(None, "no_trades"),
-        finite_metric(winners / losers) if losers else Metric(None, "no_losing_trades"),
+        finite_metric(winners / losers)
+        if losers
+        else Metric(None, "no_losing_trades" if count else "no_trades"),
         average([t.net_pnl for t in result.trades]),
         average([t.r_multiple for t in result.trades]),
         average([float(t.held_sessions) for t in result.trades]),
@@ -248,23 +251,36 @@ def _compute(result: BacktestResult, returns: Sequence[float]) -> PerformanceMet
     )
 
 
+def zero_volatility(returns: Sequence[float]) -> bool:
+    return stdev(returns) <= 1e-12 * max(1.0, fmean(abs(r) for r in returns))
+
+
+def period_result(result: BacktestResult, start: date, end: date) -> BacktestResult:
+    """Slice inclusive sessions, retaining capital immediately before start."""
+    if start > end:
+        raise ValueError("invalid_period")
+    previous = result.initial_equity
+    for point in result.equity_curve:
+        if point.session >= start:
+            break
+        previous = point.equity
+    return replace(
+        result,
+        start=start,
+        end=end,
+        initial_equity=previous,
+        equity_curve=tuple(p for p in result.equity_curve if start <= p.session <= end),
+        trades=tuple(t for t in result.trades if start <= t.entry_session <= end),
+    )
+
+
 def period_breakdown(
     result: BacktestResult, *, periods: Mapping[str, tuple[date, date]]
 ) -> tuple[PeriodMetrics, ...]:
     rows = []
     for label, (start, end) in periods.items():
-        if start > end:
-            raise ValueError("invalid_period")
-        points = tuple(p for p in result.equity_curve if start <= p.session <= end)
-        trades = tuple(t for t in result.trades if start <= t.entry_session <= end)
-        subset = replace(
-            result,
-            start=start,
-            end=end,
-            equity_curve=points,
-            trades=trades,
-            initial_equity=points[0].equity if points else result.initial_equity,
-        )
+        subset = period_result(result, start, end)
+        trades = subset.trades
         rows.append(PeriodMetrics(label, start, end, compute_metrics(subset), len(trades)))
     return tuple(rows)
 
@@ -276,18 +292,10 @@ def worst_drawdowns(result: BacktestResult, n: int = 3) -> tuple[PeriodMetrics, 
     episodes = sorted(drawdown_episodes(result), key=lambda e: (e[3], e[0]))[:n]
     rows = []
     for i, (peak, trough, _, _) in enumerate(episodes, 1):
-        start = result.equity_curve[max(peak, 0)].session
+        # Start after the peak: the shared helper retains the peak as capital.
+        start = result.equity_curve[peak + 1].session
         end = result.equity_curve[trough].session
         row = period_breakdown(result, periods={f"drawdown_{i}": (start, end)})[0]
-        # A peak before the first close retains the pre-session capital.
-        if peak == -1:
-            subset = replace(
-                result,
-                end=end,
-                equity_curve=result.equity_curve[: trough + 1],
-                trades=tuple(t for t in result.trades if t.entry_session <= end),
-            )
-            row = replace(row, metrics=compute_metrics(subset))
         rows.append(row)
     return tuple(rows)
 

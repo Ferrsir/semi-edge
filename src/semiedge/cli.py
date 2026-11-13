@@ -679,11 +679,18 @@ def _cmd_backtest(args: argparse.Namespace) -> int:
 def _cmd_metrics(args: argparse.Namespace) -> int:
     settings, _, _ = _load(args)
     try:
-        result = TypeAdapter(BacktestResult).validate_json(args.result.read_text(encoding="utf-8"))
+        result = TypeAdapter(BacktestResult).validate_json(
+            args.result.read_text(encoding="utf-8"), strict=True
+        )
         if result.schema_version != 1 or not result.labels or not result.command:
             raise ValueError("invalid_result_metadata")
         result.to_dict()
         context = read_context(result)
+        if (
+            result.metrics_fingerprint != result.context_fingerprint()
+            or result.initial_equity != context.settings.initial_equity
+        ):
+            raise ValueError("invalid_metrics_context")
         calendar = TradingCalendar(context.data_config.calendar)
         data = None
         if context.source == DataSource.SYNTHETIC:

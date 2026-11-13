@@ -1,4 +1,4 @@
-﻿# Performance reports (T6 / issue #16)
+# Performance reports (T6 / issue #16)
 
 Run `semiedge metrics RESULT.json` against a backtest artifact. The command emits
 labels-first JSON, including both the metrics command and the original run
@@ -14,13 +14,15 @@ Implementation decisions for gaps in the interface specification:
 
 - The original result schema did not retain pre-session capital or the settings
   needed for comparisons. New artifacts add optional `initial_equity` and
-  `metrics_context` fields, without changing the existing schema version. Context
+  `metrics_context` fields and a SHA-256 `metrics_fingerprint` binding both, without changing the existing schema version. Context
   records the original universe, parameters, costs, calendar, and provenance.
   Historical artifacts lacking context are explicitly rejected by the CLI;
   starting capital is never inferred from the first close or current config.
 - The metrics API reads the starting capital from the result. Holding time uses
   the stored `held_sessions`, including the exit day, without subtracting a day.
-- Period returns start at their first close, as required by the rebasing rule.
+- Period returns use the equity immediately before the first included session,
+  or initial equity at the run start. This retains the start-session return and
+  makes calendar-year returns chain to the whole-run return.
   Ratios are computed on dollar equity because a constant rescaling cancels;
   dollar trade expectancy retains its units. Full completed trades are attributed
   by entry date, even when the exit lies outside the reporting period.
@@ -34,7 +36,9 @@ Implementation decisions for gaps in the interface specification:
   explicitly unavailable.
 - Buy-and-hold buys the maximum affordable whole-share quantity at the first
   open, reserves commissions, and marks at every close, including the final
-  close. The position remains held, so only the executed buy contributes costs
+  close. Window comparisons slice this original buy-and-hold curve with the
+  same previous-close convention; they do not buy again at each window open.
+  The position remains held, so only the executed buy contributes costs
   and turnover. Closed-trade metrics are unavailable; R is explicitly undefined
   because a buy-and-hold position has no strategy stop or risk unit.
 - The benchmark row type cannot itself be null in the specified API. Missing,
@@ -51,3 +55,11 @@ Implementation decisions for gaps in the interface specification:
 Validation uses hand-built synthetic bars and hand-computed equity/trade fixtures
 in `tests/unit/backtest/test_metrics.py`; no downloaded observations or measured
 strategy performance are embedded in tests or documentation.
+
+Sharpe requires two returns (sample standard deviation); Sortino is defined for
+one return if negative, using downside RMS. No trades gives profit factor
+`no_trades`; trades without losers give `no_losing_trades`. Standard deviations
+at or below `1e-12 * max(1, mean(abs(returns)))` count as zero volatility,
+including correlation and beta checks. The artifact fingerprint is an integrity
+check, not authentication; the CLI also requires starting capital to equal saved
+settings and parses artifact types strictly.

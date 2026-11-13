@@ -6,7 +6,7 @@ import hashlib
 import json
 import secrets
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from typing import Protocol, cast
 
@@ -455,5 +455,6 @@ def run_backtest(  # noqa: PLR0912 - validation and mandatory labels follow the 
             "adjustment": data.adjustment.value,
         },
     )
+    result = replace(result, metrics_fingerprint=result.context_fingerprint())
     result.to_dict()  # No non-finite quantity may escape even when save() is not called.
     return result

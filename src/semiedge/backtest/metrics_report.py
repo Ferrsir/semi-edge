@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, replace
+from dataclasses import asdict
 from datetime import date
 
 from semiedge.backtest.benchmarks import compare_benchmarks
@@ -11,6 +11,7 @@ from semiedge.backtest.metrics import (
     STRESS_PERIODS,
     compute_metrics,
     period_breakdown,
+    period_result,
     regime_breakdown,
     worst_drawdowns,
 )
@@ -43,30 +44,13 @@ def metrics_report(
     drawdowns = worst_drawdowns(result)
     windows = []
     for row in (*rows, *drawdowns):
-        subset = replace(
-            result,
-            start=row.start,
-            end=row.end,
-            equity_curve=tuple(p for p in result.equity_curve if row.start <= p.session <= row.end),
-            trades=tuple(t for t in result.trades if row.start <= t.entry_session <= row.end),
-            initial_equity=next(
-                (p.equity for p in result.equity_curve if row.start <= p.session <= row.end),
-                result.initial_equity,
-            ),
-        )
-        if (
-            row.label.startswith("drawdown_")
-            and row.start == result.start
-            and result.equity_curve
-            and result.initial_equity is not None
-            and result.equity_curve[0].equity < result.initial_equity
-        ):
-            subset = replace(subset, initial_equity=result.initial_equity)
+        subset = period_result(result, row.start, row.end)
         windows.append(
             {
                 "label": row.label,
                 "comparisons": [
-                    asdict(c) for c in compare_benchmarks(subset, data, context.settings)
+                    asdict(c)
+                    for c in compare_benchmarks(subset, data, context.settings, origin=result)
                 ],
             }
         )

@@ -110,7 +110,7 @@ def test_constant_and_no_trades(scenario, values):
     assert m.sortino.reason == "no_downside_returns"
     assert m.win_rate.reason == m.expectancy.reason == m.expectancy_r.reason == "no_trades"
     assert m.avg_holding_sessions.reason == "no_trades"
-    assert m.profit_factor.reason == "no_losing_trades"
+    assert m.profit_factor.reason == "no_trades"
     assert m.net_return.value == m.max_drawdown.value == m.turnover.value == 0
 
 
@@ -225,7 +225,7 @@ def test_periods_drawdowns_and_entry_attribution(scenario):
     assert m.max_drawdown_sessions.value == 2
     rows = worst_drawdowns(result)
     assert [r.label for r in rows] == ["drawdown_1", "drawdown_2"]
-    assert rows[0].start == result.start
+    assert rows[0].start == result.equity_curve[1].session
     assert rows[0].end == result.equity_curve[1].session
     assert rows[1].metrics.net_return.value == pytest.approx(-0.05)
     periods = {
@@ -233,7 +233,7 @@ def test_periods_drawdowns_and_entry_attribution(scenario):
         "absent": (date(2025, 1, 1), date(2025, 1, 2)),
     }
     tail, absent = period_breakdown(result, periods=periods)
-    assert tail.metrics.net_return.value == pytest.approx(95 / 90 - 1)
+    assert tail.metrics.net_return.value == pytest.approx(95 / 100 - 1)
     assert absent.metrics.net_return.reason == "no_sessions_in_period"
     assert worst_drawdowns(result, n=0) == ()
     with pytest.raises(ValueError, match="nonnegative"):
@@ -370,3 +370,82 @@ def test_initial_peak_drawdown_and_cagr_overflow(scenario):
     assert m.net_return.value == 9999
     assert m.cagr.reason == "non_finite_arithmetic"
     json.dumps(asdict(m), allow_nan=False)
+
+
+def test_review_period_includes_start_return(scenario):
+    result, _, _ = result_for(scenario, [100, 120, 120])
+    (row,) = period_breakdown(
+        result, periods={"tail": (result.equity_curve[1].session, result.end)}
+    )
+    assert row.metrics.net_return.value == pytest.approx(0.2)
+
+
+def test_review_nearly_constant_returns(scenario):
+    result, _, _ = result_for(scenario, [110, 121, 133.1])
+    assert compute_metrics(result).sharpe.reason == "zero_volatility"
+
+
+def test_review_no_trades_profit_factor(scenario):
+    result, _, _ = result_for(scenario, [100])
+    assert compute_metrics(result).profit_factor.reason == "no_trades"
+
+
+@pytest.mark.parametrize("mutation", ["context", "capital", "coercion"])
+def test_review_tampered_artifact(scenario, monkeypatch, tmp_path, capsys, mutation):
+    request, data, gate, calendar = scenario()
+    result = run_backtest(request, data, gate=gate, calendar=calendar)
+    monkeypatch.setattr(cli, "_load", lambda args: (AppSettings(_env_file=None), None, "test"))
+    raw = result.to_dict()
+    if mutation == "context":
+        raw["metrics_context"]["BacktestSettings"]["initial_equity"] = 20000
+    elif mutation == "capital":
+        raw["initial_equity"] = 20000
+    else:
+        raw["equity_curve"][0]["equity"] = str(raw["equity_curve"][0]["equity"])
+    path = tmp_path / "tampered.json"
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    assert cli.main(["metrics", str(path)]) == 4
+    assert (
+        capsys.readouterr().err.strip() == "Metrics failed: invalid result or missing run context."
+    )
+
+
+def test_review_years_chain_and_windows_align(scenario):
+    """Capital 100; closes 110,132,118.8 -> years +10%,+8%; whole +18.8%."""
+    result, data, request = result_for(scenario, [110, 132, 118.8])
+    days = [date(2023, 12, 29), date(2024, 1, 2), date(2024, 1, 3)]
+    points = tuple(replace(p, session=d) for p, d in zip(result.equity_curve, days, strict=True))
+    shifted = replace(result, start=days[0], end=days[-1], equity_curve=points)
+    report = metrics_report(shifted, None, command="hand-built synthetic fixture")
+    first, second = report["periods"]
+    assert first["metrics"]["net_return"]["value"] == pytest.approx(0.1)
+    assert second["metrics"]["net_return"]["value"] == pytest.approx(0.08)
+    assert (1 + first["metrics"]["net_return"]["value"]) * (
+        1 + second["metrics"]["net_return"]["value"]
+    ) - 1 == pytest.approx(0.188)
+    from semiedge.backtest.metrics import period_result
+
+    # Compare identical series in a tail window: both retain the preceding close.
+    benchmark, _, _ = _benchmark_result(result, data, request.settings, "SMH")
+    tail = period_result(benchmark, benchmark.equity_curve[1].session, benchmark.end)
+    (comparison,) = compare_benchmarks(tail, data, request.settings, origin=result)
+    assert comparison.excess_net_return.value == pytest.approx(0)
+    assert comparison.metrics.net_return.value == compute_metrics(tail).net_return.value
+    assert comparison.metrics.total_costs == 0
+
+
+def test_review_benchmark_nearly_constant_returns(scenario):
+    result, data, request = result_for(scenario, [110, 121, 133.1])
+    frame = data.bars["SMH"].copy()
+    for i, close in enumerate([110, 121, 133.1], len(frame) - 3):
+        frame.iloc[i] = [100, max(101, close + 1), 99, close, 1000000]
+    data = replace(data, bars={"SMH": frame})
+    (comparison,) = compare_benchmarks(result, data, request.settings)
+    assert comparison.correlation.reason == comparison.beta.reason == "zero_benchmark_variance"
+
+
+def test_review_single_negative_return_sortino(scenario):
+    result, _, _ = result_for(scenario, [90])
+    metrics = compute_metrics(result)
+    assert metrics.sortino.value == pytest.approx(-math.sqrt(252))
+    assert metrics.sharpe.reason == "fewer_than_2_returns"

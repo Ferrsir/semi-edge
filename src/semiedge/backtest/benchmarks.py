@@ -25,8 +25,10 @@ from semiedge.backtest.metrics import (
     compute_metrics,
     daily_returns,
     finite_metric,
+    period_result,
     regime_breakdown,
     unavailable,
+    zero_volatility,
 )
 from semiedge.backtest.metrics_context import read_context, validate_series
 from semiedge.backtest.results import BacktestResult, EquityPoint
@@ -86,14 +88,24 @@ def _benchmark_result(
 
 
 def compare_benchmarks(
-    result: BacktestResult, data: BacktestData, settings: BacktestSettings
+    result: BacktestResult,
+    data: BacktestData,
+    settings: BacktestSettings,
+    *,
+    origin: BacktestResult | None = None,
 ) -> tuple[BenchmarkComparison, ...]:
     context = read_context(result)
     strategy = compute_metrics(result)
     comparisons = []
     for symbol in context.universe.comparison_benchmarks:
         try:
-            benchmark, notional, entry_cost = _benchmark_result(result, data, settings, symbol)
+            benchmark, notional, entry_cost = _benchmark_result(
+                origin or result, data, settings, symbol
+            )
+            if origin is not None:
+                benchmark = period_result(benchmark, result.start, result.end)
+                if result.start > origin.start:
+                    notional = entry_cost = 0.0
             metrics = replace(
                 compute_metrics(benchmark),
                 expectancy_r=Metric(None, "benchmark_has_no_risk_unit"),
@@ -108,14 +120,16 @@ def compare_benchmarks(
             s, b = daily_returns(result), daily_returns(benchmark)
             if len(s) < 2:
                 corr = beta = Metric(None, "fewer_than_2_returns")
-            elif variance(b) == 0:
+            elif zero_volatility(b):
                 corr = beta = Metric(None, "zero_benchmark_variance")
+            elif zero_volatility(s):
+                corr = beta = Metric(None, "zero_strategy_variance")
             else:
                 cov = covariance(s, b)
                 beta = finite_metric(cov / variance(b))
                 corr = (
                     finite_metric(cov / stdev(s) / stdev(b))
-                    if stdev(s)
+                    if not zero_volatility(s)
                     else Metric(None, "zero_strategy_variance")
                 )
             excess = (

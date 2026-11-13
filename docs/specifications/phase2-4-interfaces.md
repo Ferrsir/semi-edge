@@ -796,7 +796,7 @@ def regime_breakdown(result: BacktestResult, data: BacktestData,
 class PeriodMetrics:
     label: str                    # "2019", "2018Q4", "drawdown_1", ...
     start: date; end: date
-    metrics: PerformanceMetrics   # computed on the equity sub-series, re-based to 1.0 at start
+    metrics: PerformanceMetrics   # computed on the equity sub-series, based at equity immediately before start
     trade_count: int              # trades with entry_session in [start, end]
 
 def period_breakdown(result: BacktestResult, *,
@@ -814,6 +814,18 @@ is reported with `Metric(None, "no_sessions_in_period")`, never dropped.
   adjustment, session range and cost settings as the strategy; a missing benchmark bar inside the
   range → that comparison is `None` with reason, never forward-filled silently.
 - Regime classification for session `d` uses data `≤ d−1` (no look-ahead into the day scored).
+
+Period/window capital is the equity immediately before the first included session,
+or initial_equity for the first run session. This metrics-definition correction
+(F-150) retains the start-session return so yearly returns chain to the whole run;
+it changes no strategy decisions. All windows, including drawdowns, use one shared
+slice helper. Drawdown windows start after the peak, retaining peak capital.
+Benchmark windows slice the original buy-and-hold curve with this same convention,
+including its original entry costs only when the run's first session is included.
+No forced-zero return is inserted for correlation or beta.
+Sharpe requires two returns; Sortino requires one negative return (downside RMS).
+No-trade profit factor is undefined with reason no_trades. Standard deviations
+<= 1e-12 * max(1, mean(abs(returns))) count as zero volatility.
 
 ### 4.2 Acceptance tests
 - Hand-checked fixtures (equity series of ≤ 10 points, ≤ 6 trades) with every metric computed
