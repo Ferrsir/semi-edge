@@ -21,16 +21,20 @@ PHASES = {
     "A40": 0,
     "T3b": 0,
     "T47": 0,
+    "H3": 0,
     "T1": 1,
     "T2": 1,
     "T3": 1,
     "T4": 1,
     "T42": 1,
+    "A63": 1,
     "T5": 2,
     "T6": 2,
     "T7": 2,
     "T17": 2,
     "T46": 2,
+    "A68": 2,
+    "T71": 2,
     "T8": 3,
     "T9": 3,
     "T10": 3,
@@ -40,6 +44,7 @@ PHASES = {
     "T14": 4,
     "T15": 4,
     "T16": 4,
+    "A74": 4,
     "H1": 3,
     "H2": 3,
 }
@@ -83,7 +88,9 @@ def build_snapshot(
     for cells in table_rows(board, "Board", 6):
         task_id, issue, title, owner, raw, dependencies = cells
         if task_id not in PHASES:
-            raise SnapshotError("Unknown task ID: update the explicit phase mapping before refresh")
+            raise SnapshotError(
+                f"Unknown task ID {task_id}: update the explicit phase mapping before refresh"
+            )
         if task_id in seen:
             raise SnapshotError("Duplicate task ID in Board")
         seen.add(task_id)
