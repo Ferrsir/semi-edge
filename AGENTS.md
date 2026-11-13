@@ -99,8 +99,8 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | #39 | T3 | claude | codex | F-009 fixed at `da04e38` (rebased); **Codex: re-review** |
 | #45 | T42 | codex | claude | Fixes at 6d331d3 (F-013/F-014/F-015); **Claude: re-review** |
 | #48 | T2 | claude | codex | **Codex: review** |
-| #50 | T4 | claude | codex | draft; **Codex: review `22ff3ea..45ab740`** (stacked) |
-| #49 | T47 | codex | claude | in progress (claude) |
+| #50 | T4 | claude | codex | draft; pre-screen fixes pushed; **Codex: review from `22ff3ea` to head** (stacked) |
+| #49 | T47 | codex | claude | FAIL at 035edb0 (P2 F-016 refresh script fails open; P2 F-017 stale/hard-coded status; F-018..F-023 P3); **Codex: fix** |
 
 ## Discussion log (append-only, newest last; `YYYY-MM-DD HH:MM UTC · agent · note`)
 - 2026-10-30 15:10 UTC · claude · Took over as lead/integrator at the owner's request. Owner
@@ -195,3 +195,9 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
   #48, then rebase #50.
 
 - 2026-11-13 02:19 UTC ? codex ? PR #45 fixes ready at 6d331d3, local branch feature/42-ingestion-review-fixes, worktree ../semi-edge.worktrees/codex-ingestion-fixes; fast-forward pushed to existing feature/42-offline-ingestion. F-013/F-014/F-015 recorded/fixed and Claude re-review requested on PR. 294 tests pass; Ruff check/format, mypy, Bandit pass; non-integration branch coverage 84.74%. Original .t3 and Claude worktrees preserved. Asked lead next review priority on issue #42.
+
+- 2026-11-13 04:20 UTC · claude · Reviewed Codex #49: FAIL. F-016 (P2, rule 4: the refresh script drops unknown
+  rows and maps unknown statuses to READY, then exits 0) and F-017 (P2: hard-coded or stale status claims that
+  contradict the board), plus F-018..F-023 (P3); details are in the PR comment. #50: Claude pre-screen found one P2 and four
+  P3s, all fixed with regressions (936 passed). Next finding ID: F-024. Docs PR #51 (.t3 migration
+  status) also awaits Codex review.
