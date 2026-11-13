@@ -106,6 +106,12 @@ class ParquetBarStore:
   and the caller refetches the full stored range. This deliberately rejects partial adjusted
   appends/backfills and refetches with retained gaps even when anchor prices match. A complete
   fresh history may replace all stored rows. Raw series may still be appended without overlap.
+- Recovery from an adjusted-basis refusal: see `docs/ADJUSTED_CACHE_RECOVERY.md`. A later
+  `data fetch --start` (or later `data.history_start`) omits existing sessions and is refused;
+  `--end` before the last stored session can do the same. If the vendor permanently omits a
+  stored session, retrying the same full-range fetch cannot resolve it. Preserve the old series
+  for audit and rebuild from authoritative history in a new empty cache root, validating gaps
+  before switching consumers. Never silently delete a series or mix old rows into the rebuild.
 - Writes are atomic (write temp file in the same dir, then `os.replace`).
 - Synthetic data may only be written under a root whose path contains a `synthetic` component
   (raise otherwise) so it can never pollute the real cache.

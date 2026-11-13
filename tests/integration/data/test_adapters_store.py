@@ -124,7 +124,7 @@ def test_store_merges_overlapping_appends_and_equal_timestamps(tmp_path, bars):
     store = ParquetBarStore(tmp_path)
     # Matching overlap alone cannot establish all retained adjusted sessions.
     write(store, bars.iloc[:3])
-    with pytest.raises(ValueError, match="full stored range"):
+    with pytest.raises(ValueError, match="unverified for retained sessions"):
         write(store, bars.iloc[2:])
     write(store, bars)
     pd.testing.assert_frame_equal(read(store).frame, bars)
