@@ -21,7 +21,7 @@ evidence of a trading edge.
 | Order lifecycle, reconciliation, scheduler, notifications, deployment | — | planned (#21–#27) |
 
 See [project brief](docs/PROJECT_BRIEF.md), [architecture](docs/ARCHITECTURE.md), the agent
-rules and task board in [AGENTS.md](AGENTS.md), [engineering policy](docs/governance/ENGINEERING_POLICY.md),
+rules in [AGENTS.md](AGENTS.md), task board in [BOARD.md](BOARD.md), [engineering policy](docs/governance/ENGINEERING_POLICY.md),
 [testing](docs/TESTING.md) and [setup status](docs/governance/ENGINEERING_SETUP_REPORT.md).
 
 ## Offline data pipeline
