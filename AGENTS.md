@@ -83,16 +83,16 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T14 | #26 | Discord notifications | codex | READY | T12 |
 | T15 | #27 | Docker / compose, health checks, graceful shutdown | claude | READY | T12 |
 | T16 | #29 | Security: secret handling, redaction, prompt-injection tests | codex | IN PROGRESS: core merged (PR #67, f0b093d); follow-ups #74; §13 e2e test open | T4 |
-| T17 | #18 | Corporate actions tracking | codex | IN PROGRESS (interactive codex), feature/18-corporate-actions | T1 |
+| T17 | #18 | Corporate actions tracking | codex | REVIEW (PR #77 core; #18 remains open for integration) | T1 |
 | A37 | #37 | Audit: reject missing runtime configuration sections | codex | DONE (PR #38) | T0 |
 | A40 | #40 | Harden shared paper endpoint guard against disguised URL objects | codex | DONE (PR #41, merged dfece2a) | T0 |
 | T42 | #42 | Offline fixture CSV-to-Parquet ingestion pipeline | codex | DONE (PR #45, merged 9aa0e0c) | T0 |
 | T46 | #46 | Offline point-in-time split normalization core (subtask of #18) | codex | DONE (PR #61, merged ae01934; P3 F-041 → #68) | T0 |
 | T47 | #47 | Project status dashboard (separate from trading UI) | codex | DONE (PR #65, merged 068e01f; CI job split to restricted #66, owner approval) | T0 |
 | A63 | #63 | Reject unverified retained adjusted sessions (F-036) | codex | DONE (PR #64, merged 0fe06f3; P3 F-050/F-051 → #68) | T1 |
-| A68 | #68 | Split precision and adjusted-history recovery follow-ups | codex | REVIEW (PR #70 at 8cef298) | T46, T1 |
+| A68 | #68 | Split precision and adjusted-history recovery follow-ups | codex | DONE (PR #70, merged 00be4fa) | T46, T1 |
 | T71 | #71 | Backtest cost/config and shared exit primitives (subtask #15) | codex subagent | WIP (isolated primitives preserved for lead reuse; overlaps lead-owned T5) | T3b |
-| A74 | #74 | Security follow-ups F-070..F-076 | codex subagent | IN PROGRESS (codex), feature/74-security-followups | T16 |
+| A74 | #74 | Security follow-ups F-070..F-076 | codex subagent | REVIEW (PR #76 at 288ed94; redaction regression fixed) | T16 |
 | H1 | #20 | Verified earnings calendar source | human | BLOCKED (owner must choose a data source) | — |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
 
@@ -116,7 +116,8 @@ Claude is reviewing your #67 and #70.
 ## Review queue
 | PR | Task | Author | Reviewer | Verdict |
 |---|---|---|---|---|
-| #67 | T16 | codex | claude | boundary core/F-060 at 13d12dd; cross-provider review requested |
+| #76 | #74 | codex | claude | Updated 288ed94; cross-provider re-review requested |
+| #77 | T17 | codex | claude | Core 96d6c65; cross-provider review requested; #18 integration open |
 | #75 | T5 | codex | claude | Claude review running |
 | #73 | #54 | claude | codex + owner | Codex PASS at c24c43b (F-077..F-079 fixed); **owner: approve** (restricted) |
 | #66 | #47 | claude (Codex job) | owner | restricted `ci.yml`, **owner: approve** |
@@ -306,3 +307,5 @@ Claude is reviewing your #67 and #70.
   Claude review running. Next finding ID F-080 (F-090..F-099 reserved for the #75 review).
 
 - 2026-11-13 07:18 UTC ? codex ? #74 security follow-ups delegated to isolated Codex agent feature/74-security-followups while root handles T17. Agent reports1283 full tests/1 skipped and65 new security regressions; no approval claimed, PR/Claude review pending. Root T17 typed ledger/raw read-only adapter has48 focused tests passing; exact counts, atomic ledger, explicit knowledge resolver and bounded pagination. Corporate adjusted-split contract concern on #18 is proposed F077 (not F064 already used on #70); not integrated into scanner/engine. #71 coordination WIP83798f0 is pushed for lead reuse, no duplicate PR.
+
+- 2026-11-13 07:32 UTC · codex · Delivered T17 core PR #77 at96d6c65: exact corporate-action DTO/ledger, bounded read-only data adapter requiring separate announcement evidence, adjustment consistency checker;66 safety cases,1273 full passed/1 opt-in smoke skipped, Ruff/types/Bandit pass. No consumer activation or verified coverage claim; #18 remains open. Proposed policy clarification has no finding ID (F077..79 belong to governance). #76 refreshed288ed94 fixes confirmed backslash-suffix leak;1292 passed/1 skipped, nine regressions (eight fail on prior head). Both exact-head Claude reviews requested. T5 and other worktrees untouched; #71 remains preserved coordination WIP.
