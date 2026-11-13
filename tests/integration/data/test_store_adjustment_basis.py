@@ -73,13 +73,15 @@ def test_rebased_full_refetch_replaces_history(tmp_path, bars):
     pd.testing.assert_frame_equal(_read(store).frame, rebased)
 
 
-def test_adjusted_overlapping_append_with_same_basis_merges(tmp_path, bars, caplog):
+def test_adjusted_partial_append_requires_complete_history(tmp_path, bars, caplog):
     store = ParquetBarStore(tmp_path)
     _write(store, bars.loc[:"2024-06-07"], FIRST)
     tail = bars.loc["2024-06-07":].copy()
     tail.loc[pd.Timestamp("2024-06-14"), "volume"] += 1.0  # ordinary correction, newest session
-    _write(store, tail, SECOND)
+    with pytest.raises(ValueError, match="full stored range"):
+        _write(store, tail, SECOND)
     expected = pd.concat([bars.loc[:"2024-06-06"], tail])
+    _write(store, expected, SECOND)
     pd.testing.assert_frame_equal(_read(store).frame, expected)
     assert "OHLCV correction" not in caplog.text  # shared session 2024-06-07 was identical
 
@@ -109,8 +111,36 @@ def test_rebased_refetch_with_interior_gap_is_rejected(tmp_path, bars):
     pd.testing.assert_frame_equal(_read(store).frame, bars)
 
 
-def test_same_basis_refetch_with_interior_gap_keeps_stored_session(tmp_path, bars):
+def test_same_basis_refetch_with_interior_gap_is_unverified(tmp_path, bars):
     store = ParquetBarStore(tmp_path)
     _write(store, bars, FIRST)
-    _write(store, bars.drop(pd.Timestamp("2024-06-05")), SECOND)
+    with pytest.raises(ValueError, match="full stored range"):
+        _write(store, bars.drop(pd.Timestamp("2024-06-05")), SECOND)
     pd.testing.assert_frame_equal(_read(store).frame, bars)
+
+
+def test_opposite_splits_cannot_hide_changed_basis_in_retained_gap(tmp_path):
+    """F-036: equal anchors cannot prove the basis between opposite corporate actions."""
+    index = pd.DatetimeIndex(
+        ["2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"],
+        dtype="datetime64[ns]",
+        name="session",
+    )
+    original = pd.DataFrame(
+        {c: [100.0] * 4 for c in ("open", "high", "low", "close", "volume")}, index=index
+    )
+    restated = original.copy()
+    # Reverse 1:2 Jan3, forward 2:1 Jan4: net factor one before both events.
+    restated.loc[index[1], ["open", "high", "low", "close"]] /= 2
+    restated.loc[index[1], "volume"] *= 2
+    store = ParquetBarStore(tmp_path)
+    _write(store, original, FIRST)
+    path = next(tmp_path.rglob("A.parquet"))
+    saved = path.read_bytes()
+    with pytest.raises(ValueError, match="full stored range"):
+        _write(store, restated.drop(index[1]), SECOND)
+    assert path.read_bytes() == saved
+    pd.testing.assert_frame_equal(_read(store).frame, original)
+    # A complete fresh history can resolve the unknown basis without retaining the old gap.
+    _write(store, restated, SECOND)
+    pd.testing.assert_frame_equal(_read(store).frame, restated)

@@ -98,14 +98,14 @@ class ParquetBarStore:
 - `write` merges with existing rows: on duplicate `session`, the newer `fetched_at` wins
   (vendor corrections), and a WARNING is logged when OHLCV values change for an existing session.
 - Adjusted series (`adjustment != raw`) are restated retroactively by the vendor (splits,
-  dividends), so a merge must prove that retained stored rows share the incoming basis: the
-  incoming frame must overlap at least one stored session, and every retained stored row (one the
-  incoming frame does not replace, including stored sessions missing *inside* the incoming range)
-  is anchored by its nearest shared session on each side that exists (the following one for rows
-  before all shared ones, the preceding one for rows after them, both for rows in between); the
-  close on each anchor must match. "Retained" means rows that survive the fetch-time tie-break
-  from the store, so a shared session whose stored fetch is newer is retained and anchors itself.
-  Otherwise `write` raises `ValueError` and the caller refetches the full stored range. Raw series may be appended without overlap.
+  dividends). Without verified event/basis evidence, matching nearby closes cannot prove a
+  missing row's basis: opposite events may cancel at both anchors. Every retained stored session
+  must therefore itself occur in incoming history, and its close must match that history under
+  the existing tolerance. "Retained" means rows surviving the fetch-time tie-break from the store,
+  including shared sessions whose stored fetch is newer. Otherwise `write` raises `ValueError`
+  and the caller refetches the full stored range. This deliberately rejects partial adjusted
+  appends/backfills and refetches with retained gaps even when anchor prices match. A complete
+  fresh history may replace all stored rows. Raw series may still be appended without overlap.
 - Writes are atomic (write temp file in the same dir, then `os.replace`).
 - Synthetic data may only be written under a root whose path contains a `synthetic` component
   (raise otherwise) so it can never pollute the real cache.

@@ -45,9 +45,9 @@ def test_roundtrip_merge_summary(tmp_path, bars, caplog):
     result = read(store)
     pd.testing.assert_frame_equal(result.frame, bars)
     assert result.source == DataSource.FIXTURE
-    changed = bars.iloc[-1:].copy()
-    # A volume correction on the anchor session does not change the split-adjustment basis.
-    changed.loc[:, "volume"] += 1
+    changed = bars.copy()
+    # Full incoming coverage is required even for ordinary volume corrections.
+    changed.loc[changed.index[-1], "volume"] += 1
     write(store, changed, datetime(2024, 12, 2, tzinfo=UTC))
     assert "OHLCV correction" in caplog.text
     assert read(store).frame.volume.iloc[-1] == changed.volume.iloc[-1]
@@ -122,9 +122,11 @@ def test_store_rejects_mixed_provenance(tmp_path, bars, bad_feed):
 
 def test_store_merges_overlapping_appends_and_equal_timestamps(tmp_path, bars):
     store = ParquetBarStore(tmp_path)
-    # Adjusted appends overlap one stored session so the adjustment basis can be verified.
+    # Matching overlap alone cannot establish all retained adjusted sessions.
     write(store, bars.iloc[:3])
-    write(store, bars.iloc[2:])
+    with pytest.raises(ValueError, match="full stored range"):
+        write(store, bars.iloc[2:])
+    write(store, bars)
     pd.testing.assert_frame_equal(read(store).frame, bars)
     write(store, bars.assign(volume=bars["volume"] * 2))
     # Equal fetch timestamps do not supersede the existing observations.
