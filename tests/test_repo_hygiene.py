@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-GUARDED_DIRS = ("src", "tests", "config", "scripts")
+GUARDED_DIRS = ("src", "tests", "config", "scripts", "project-status")
 
 
 def _git_available() -> bool:
@@ -28,8 +28,9 @@ def test_no_source_file_is_gitignored() -> None:
         if (ROOT / d).is_dir()
         for p in (ROOT / d).rglob("*")
         if p.is_file()
-        and p.suffix in {".py", ".yaml", ".yml", ".toml", ".json", ".md"}
-        and "__pycache__" not in p.parts
+        and p.suffix
+        in {".py", ".yaml", ".yml", ".toml", ".json", ".md", ".js", ".cjs", ".html", ".css"}
+        and not {"__pycache__", "node_modules", ".venv"}.intersection(p.parts)
     ]
     assert candidates, "expected source files to check"
     result = subprocess.run(
