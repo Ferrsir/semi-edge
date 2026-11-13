@@ -238,3 +238,8 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **F-022 / P3, browser storage:** Null/array/scalar/invalid local checklist values become an empty checklist; only known boolean fields survive. DOM regressions cover all malformed shapes.
 - **F-023 / P3, local paths:** Documentation uses relative checkout paths; publishing still uses the existing private Site identity. No personal machine paths are required to refresh.
 - **Scope/evidence:** Local crafted snapshots, stubbed GitHub responses and DOM tests only; no trading/credentials. Source timestamps disclose snapshot freshness. Browser layout remains unverified; this dashboard is a project tracker, not the operational trading UI.
+
+### Dashboard follow-up F-028 / F-029 (P3)
+- Restored the hero separator, roadmap arrow and completion checkmark with Unicode escapes to prevent shell encoding loss. DOM regression rejects question marks in the hero.
+- Setup cards now describe instructions and guides, rather than asserting an unselected earnings source or unresolved credential status. Local checkmarks remain personal reminders, never integration evidence. DOM regression verifies the stale provider claim is absent.
+- Rebased on current main, preserving both ingestion and dashboard audit sections. Hosted publishing remains blocked by Sites Git client availability; no updated deployment is claimed.

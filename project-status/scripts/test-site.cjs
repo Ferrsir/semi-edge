@@ -83,3 +83,12 @@ for(const malformed of ['null','[]','"bad"','0','{"paper":"yes"}']){
   window.close();
 }
 console.log('PASS: dynamic owner count, phase advancement, source review verdicts, URL allowlist, exact PR links, malformed browser state');
+
+{
+  const window=boot();
+  assert.equal(window.document.querySelector('.hero').textContent.includes('?'),false);
+  route(window,'setup');
+  assert.equal(window.document.body.textContent.includes('No provider has been selected'),false);
+  assert.match(window.document.querySelector('.setup-card').textContent,/GUIDE:/);
+  window.close();
+}
