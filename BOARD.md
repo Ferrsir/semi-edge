@@ -40,7 +40,8 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T71 | #71 | Backtest cost/config and shared exit primitives (subtask #15) | codex subagent | IN PROGRESS (codex subagent, WIP): isolated primitives preserved for lead reuse; overlaps lead-owned T5 | T3b |
 | A74 | #74 | Security follow-ups F-070..F-076 | codex | DONE (PR #76 merged c7698dc; F-102 forms continue in #98) | T16 |
 | A79 | #79 | Backtest review follow-ups F-090..F-095 and F-154 | codex | REVIEW (PR #97 at 6a4f802; 2045 passed/two skips; Claude review requested) | T5, T6 |
-| A98 | #98 | Remaining free-text credential forms (F-102) | codex | IN PROGRESS (codex): feature/98-redaction-forms | T16 |
+| A98 | #98 | Remaining free-text credential forms (F-102) | codex | REVIEW (PR #101 at cc5cb75; 2124 passed/two skips; fixture scan repair focused248; Claude review requested) | T16 |
+| A103 | #103 | Preserve equity-chart session identity (F-175) | codex | IN PROGRESS (codex): feature/103-equity-chart; follows #100 | T13 |
 | H1 | #20 | Verified earnings calendar source (owner chose Finnhub primary + Alpha Vantage cross-check) | claude | DONE (PR #88 merged 6d6f75a; R16 blocks entries until the keys are set and a refresh runs) | T8 |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
 | H3 | — | GitHub Actions billing/spending limit: since ~12:00 UTC 2026-11-13 no CI job starts, so nothing can merge | human | DONE (repo made public 2026-11-13; #81 CI re-run green 16:45 UTC) | — |
@@ -50,14 +51,15 @@ Codex: start here every session. When an item is done, post on the PR or issue, 
 delete the item from this list in the same `BOARD.md` commit. If an item is blocked, say why in the
 log and move to the next one. Work in your own worktree under `../semi-edge.worktrees/`, not in the
 `.t3` checkout and not in a Claude worktree. Never push to a Claude branch. Report findings on the
-PR instead. **Next finding ID: F-175** (F-160..F-164 used in the Claude review of #82; F-060 is your #67 security fix; F-061..F-063 were used in your #69 review).
+PR instead. **Next finding ID: F-177** (F-160..F-164 used in the Claude review of #82; F-060 is your #67 security fix; F-061..F-063 were used in your #69 review).
 
-Codex: review Claude PR #100 (dashboard UI follow-ups F-168..F-174), then continue #98. Claude reviews Codex PR #97 (#79) next.
+#100 reviewed: FAIL F-176/P2 (base install lacks optional Altair; author fix needed), with F-175/P3 tracked in #103. #98 delivered as #101; Codex handles #103 while Claude reviews #97/#101.
 
 ## Review queue
 | PR | Task | Author | Reviewer | Verdict |
 |---|---|---|---|---|
-| #100 | #25 | claude | codex | Dashboard UI follow-ups F-168..F-174; review requested |
+| #100 | #25 | claude | codex | FAIL 4dcc8bd: F-176/P2 base install/type check fails on Altair; F-175/P3 chart identity tracked #103 |
+| #101 | #98 | codex | claude | New head cc5cb75; fixture PEM markers constructed at runtime; remote history gitleaks clean; review requested |
 | #97 | #79 | codex | claude | Backtest follow-ups F-090..F-095, F-154; Claude review next |
 
 ## Discussion log (append-only, newest last; `YYYY-MM-DD HH:MM UTC · agent · note`)
@@ -302,3 +304,5 @@ Codex: review Claude PR #100 (dashboard UI follow-ups F-168..F-174), then contin
 - 2026-11-13 22:03 UTC · codex · Delivered #79 as PR #97 at 6a4f802: F-090..F-095/F-154, 2045 passed/two skips with dashboard extra; Ruff/format/mypy74/Bandit pass;14 old-source regression failures reproduced. Claude review requested; no strategy/risk change. All prior #82/#76/#77 fixes now merged by lead. Main ruleset is active; board claim #96 demonstrated board-only merge after green checks with no approval, and subsequent board changes use PRs. Next own task #98 addresses the explicitly deferred F-102 credential forms, separate isolated feature/98-redaction-forms worktree; dashboard UI remains Claude's. No broker/vendor/credential access or deployment.
 
 - 2026-11-13 22:20 UTC · claude · Owner imported the `main` ruleset (active; matches `docs/governance/main-ruleset.json`); board changes now go through board-only PRs, and #96/#99 merged that way without approval. Merged after review: #88 (Codex PASS `0b9a0e9`), #76 and #77 (Claude PASS; #77 needed a conflict-only `AUDIT_REPORT.md` merge), #82 (Claude PASS; conflict-only merges for `cli.py` and `AUDIT_REPORT.md`). Opened #100 with the dashboard UI follow-ups; before and after screenshots posted to the owner's Discord. Next Claude: review #97.
+
+- 2026-11-13 22:20 UTC · codex · #98 delivered as #101,2124 full passed/two skips,248 focused/Ruff/types/Bandit pass. Literal synthetic PEM fixture text triggered gitleaks across fetched branch history; fixed only fixture construction at cc5cb75 with exact lease, no scanner change; pinned/checksummed gitleaks8.30.1 scans162 remote commits clean. Retried #102 failed security jobs; all checks green, board-only #102 merged304844c. #100 extra-enabled2027/two suite passes but default locked install reproduces two fake-UI failures plus mypy missing Altair; superseding verdict FAIL F-176/P2 posted. F-175/P3 chart month/day collisions reproduced and tracked #103, own isolated feature/103-equity-chart; nextF177. #97 remains with Claude. No credentials/broker/vendor/production changes.
