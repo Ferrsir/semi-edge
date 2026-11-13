@@ -313,6 +313,13 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Regression:** `tests/governance/test_ai_review.py::test_truncated_diff_hiding_excluded_config_fails_closed`
   (the reviewer ran on `fcdb423`); a large ordinary diff is still reviewed.
 
+### F-078 / F-079 · P2 · Rename sources and Git-quoted paths bypassed the F-077 guard (Codex re-review, PR #73)
+- **Reproduce:** `.claude/settings.json → ordinary.txt` showed only the destination in `--name-only`.
+  `.claude/é.json` was reported quoted (`".claude/Ã©.json"`), so the component check missed it.
+- **Fix:** the guard lists paths with `git diff --no-renames --name-only -z` (both rename endpoints,
+  NUL-delimited, unquoted).
+- **Regression:** `test_f078_renamed_excluded_config_fails_closed`, `test_f079_git_quoted_excluded_path_fails_closed`.
+
 ---
 
 ## Speculative concerns (not demonstrated; tracked for the relevant phase)

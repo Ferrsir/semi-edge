@@ -87,6 +87,25 @@ def _excluded_path(rel: str) -> bool:
     )
 
 
+def _refuse_hidden_excluded_changes(repo: Path, base: str, head: str, diff: str) -> None:
+    """F-077..F-079: fail closed if a truncated diff could hide changes to excluded paths.
+
+    The review copy omits excluded paths, so their changes are visible only through the diff.
+    Both endpoints of renames are listed (``--no-renames``) and paths come NUL-delimited and
+    unquoted (``-z``), so renamed-away or non-ASCII config paths are still detected.
+    """
+    if len(diff) <= MAX_DIFF_CHARS:
+        return
+    listed = _git(repo, "diff", "--no-renames", "--name-only", "-z", f"{base}...{head}")
+    hidden = sorted({f for f in listed.split("\0") if f and _excluded_path(f)})
+    if hidden:
+        raise ReviewError(
+            "refusing to review: the diff is truncated and the PR changes excluded reviewer "
+            "config paths whose content the reviewer could not see; split the PR: "
+            + ", ".join(hidden)
+        )
+
+
 def sanitized_copy(src: Path, dest: Path) -> list[str]:
     """Copy the regular files of ``src`` into the new directory ``dest``.
 
@@ -376,15 +395,7 @@ def run_review(args: argparse.Namespace) -> dict[str, Any]:
             if ln
         ]
         diff = _git(repo, "diff", "--no-color", "--no-ext-diff", f"{args.base}...{args.head}")
-        hidden = [f for f in changed if _excluded_path(f)]
-        if len(diff) > MAX_DIFF_CHARS and hidden:
-            # F-077: the review copy omits excluded paths, so a truncated diff could hide their
-            # changes from the reviewer entirely. Fail closed instead of reviewing partially.
-            raise ReviewError(
-                "refusing to review: the diff is truncated and the PR changes excluded reviewer "
-                "config paths whose content the reviewer could not see; split the PR: "
-                + ", ".join(hidden)
-            )
+        _refuse_hidden_excluded_changes(repo, args.base, args.head, diff)
         role_prompt = (trusted / spec["prompt"]).read_text(encoding="utf-8")
         schema_path = trusted / ".github/review/review-schema.json"
         before = workspace_state(repo)

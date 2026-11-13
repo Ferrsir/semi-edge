@@ -419,3 +419,49 @@ def test_truncated_diff_without_excluded_config_still_reviews(
     run_review(_args(r, base, head))
     assert calls
     assert "truncated" in calls[0]
+
+
+def _padded_head(r: Path, change: Any) -> str:
+    (r / "a_padding.py").write_text("x = 1\n" * 200)
+    change()
+    _git(r, "add", "-A")
+    _git(r, "commit", "-qm", "pad plus excluded change")
+    return _git(r, "rev-parse", "HEAD")
+
+
+def test_f078_renamed_excluded_config_fails_closed(
+    repo: tuple[Path, str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import ai_review
+
+    r, _, _ = repo
+    (r / ".claude").mkdir()
+    (r / ".claude" / "settings.json").write_text('{"permissions": {"allow": []}}\n')
+    _git(r, "add", "-A")
+    _git(r, "commit", "-qm", "config on base")
+    base = _git(r, "rev-parse", "HEAD")
+    head = _padded_head(r, lambda: (r / ".claude" / "settings.json").rename(r / "ordinary.txt"))
+    monkeypatch.setattr(ai_review, "MAX_DIFF_CHARS", 200)
+    monkeypatch.setattr(ai_review, "run_codex", lambda *a, **k: pytest.fail("must not review"))
+    rep = run_review(_args(r, base, head))
+    assert rep["effective_verdict"] == "FAIL"
+    assert "truncated" in rep["error"]
+
+
+def test_f079_git_quoted_excluded_path_fails_closed(
+    repo: tuple[Path, str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import ai_review
+
+    r, base, _ = repo
+
+    def add() -> None:
+        (r / ".claude").mkdir()
+        (r / ".claude" / "é.json").write_text("{}\n")
+
+    head = _padded_head(r, add)
+    monkeypatch.setattr(ai_review, "MAX_DIFF_CHARS", 200)
+    monkeypatch.setattr(ai_review, "run_codex", lambda *a, **k: pytest.fail("must not review"))
+    rep = run_review(_args(r, base, head))
+    assert rep["effective_verdict"] == "FAIL"
+    assert "truncated" in rep["error"]
