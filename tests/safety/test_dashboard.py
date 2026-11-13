@@ -48,6 +48,17 @@ class FakeUI:
 
     title = text
     header = text
+    subheader = text
+    caption = text
+    warning = text
+    error = text
+
+    def columns(self, spec, **kwargs):
+        return [self for _ in spec]
+
+    def vega_lite_chart(self, spec, **kwargs):
+        sessions = [row["session"] for row in spec["data"]["values"]]
+        self.output.append("chart:" + ",".join(sessions))
 
     def radio(self, label, options):
         assert self.page in options
@@ -84,7 +95,7 @@ def test_pages_and_single_halt(tmp_path, monkeypatch, source, page):
     render(ui, source=source, now=NOW)
     render(ui, source=source, now=NOW)
     text = "\n".join(ui.output)
-    assert "Mode: SCANNER" in text
+    assert "Mode SCANNER" in text
     assert (SYNTHETIC_BANNER in text) == (source == "synthetic")
     reader = ReadOnlyStateStore(path)
     assert len(reader.active_halts()) == (1 if page == "Operations" else 0)
@@ -238,3 +249,144 @@ def test_held_sessions_includes_entry_and_skips_non_sessions(harness, session, e
     [position] = view.sections["Positions"]
     assert position["held_sessions"] == expected
     assert position["held_sessions_as_of"] == session
+
+
+# ------------------------------------------------------------------ UI follow-ups F-168..F-174
+
+
+def _rich_db(tmp_path, *, interval=60, age=timedelta(seconds=45), snapshots=5):
+    root = source_root(tmp_path, "synthetic")
+    path = root / "state" / "semiedge.sqlite3"
+    store = StateStore(path, data_source="synthetic", now=NOW - timedelta(days=10))
+    store.start_run("scan-1", "post_close", TradingMode.SCANNER, "f" * 64, None, NOW)
+    store.finish_run("scan-1", "ok", "done", NOW)
+    store.heartbeat("engine", "ok", json.dumps({"interval_seconds": interval}), NOW - age)
+    for i in range(snapshots):
+        day = date(2026, 11, 9) + timedelta(days=i)
+        store.record_equity_snapshot(
+            EquitySnapshot(
+                datetime(day.year, day.month, day.day, 21, tzinfo=UTC),
+                day,
+                100_000.0 + 100 * i,
+                100_000.0 + 100 * (i - 1) if i else 100_000.0,
+                80_000.0,
+                20_000.0,
+                "broker_close",
+            )
+        )
+    store.close()
+    return path
+
+
+def test_overview_shows_glance_chart_and_formatted_values(tmp_path, monkeypatch):
+    _rich_db(tmp_path)
+    monkeypatch.setenv("SEMIEDGE_DATA_DIR", str(tmp_path))
+    ui = FakeUI("Overview")
+    render(ui, source="synthetic", now=NOW)
+    text = "\n".join(ui.output)
+    assert ui.output.index(SYNTHETIC_BANNER) < ui.output.index("Overview")  # banner first
+    assert "At a glance" in text
+    assert "Equity by session" in text
+    assert "Heartbeats" in text
+    assert "100,400.00" in text  # money with separators
+    assert "+100.00 (+0.10%)" in text  # change since previous close
+    assert "2026-11-13 21:00 UTC" in text  # readable timestamps
+    assert "000000+00:00" not in text  # no raw ISO microseconds
+    assert "chart:2026-11-09" in text
+    assert "45 s" in text
+
+
+def test_short_equity_history_has_no_chart(tmp_path, monkeypatch):
+    _rich_db(tmp_path, snapshots=3)
+    monkeypatch.setenv("SEMIEDGE_DATA_DIR", str(tmp_path))
+    ui = FakeUI("Overview")
+    render(ui, source="synthetic", now=NOW)
+    assert not any(line.startswith("chart:") for line in ui.output)
+
+
+def test_stale_alert_names_component_age_and_interval(tmp_path, monkeypatch):
+    _rich_db(tmp_path, interval=300, age=timedelta(minutes=22))
+    monkeypatch.setenv("SEMIEDGE_DATA_DIR", str(tmp_path))
+    ui = FakeUI("Overview")
+    render(ui, source="synthetic", now=NOW)
+    assert "Stale heartbeat: engine last reported 22 min ago, expected every 5 min." in ui.output
+
+
+def test_stale_alert_never_echoes_markup_from_component_names():
+    from semiedge.dashboard.format import stale_message
+
+    message = stale_message({"component": "**x**<img src=y>", "age_seconds": 999.0, "detail": "{}"})
+    assert "unnamed component" in message
+    assert "<img" not in message
+    assert "**" not in message
+
+
+def test_signal_payload_becomes_columns():
+    from semiedge.dashboard.format import table_rows
+
+    payload = json.dumps(
+        {
+            "close": 182.3,
+            "atr": 5.1,
+            "proposed_stop": 172.1,
+            "proposed_target": 202.7,
+            "rejection_reasons": [],
+            "score_components": {"s_RS": 0.8},
+        }
+    )
+    [row] = table_rows(
+        [
+            {
+                "run_id": "r",
+                "session": "2026-11-13",
+                "symbol": "NVDA",
+                "eligible": 1,
+                "score": 81.4,
+                "rank": 1.0,
+                "payload_json": payload,
+            }
+        ]
+    )
+    assert "payload_json" not in row
+    assert "Payload json" not in row
+    assert row["Eligible"] == "yes"
+    assert row["Rank"] == "1"
+    assert row["Stop"] == "172.10"
+    assert row["Rejected because"] == "—"
+
+
+def test_missing_values_stay_visibly_missing():
+    from semiedge.dashboard.format import MISSING, cell
+
+    assert cell("score", float("nan")) == MISSING
+    assert cell("rank", None) == MISSING
+    assert cell("eligible", 0) == "no"
+
+
+def test_unreadable_payload_says_so():
+    from semiedge.dashboard.format import table_rows
+
+    [row] = table_rows([{"symbol": "NVDA", "payload_json": "{broken"}])
+    assert row["Stop"] == "unavailable: payload unreadable"
+
+
+def test_streamlit_toolbar_is_viewer_only():
+    config = (
+        Path(semiedge.dashboard.__file__).parents[3] / ".streamlit" / "config.toml"
+    ).read_text()
+    assert 'toolbarMode = "viewer"' in config
+
+
+def test_equity_chart_spec_keeps_distinct_sessions_and_needs_no_extra():
+    """F-175/F-176: sessions with the same month/day stay separate; the spec is a plain dict."""
+    from semiedge.dashboard.format import equity_chart_spec
+
+    rows = [
+        {"session": day, "equity": 100_000.0 + i}
+        for i, day in enumerate(["2025-11-13", "2025-11-14", "2026-11-13", "2026-11-16"])
+    ]
+    spec = equity_chart_spec(rows, color="#3987e5", min_points=4)
+    assert [v["session"] for v in spec["data"]["values"]] == [r["session"] for r in rows]
+    assert spec["encoding"]["x"]["field"] == "session"
+    assert spec["encoding"]["y"]["scale"] == {"zero": False}
+    assert equity_chart_spec(rows[:3], color="#3987e5", min_points=4) is None
