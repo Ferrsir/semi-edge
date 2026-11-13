@@ -12,7 +12,6 @@ venv/
 
 # Tooling caches
 .pytest_cache/
-/.pytest-tmp-t13*/
 .mypy_cache/
 .ruff_cache/
 .coverage

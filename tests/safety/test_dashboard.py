@@ -2,7 +2,7 @@
 
 import importlib.util
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -14,6 +14,7 @@ from semiedge.dashboard.viewmodel import heartbeat_freshness, load_backtests, lo
 from semiedge.reporting import SYNTHETIC_BANNER
 from semiedge.safety.modes import TradingMode
 from semiedge.state.halt_control import request_manual_halt
+from semiedge.state.models import EquitySnapshot, PositionRecord
 from semiedge.state.readonly import ReadOnlyStateStore
 from semiedge.state.store import StateStore
 
@@ -202,3 +203,38 @@ def test_streamlit_pages(tmp_path, monkeypatch, source, page):
     ).run()
     app.sidebar.radio[0].set_value(page).run()
     assert not app.exception
+
+
+@pytest.mark.parametrize(
+    ("session", "expected"),
+    [(date(2026, 11, 13), 1), (date(2026, 11, 16), 2), (date(2026, 11, 27), 10)],
+)
+def test_held_sessions_includes_entry_and_skips_non_sessions(harness, session, expected):
+    entry_id = harness.stage_entry()
+    harness.store.open_position(
+        PositionRecord(
+            symbol="NVDA",
+            qty=100,
+            avg_entry_price=100.0,
+            entry_session=NOW.date(),
+            entry_client_order_id=entry_id,
+            entry_reference=100.0,
+            atr=2.0,
+            stop=96.0,
+            target=108.0,
+            split_ratio=1.0,
+            status="open",
+            opened_at=NOW,
+            closed_at=None,
+            updated_at=NOW,
+        )
+    )
+    as_of = datetime.combine(session, NOW.timetz())
+    harness.store.record_equity_snapshot(
+        EquitySnapshot(as_of, session, 100_000.0, 100_000.0, 90_000.0, 10_000.0, "broker_close")
+    )
+    harness.store.close()
+    view = load_view(harness.path, source="cache", now=as_of)
+    [position] = view.sections["Positions"]
+    assert position["held_sessions"] == expected
+    assert position["held_sessions_as_of"] == session

@@ -7,8 +7,10 @@
 # then a gate that publishes the commit status `semi-edge/ai-review-gate` on the head SHA.
 #
 # Security model (see docs/governance/REVIEW_PROTOCOL.md):
-# * pull_request_target / issue_comment run THIS file from the base/default branch, so a PR
-#   cannot redefine its own gate. Scripts run from the `trusted/` checkout of the default branch.
+# * Currently workflow_dispatch only, with the context job disabled (`if: false`); see
+#   docs/governance/ENGINEERING_SETUP_REPORT.md. When activated, triggers must run THIS file from
+#   the base/default branch so a PR cannot redefine its own gate, and scripts must run from the
+#   `trusted/` checkout of the default branch.
 # * PR code is checked out to `pr/` as DATA ONLY: nothing from it is installed or executed.
 # * Reviewer CLIs get no write tools/shell (Claude) or a read-only, network-less sandbox
 #   (Codex). Model secrets are only present in the review jobs; the gate job never sees them.

@@ -7,6 +7,13 @@ locally (``--execution local``). Locally on Windows the Codex read-only sandbox 
 files, so ``--codex-sandbox workspace-write`` may be used ONLY against a throwaway worktree;
 the runner fails the review if the reviewer changed anything in the workspace.
 
+Reviewer sandbox copy: the reviewer CLI never runs in the PR checkout itself. It runs in a
+sanitized copy of the PR tree that holds regular files only: ``.git``, reviewer configuration
+(``.claude/``, ``.codex/``, ``.mcp.json``, at any depth), symlinks and other special files are not
+copied, so a PR cannot hand the reviewer its own settings or point it at host files. The diff is
+still computed from the git checkout, so changes to excluded files remain in the prompt. Both the
+copy and the checkout are checked for tampering after the review.
+
 Trust model: the model's free-text verdict is never trusted on its own. The runner records
 the reviewed commit itself (``git rev-parse HEAD``), validates the structured output, redacts
 secrets and recomputes an *effective* verdict from the findings (see review_common).
@@ -20,9 +27,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -51,11 +60,97 @@ FORBIDDEN_REVIEWER_CONFIG = (
     ".codex/config.toml",
     ".mcp.json",
 )
+# Names never copied into the reviewer's working tree, at any depth (compared case-insensitively,
+# since local Windows/macOS file systems are case-insensitive).
+EXCLUDED_FROM_REVIEW_COPY = frozenset({".git", ".claude", ".codex", ".mcp.json"})
 CLAUDE_DENY = "Bash,Edit,Write,MultiEdit,NotebookEdit,WebFetch,WebSearch,Task,Agent"
 
 
 class ReviewError(RuntimeError):
     pass
+
+
+class InfrastructureError(ReviewError):
+    """The reviewer could not run at all (no credentials, CLI not installed).
+
+    Still a FAIL report; the gate does not count it as a failed review cycle."""
+
+
+def _is_link_like(path: Path) -> bool:
+    return path.is_symlink() or path.is_junction()
+
+
+def _excluded_path(rel: str) -> bool:
+    """True if any component of a repo-relative path is excluded from the review copy."""
+    return any(
+        part.lower() in EXCLUDED_FROM_REVIEW_COPY for part in rel.replace("\\", "/").split("/")
+    )
+
+
+def _refuse_hidden_excluded_changes(repo: Path, base: str, head: str, diff: str) -> None:
+    """F-077..F-079: fail closed if a truncated diff could hide changes to excluded paths.
+
+    The review copy omits excluded paths, so their changes are visible only through the diff.
+    Both endpoints of renames are listed (``--no-renames``) and paths come NUL-delimited and
+    unquoted (``-z``), so renamed-away or non-ASCII config paths are still detected.
+    """
+    if len(diff) <= MAX_DIFF_CHARS:
+        return
+    listed = _git(repo, "diff", "--no-renames", "--name-only", "-z", f"{base}...{head}")
+    hidden = sorted({f for f in listed.split("\0") if f and _excluded_path(f)})
+    if hidden:
+        raise ReviewError(
+            "refusing to review: the diff is truncated and the PR changes excluded reviewer "
+            "config paths whose content the reviewer could not see; split the PR: "
+            + ", ".join(hidden)
+        )
+
+
+def sanitized_copy(src: Path, dest: Path) -> list[str]:
+    """Copy the regular files of ``src`` into the new directory ``dest``.
+
+    Excluded names (``EXCLUDED_FROM_REVIEW_COPY``), symlinks, junctions and special files are
+    skipped and never followed. Returns the skipped paths (POSIX, relative to ``src``)."""
+    dest.mkdir()
+    skipped: list[str] = []
+    stack = [Path()]
+    while stack:
+        rel_dir = stack.pop()
+        with os.scandir(src / rel_dir) as entries:
+            names = sorted(entry.name for entry in entries)
+        for name in names:
+            rel = rel_dir / name
+            path = src / rel
+            if name.lower() in EXCLUDED_FROM_REVIEW_COPY or _is_link_like(path):
+                skipped.append(rel.as_posix())
+                continue
+            mode = os.lstat(path).st_mode
+            if stat.S_ISDIR(mode):
+                (dest / rel).mkdir()
+                stack.append(rel)
+            elif stat.S_ISREG(mode):
+                shutil.copyfile(path, dest / rel, follow_symlinks=False)
+            else:
+                skipped.append(rel.as_posix())
+    return sorted(skipped)
+
+
+def tree_state(root: Path) -> dict[str, str]:
+    """Fingerprint every entry under ``root`` without following links (tamper check)."""
+    state: dict[str, str] = {}
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        for name in dirnames + filenames:
+            path = Path(dirpath) / name
+            rel = path.relative_to(root).as_posix()
+            if _is_link_like(path):
+                state[rel] = "link:" + os.readlink(path)
+            elif path.is_dir():
+                state[rel] = "dir"
+            elif path.is_file():
+                state[rel] = "file:" + hashlib.sha256(path.read_bytes()).hexdigest()
+            else:
+                state[rel] = "special"
+    return state
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -105,6 +200,8 @@ def build_prompt(
 - PR: #{pr}
 - Base commit: {base}
 - Head commit (checked out at {repo_dir.as_posix()}): {head}
+- The working copy omits `.git`, reviewer configuration (`.claude/`, `.codex/`, `.mcp.json`) and
+  symlinks; changes to those paths appear only in the diff below.
 
 ### Changed files
 {files}
@@ -154,7 +251,7 @@ def run_codex(
 ) -> tuple[dict[str, Any], dict[str, str]]:
     binary = shutil.which("codex")
     if not binary:
-        raise ReviewError("codex CLI not installed")
+        raise InfrastructureError("codex CLI not installed")
     with tempfile.TemporaryDirectory(prefix="semiedge-review-") as tmp:
         out_file = Path(tmp) / "last.json"
         cmd = [
@@ -165,6 +262,8 @@ def run_codex(
             "--ephemeral",
             "--ignore-user-config",
             "--ignore-rules",
+            # The sanitized review copy has no .git; the runner checks it for tampering.
+            "--skip-git-repo-check",
             "-c",
             "shell_environment_policy.inherit=core",
             "--output-schema",
@@ -200,10 +299,10 @@ def run_claude(
     prompt: str, *, repo: Path, schema_path: Path, model: str | None, timeout: int
 ) -> tuple[dict[str, Any], dict[str, str]]:
     if not os.environ.get("ANTHROPIC_API_KEY"):
-        raise ReviewError("Claude review requires ANTHROPIC_API_KEY and bare mode")
+        raise InfrastructureError("Claude review requires ANTHROPIC_API_KEY and bare mode")
     binary = shutil.which("claude")
     if not binary:
-        raise ReviewError("claude CLI not installed")
+        raise InfrastructureError("claude CLI not installed")
     cmd = [
         binary,
         "-p",
@@ -242,6 +341,26 @@ def run_claude(
     return output, {"cli": _cli_version(binary), "model": ",".join(models) or (model or "unknown")}
 
 
+def _run_reviewer(
+    provider: str, prompt: str, *, tree: Path, schema_path: Path, args: argparse.Namespace
+) -> tuple[dict[str, Any], dict[str, str]]:
+    """Dispatch to the provider's CLI, always inside the sanitized review copy ``tree``."""
+    if provider == "openai-codex":
+        return run_codex(
+            prompt,
+            repo=tree,
+            schema_path=schema_path,
+            sandbox=args.codex_sandbox,
+            model=args.model,
+            timeout=args.timeout,
+        )
+    if provider == "anthropic-claude":
+        return run_claude(
+            prompt, repo=tree, schema_path=schema_path, model=args.model, timeout=args.timeout
+        )
+    raise ReviewError(f"unknown provider {provider!r}")
+
+
 def run_review(args: argparse.Namespace) -> dict[str, Any]:
     trusted = Path(args.trusted_root).resolve()
     policy = load_policy(trusted / ".github/review/policy.json")
@@ -261,6 +380,7 @@ def run_review(args: argparse.Namespace) -> dict[str, Any]:
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "model_output": None,
         "error": None,
+        "error_kind": None,
     }
     try:
         if not (is_sha(args.base) and is_sha(args.head)):
@@ -269,55 +389,54 @@ def run_review(args: argparse.Namespace) -> dict[str, Any]:
         report["head_sha"] = actual_head
         if actual_head != args.head:
             raise ReviewError(f"checkout HEAD {actual_head} != requested head {args.head}")
-        for rel in FORBIDDEN_REVIEWER_CONFIG:
-            if (repo / rel).exists():
-                raise ReviewError(f"refusing to review: PR contains reviewer config {rel}")
         changed = [
             ln
             for ln in _git(repo, "diff", "--name-only", f"{args.base}...{args.head}").splitlines()
             if ln
         ]
         diff = _git(repo, "diff", "--no-color", "--no-ext-diff", f"{args.base}...{args.head}")
+        _refuse_hidden_excluded_changes(repo, args.base, args.head, diff)
         role_prompt = (trusted / spec["prompt"]).read_text(encoding="utf-8")
-        prompt = build_prompt(
-            role_prompt,
-            role=args.role,
-            role_name=spec["name"],
-            repository=args.repository,
-            pr=args.pr,
-            base=args.base,
-            head=args.head,
-            changed_files=changed,
-            diff=diff,
-            repo_dir=repo,
-        )
         schema_path = trusted / ".github/review/review-schema.json"
         before = workspace_state(repo)
         if before:
             raise ReviewError("review checkout must be clean, including ignored files")
-        if provider == "openai-codex":
-            output, ident = run_codex(
-                prompt,
-                repo=repo,
-                schema_path=schema_path,
-                sandbox=args.codex_sandbox,
-                model=args.model,
-                timeout=args.timeout,
+        with tempfile.TemporaryDirectory(prefix="semiedge-review-tree-") as tmp:
+            tree = Path(tmp) / "tree"
+            sanitized_copy(repo, tree)
+            for rel in FORBIDDEN_REVIEWER_CONFIG:  # defence in depth: the copy must be clean
+                if (tree / rel).exists() or (tree / rel).is_symlink():
+                    raise ReviewError(f"refusing to review: reviewer config {rel} in review copy")
+            prompt = build_prompt(
+                role_prompt,
+                role=args.role,
+                role_name=spec["name"],
+                repository=args.repository,
+                pr=args.pr,
+                base=args.base,
+                head=args.head,
+                changed_files=changed,
+                diff=diff,
+                repo_dir=tree,
             )
-        elif provider == "anthropic-claude":
-            output, ident = run_claude(
-                prompt, repo=repo, schema_path=schema_path, model=args.model, timeout=args.timeout
+            tree_before = tree_state(tree)
+            output, ident = _run_reviewer(
+                provider, prompt, tree=tree, schema_path=schema_path, args=args
             )
-        else:
-            raise ReviewError(f"unknown provider {provider!r}")
-        report["reviewer"].update(ident)
+            report["reviewer"].update(ident)
+            if tree_state(tree) != tree_before:
+                raise ReviewError("reviewer modified the workspace; review discarded")
         if workspace_state(repo) != before:
             raise ReviewError("reviewer modified the workspace; review discarded")
         if _git(repo, "rev-parse", "HEAD").strip() != args.head:
             raise ReviewError("HEAD moved during review; review discarded")
         report["model_output"] = output
+    except InfrastructureError as exc:
+        report["error"] = str(exc)
+        report["error_kind"] = "infrastructure"
     except ReviewError as exc:
         report["error"] = str(exc)
+        report["error_kind"] = "review"
     result = effective_verdict(report["model_output"], policy, error=report["error"])
     report["effective_verdict"] = result.verdict
     report["verdict_reasons"] = list(result.reasons)
@@ -326,7 +445,10 @@ def run_review(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def error_report(args: argparse.Namespace) -> dict[str, Any]:
-    """A FAIL report for a reviewer that could not run (e.g. missing secret)."""
+    """A FAIL report for a reviewer that could not run (e.g. missing secret).
+
+    Marked ``error_kind: infrastructure``: the gate still fails, but does not count it as a
+    failed review cycle."""
     policy = load_policy(Path(args.trusted_root).resolve() / ".github/review/policy.json")
     spec = role_spec(policy, args.role)
     report: dict[str, Any] = {
@@ -342,6 +464,7 @@ def error_report(args: argparse.Namespace) -> dict[str, Any]:
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "model_output": None,
         "error": args.message,
+        "error_kind": "infrastructure",
     }
     result = effective_verdict(None, policy, error=args.message)
     report["effective_verdict"] = result.verdict

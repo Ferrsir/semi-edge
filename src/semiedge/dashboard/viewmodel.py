@@ -17,6 +17,7 @@ from semiedge.reporting import SYNTHETIC_BANNER
 from semiedge.security.untrusted import UntrustedText
 from semiedge.state.models import TERMINAL_STATUSES
 from semiedge.state.readonly import ReadOnlyStateStore
+from semiedge.strategy.exits import held_sessions
 
 Source = Literal["cache", "synthetic"]
 
@@ -96,9 +97,8 @@ def load_view(path: Path, *, source: Source, now: datetime) -> DashboardView:
             if equity:
                 session = datetime.fromisoformat(str(equity[-1]["session"])).date()
                 if session >= position.entry_session:
-                    row["held_sessions"] = (
-                        len(TradingCalendar().sessions_in_range(position.entry_session, session))
-                        - 1
+                    row["held_sessions"] = held_sessions(
+                        position.entry_session, session, TradingCalendar()
                     )
                     row["held_sessions_as_of"] = session
             row["protection_status"] = [

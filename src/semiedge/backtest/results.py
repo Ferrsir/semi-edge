@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import asdict, dataclass
@@ -85,6 +86,16 @@ class BacktestResult:
     halts: tuple[tuple[date, HaltKind, str], ...]
     data_gaps: tuple[tuple[date, str], ...]
     cap_overshoots: tuple[tuple[date, str, str], ...]
+    initial_equity: float | None = None
+    metrics_context: dict[str, object] | None = None
+
+    metrics_fingerprint: str | None = None
+
+    def context_fingerprint(self) -> str:
+        payload = {"initial_equity": self.initial_equity, "metrics_context": self.metrics_context}
+        return hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+        ).hexdigest()
 
     def to_dict(self) -> dict[str, object]:
         # Labels lead every JSON artifact. JSON conversion also validates all floats.

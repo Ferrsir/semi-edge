@@ -361,6 +361,21 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **F-143 (P2), Codex re-review:** `total_seconds()` float rounding accepted a 1,000,002 µs gap for a 1.000002 s cycle; the comparison is now exact (integer microseconds vs `Fraction(cycle)`). Regression `test_f143_spacing_uses_exact_microseconds`.
 - **F-144 (P2), Codex re-review:** `fromisoformat` truncated a 7-digit fraction, inflating a 0.9999991 s gap to 1 s. Lookup timestamps must now match an exact ISO form (≤ 6 fractional digits, `Z`/`±HH:MM` offset). Regression `test_f144_lookup_timestamps_must_not_lose_precision`.
 
+### F-077 · P2 · A truncated diff could hide excluded reviewer-config changes (Codex review, PR #73)
+- **Reproduce:** pad an earlier file so that a later `z/.claude/settings.json` change falls beyond
+  `MAX_DIFF_CHARS`. The sanitized review copy omits that path, so the change was in neither the prompt nor the copy.
+- **Fix:** if the diff is truncated and any changed path has an excluded component (case-insensitive),
+  the review fails closed with a request to split the PR.
+- **Regression:** `tests/governance/test_ai_review.py::test_truncated_diff_hiding_excluded_config_fails_closed`
+  (the reviewer ran on `fcdb423`); a large ordinary diff is still reviewed.
+
+### F-078 / F-079 · P2 · Rename sources and Git-quoted paths bypassed the F-077 guard (Codex re-review, PR #73)
+- **Reproduce:** `.claude/settings.json → ordinary.txt` showed only the destination in `--name-only`.
+  `.claude/é.json` was reported quoted (`".claude/Ã©.json"`), so the component check missed it.
+- **Fix:** the guard lists paths with `git diff --no-renames --name-only -z` (both rename endpoints,
+  NUL-delimited, unquoted).
+- **Regression:** `test_f078_renamed_excluded_config_fails_closed`, `test_f079_git_quoted_excluded_path_fails_closed`.
+
 ---
 
 ## Speculative concerns (not demonstrated; tracked for the relevant phase)
@@ -468,3 +483,23 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Fix:** mask quoted JSON credential fields including escaped value characters and plaintext bearer authorization headers, preserving the JSON envelope. Regression tests verify nested APCA/API/token/authorization fields and valid JSON after redaction.
 - **Additional #29 primitives:** security.redaction builds the configured redactor (including NFC display representations), deep-copies/redacts strict JSON values/keys, rejects cycles/nonfinite/unsupported/colliding/oversized structures without echoing inputs; security.untrusted normalizes and bounds exact strings, strips controls/bidi and escapes display/mentions. No command/SQL/path/order use is permitted.
 - **Evidence/scope:** deterministic logs + temporary parameterized SQLite boundary harness, malicious text fixtures, large/control strings, unchanged settings/input assertions, AST evaluation-call guard with one SafeLoader exception. This is not a claim of engine/outbox/dashboard integration: those modules do not yet exist; #29 remains open for consumer integration and the full end-to-end scenario. No broker or credential access, governance change or risk/strategy modification. Claude cross-provider review required.
+
+
+## PR #82 review fixes (F-160..F-164)
+- **F-160 / P2:** the dashboard now calls `semiedge.strategy.exits.held_sessions`, matching ADR-005: entry counts as one. Three persisted-position/equity regressions cover entry day, the next session over a weekend, and ten sessions spanning Thanksgiving. All fail against f5a99d0 with actual counts 0/1/9 versus required 1/2/10; all pass with the fix. The documented convention is corrected.
+- **F-161 / P3:** documented that current CI omits the dashboard extra and therefore skips the ten Streamlit AppTest cases. Local validation installs the locked extra and runs all ten cases. No CI settings were changed.
+- **F-162 / P3:** replaced the stale failed-resolution/unchanged-lockfile account with the actual optional dependency and locked-install instructions.
+- **F-163 / P3:** removed the session-specific pytest temp ignore pattern.
+- **F-164 / P3:** the dependency audit includes `--all-extras` through merged PR #87; verified in the independent post-merge review.
+- Validation after rebasing: `pytest -q -p no:cacheprovider` passed1632 tests/two skips (Windows symlink and opt-in paper smoke);13 pandas deprecation warnings. All ten real Streamlit AppTests ran. Ruff check/format, mypy (69 source files) and Bandit passed. This does not change trading strategy, risk ceilings, broker permissions or protection settings. Claude exact-head re-review is required.
+
+## Independent review wave: #91, #92, #88, #89, #87
+- #91 at 01d80fa: PASS; 125 governance tests passed and one Windows symlink test skipped, Ruff check/format and mypy passed. Restricted owner approval remains separate.
+- **F-165 / P2 / #92 at 28fd2b9:** `require_last_push_approval: true` contradicts the runbook's approval-free board path despite numeric approval count zero. This is an inference from GitHub's documented setting semantics, not a production enforcement test. Author must align the intended approval policy, JSON, documentation and regression; #7 must demonstrate enforcement. Four current ruleset tests and Ruff check/format pass; previous full governance suite 121 passed/one skip. No rule was activated or changed during review.
+- **F-166 / P1 / #88 at a7e8389:** default urllib redirects forward the Finnhub token to a different host after only the original URL is allowlisted. Offline real-opener/fake-HTTPS-handler reproduction records the synthetic token at both finnhub.io and untrusted.invalid and returns 200. Reject redirects or validate every hop/origin without forwarding credentials. Sockets were forbidden in the completed reproduction; no real credential was used.
+- **F-167 / P2 / #88 at a7e8389:** cache parsing accepts `events={}` (also empty string) as an empty event list. Two otherwise healthy, fresh malformed caches resolve as verified no report instead of unavailable. Require exact cache container/field types and cache-to-risk regressions. The existing full suite passed 1696 tests/one opt-in skip with 13 dependency deprecation warnings; Ruff check/format and mypy passed despite both separate reproductions. Author fixes and exact-head re-review are pending.
+- #89 at c970fc7: PASS; 16 document/snapshot tests and the documented version/config/synthetic-scan/synthetic-backtest commands succeeded. No performance claim or broker request.
+- #87 post-merge head 7f6e2b6 (squash 56cd3a8): PASS; 14 disposable-git classifier cases passed and all four aggregate Python gates accepted success and rejected every individual failed dependency. No measured Actions-usage saving or trusted-check provenance is asserted.
+- All five review verdicts and reproductions were posted on their respective PRs. Other agents' worktrees, the main snapshot change and local artifacts were preserved.
+- #94 post-merge at2198e29: source review PASS prepared. The moved board preserves the complete old board/queues/log, apart from the intended filename reference and one appended migration note. Snapshot code and regression files match those exercised by the dashboard full suite. The policy still restricts AGENTS.md but does not restrict BOARD.md. Posting awaits the bot connection.
+- #95 at96f8fa6: F-165 source correction reviewed PASS, with130 governance tests passed/one Windows symlink skip and Ruff check/format passing. Last-push approval is off; code-owner review and stale-approval dismissal remain on. Owner activation and #7 enforcement tests remain separate. Posting awaits the bot connection.

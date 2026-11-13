@@ -27,7 +27,7 @@ irrespective of the job kind. Trade history is limited to the newest 500 orders/
 operations to 100 runs/reconciliations/errors. Protection uses all persisted protection
 orders, showing their actual statuses and levels rather than assuming protection exists.
 Held sessions, when equity snapshots exist, are exchange sessions since entry as of the
-latest persisted equity session (entry session counts as zero); otherwise unavailable.
+latest persisted equity session (entry session counts as one, per ADR-005); otherwise unavailable.
 
 Heartbeat ages are calculated from persisted timestamps with an explicit UTC clock.
 The current heartbeat schema has no interval column. If heartbeat `detail` contains
@@ -48,16 +48,13 @@ Operations requires an actor, reason and exact typed `HALT`. Its only mutation c
 `request_manual_halt`, which inserts one idempotent manual halt. This stops new entries;
 exits and protective stops continue. There are no order controls or halt removal controls.
 
-## Offline dependency status
+## Dependencies and validation
 
-`dashboard = ["streamlit>=1.40"]` is declared in `[project.optional-dependencies]`.
-`uv lock --offline` was attempted; Streamlit is absent from the local cache, so resolution
-failed and `uv.lock` remains unchanged. No network fetch was attempted. Before installation
-in an environment with the package available, regenerate `uv.lock`, review that change,
-then run `uv sync --locked --extra dashboard`.
+`dashboard = ["streamlit>=1.40"]` is an optional dependency and its resolved packages
+are included in `uv.lock`. Install with `uv sync --locked --extra dashboard`.
 
-For this offline implementation, validation uses `UV_FROZEN=true` with `uv run --offline`
-to use the pre-existing locked environment without resolving the unavailable extra.
-The view model and renderer tests do not require Streamlit. Ten real Streamlit AppTest
-cases (five pages × real/synthetic DB) are collected but skip until the extra is installed.
-Their skipped status is a validation limitation, not evidence of browser/UI acceptance.
+The view-model and fake-renderer tests run without Streamlit. The ten Streamlit
+AppTest cases (five pages × real/synthetic DB) require the dashboard extra. Current
+CI installs only the base dependencies, so these ten cases skip in CI; run them
+locally with the extra installed. Skips do not establish UI acceptance.
+The CI dependency audit includes all extras, including Streamlit (PR #87).

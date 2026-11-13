@@ -12,11 +12,31 @@ permissions:
   contents: read
 
 concurrency:
-  group: integration-${{ github.ref }}
-  cancel-in-progress: true
+  group: integration-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  changes:
+    # Fail-closed classifier (.github/scripts/classify-changes.sh); see ci.yml.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.classify.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: bash .github/scripts/classify-changes.sh
+
   integration-tests:
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -26,13 +46,15 @@ jobs:
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
       - run: uv sync --locked
       # pytest exits 5 when no tests are collected, which fails this job (never vacuously green).
       - run: uv run pytest -m integration -p no:cacheprovider -v
 
   integration-required:
     if: always()
-    needs: [integration-tests]
+    needs: [changes, integration-tests]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -42,6 +64,16 @@ jobs:
           python3 - <<'PY'
           import json, os, sys
           needs = json.loads(os.environ["NEEDS"])
-          bad = {k: v["result"] for k, v in needs.items() if v["result"] != "success"}
+          changes = needs["changes"]
+          if changes["result"] != "success":
+              sys.exit("change classifier did not succeed")
+          out = changes["outputs"]
+          gate = {'integration-tests': 'code'}
+          bad = {
+              k: v["result"]
+              for k, v in needs.items()
+              if v["result"] != "success"
+              and not (v["result"] == "skipped" and k in gate and out.get(gate[k]) == "false")
+          }
           sys.exit(f"required jobs not successful: {bad}" if bad else 0)
           PY

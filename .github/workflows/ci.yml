@@ -9,12 +9,36 @@ on:
 permissions:
   contents: read
 
+# Superseded PR runs are cancelled. Runs on main are never cancelled: each push gets its own
+# group (keyed by SHA) so every main commit keeps a complete CI record.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  lint:
+  changes:
+    # Fail-closed classifier (.github/scripts/classify-changes.sh): on any doubt it reports
+    # everything as changed. Expensive jobs below are skipped only on documentation-only changes.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.classify.outputs.code }}
+      dashboard: ${{ steps.classify.outputs.dashboard }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: bash .github/scripts/classify-changes.sh
+
+  docs-check:
+    # Always runs: the tests that read non-specification Markdown (repo hygiene, board parsing).
+    # A new test that reads Markdown outside docs/specifications/ must be added here.
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -24,24 +48,36 @@ jobs:
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --locked
+      - run: >-
+          uv run pytest -p no:cacheprovider -q
+          tests/test_repo_hygiene.py tests/unit/test_project_snapshot.py tests/governance
+
+  static:
+    # Lint, format and type checks share one runner and one dependency sync.
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
       - run: uv sync --locked
       - run: uv run ruff check --output-format=github .
       - run: uv run ruff format --check .
-
-  typecheck:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-        with:
-          python-version: "3.12"
-      - run: uv sync --locked
       - run: uv run mypy
 
   test:
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
@@ -55,6 +91,8 @@ jobs:
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: ${{ matrix.python }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
       - run: uv sync --locked
       # Coverage threshold lives here (restricted path) so a PR cannot lower it via pyproject.
       - run: >-
@@ -62,6 +100,8 @@ jobs:
           --cov=semiedge --cov-branch --cov-report=term-missing --cov-fail-under=80
 
   build:
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -71,6 +111,8 @@ jobs:
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
       - run: uv build
       - name: Install the wheel in a clean environment and import it
         run: |
@@ -78,11 +120,32 @@ jobs:
           uv pip install --python /tmp/wheel-check/bin/python dist/*.whl
           /tmp/wheel-check/bin/python -c "import semiedge; print(semiedge.__version__)"
 
+  dashboard-tests:
+    # Project-status site DOM tests (from #66); only when project-status/** or .github/** changes.
+    needs: [changes]
+    if: needs.changes.outputs.dashboard == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: project-status/package-lock.json
+      - run: npm ci --ignore-scripts
+        working-directory: project-status
+      - run: npm test
+        working-directory: project-status
+
   ci-required:
     # The ONLY check from this workflow that branch protection requires. It fails unless every
-    # job above succeeded — a skipped or cancelled job is a failure, never a silent pass.
+    # job above succeeded. A skipped job counts as success only when the classifier ran
+    # successfully and said its category did not change; any other skip or cancel fails.
     if: always()
-    needs: [lint, typecheck, test, build]
+    needs: [changes, docs-check, static, test, build, dashboard-tests]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -93,7 +156,19 @@ jobs:
           python3 - <<'PY'
           import json, os, sys
           needs = json.loads(os.environ["NEEDS"])
-          bad = {k: v["result"] for k, v in needs.items() if v["result"] != "success"}
           print(json.dumps({k: v["result"] for k, v in needs.items()}, indent=2))
+          changes = needs["changes"]
+          if changes["result"] != "success":
+              sys.exit("change classifier did not succeed")
+          out = changes["outputs"]
+          gate = {"static": "code", "test": "code", "build": "code", "dashboard-tests": "dashboard"}
+          bad = {}
+          for job, v in needs.items():
+              if v["result"] == "success":
+                  continue
+              category = gate.get(job)
+              if v["result"] == "skipped" and category and out.get(category) == "false":
+                  continue
+              bad[job] = v["result"]
           sys.exit(f"required jobs not successful: {bad}" if bad else 0)
           PY
