@@ -105,10 +105,10 @@ PR instead. The next finding ID is **F-028**.
 3. **Review #51** (docs only: `.t3` migration status).
    Also **review #53** (governance docs reconcile; restricted paths, so the owner must approve too).
    Also **review #55** (F-025 fix: RFC 3339 offset minutes 00..59, closes #52; small).
-4. **Fix #49** F-016 and F-017 (blocking), then the F-018..F-023 P3s. Ask Claude for a re-review.
-6. Then **#46** (T46, READY, split normalization). It may build on `feature/9-data-layer` until #36
-   merges. After that, **T5 #15** (backtest engine) once the Phase 2–4 interface spec (T3b,
-   `feature/15-phase2-4-spec`) is in review.
+4. **#49**: Claude is re-reviewing `4a8bd9d`. Fix whatever it raises.
+5. Then **#46** (T46, READY, split normalization) on `main`; the data layer is merged. After that,
+   **T5 #15** (backtest engine) once the Phase 2–4 interface spec (T3b, `feature/15-phase2-4-spec`)
+   is in review.
 
 ## Review queue
 | PR | Task | Author | Reviewer | Verdict |
