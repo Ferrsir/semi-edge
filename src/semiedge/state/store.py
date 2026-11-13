@@ -628,7 +628,7 @@ class StateStore(StateReaderBase):
         row = (
             self._connection()
             .execute(
-                f"SELECT {ORDER_COLUMNS} FROM orders WHERE client_order_id = ?",  # noqa: S608
+                f"SELECT {ORDER_COLUMNS} FROM orders WHERE client_order_id = ?",  # noqa: S608 # nosec B608 - constant columns, bound params
                 (client_order_id,),
             )
             .fetchone()
@@ -978,7 +978,7 @@ class StateStore(StateReaderBase):
         if intent.side is OrderSide.SELL:
             placeholders = ", ".join("?" * len(SENT_NON_TERMINAL))
             other = conn.execute(
-                "SELECT client_order_id FROM orders WHERE symbol = ? AND side = 'sell' AND "  # noqa: S608
+                "SELECT client_order_id FROM orders WHERE symbol = ? AND side = 'sell' AND "  # noqa: S608 # nosec B608 - constant columns, bound params
                 f"client_order_id <> ? AND status IN ({placeholders})",
                 (intent.symbol, intent.client_order_id, *sorted(SENT_NON_TERMINAL)),
             ).fetchone()
@@ -1195,7 +1195,7 @@ class StateStore(StateReaderBase):
         return [
             decode_fill(row)
             for row in conn.execute(
-                f"SELECT {FILL_COLUMNS} FROM fills WHERE client_order_id = ? "  # noqa: S608
+                f"SELECT {FILL_COLUMNS} FROM fills WHERE client_order_id = ? "  # noqa: S608 # nosec B608 - constant columns, bound params
                 "ORDER BY ts, fill_key",
                 (cid,),
             )
@@ -1253,7 +1253,7 @@ class StateStore(StateReaderBase):
                     )
                 return False
             row = conn.execute(
-                f"SELECT {POSITION_COLUMNS} FROM positions WHERE symbol = ?",  # noqa: S608
+                f"SELECT {POSITION_COLUMNS} FROM positions WHERE symbol = ?",  # noqa: S608 # nosec B608 - constant columns, bound params
                 (symbol,),
             ).fetchone()
             if row is None:
@@ -1371,7 +1371,7 @@ class StateStore(StateReaderBase):
             raise StateStoreError(f"unknown position status {status!r}")
         with self._txn() as conn:
             row = conn.execute(
-                f"SELECT {POSITION_COLUMNS} FROM positions WHERE symbol = ?",  # noqa: S608
+                f"SELECT {POSITION_COLUMNS} FROM positions WHERE symbol = ?",  # noqa: S608 # nosec B608 - constant columns, bound params
                 (symbol,),
             ).fetchone()
             if row is None:

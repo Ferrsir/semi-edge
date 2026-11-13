@@ -476,7 +476,7 @@ class StateReaderBase:
         if sym is not None:
             where.append("symbol = ?")
             params.append(sym)
-        sql = f"SELECT {ORDER_COLUMNS} FROM orders"  # noqa: S608 - constant columns, bound params
+        sql = f"SELECT {ORDER_COLUMNS} FROM orders"  # noqa: S608 # nosec B608 - constant columns, bound params
         if where:
             sql += " WHERE " + " AND ".join(where)
         if lim is None:
@@ -504,7 +504,7 @@ class StateReaderBase:
             params.append(cid)
         if not include_superseded:
             where.append("status <> 'superseded'")
-        sql = f"SELECT {FILL_COLUMNS} FROM fills"  # noqa: S608 - constant columns, bound params
+        sql = f"SELECT {FILL_COLUMNS} FROM fills"  # noqa: S608 # nosec B608 - constant columns, bound params
         if where:
             sql += " WHERE " + " AND ".join(where)
         if lim is None:
@@ -517,21 +517,21 @@ class StateReaderBase:
     def positions(self, *, include_closed: bool = False) -> tuple[PositionRecord, ...]:
         if type(include_closed) is not bool:
             raise ValueError("include_closed must be a bool")
-        sql = f"SELECT {POSITION_COLUMNS} FROM positions"  # noqa: S608 - constant columns
+        sql = f"SELECT {POSITION_COLUMNS} FROM positions"  # noqa: S608 # nosec B608 - constant columns, bound params
         if not include_closed:
             sql += " WHERE status <> 'closed'"
         sql += " ORDER BY symbol"
         return tuple(decode_position(row) for row in self._connection().execute(sql))
 
     def active_halts(self) -> tuple[HaltRecord, ...]:
-        sql = f"SELECT {HALT_COLUMNS} FROM halts WHERE cleared_at IS NULL ORDER BY id"  # noqa: S608
+        sql = f"SELECT {HALT_COLUMNS} FROM halts WHERE cleared_at IS NULL ORDER BY id"  # noqa: S608 # nosec B608 - constant columns, bound params
         return tuple(decode_halt(row) for row in self._connection().execute(sql))
 
     def corporate_action_adjustments(
         self, *, symbol: str | None = None
     ) -> tuple[CorporateActionAdjustment, ...]:
         sym = _check_opt_str(symbol, "symbol")
-        sql = f"SELECT {ADJUSTMENT_COLUMNS} FROM corporate_action_adjustments"  # noqa: S608
+        sql = f"SELECT {ADJUSTMENT_COLUMNS} FROM corporate_action_adjustments"  # noqa: S608 # nosec B608 - constant columns, bound params
         params: list[object] = []
         if sym is not None:
             sql += " WHERE symbol = ?"
