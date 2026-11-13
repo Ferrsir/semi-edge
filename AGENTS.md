@@ -97,7 +97,7 @@ Codex: start here every session. When an item is done, post on the PR or issue, 
 delete the item from this list in the same `AGENTS.md` commit. If an item is blocked, say why in the
 log and move to the next one. Work in your own worktree under `../semi-edge.worktrees/`, not in the
 `.t3` checkout and not in a Claude worktree. Never push to a Claude branch. Report findings on the
-PR instead. The next finding ID is **F-028**.
+PR instead. The next finding ID is **F-030**.
 
 1. **Re-review #48** `38b7865..92e9b48` (F-026 `_trade_levels`, F-027 sizing overflow).
 2. **Review #50** (CLI, #14), commits after `22ff3ea` only. The earlier commits are the stacked #36/#39/#48.
@@ -105,7 +105,12 @@ PR instead. The next finding ID is **F-028**.
 3. **Review #51** (docs only: `.t3` migration status).
    Also **review #53** (governance docs reconcile; restricted paths, so the owner must approve too).
    Also **review #55** (F-025 fix: RFC 3339 offset minutes 00..59, closes #52; small).
-4. **#49**: Claude is re-reviewing `4a8bd9d`. Fix whatever it raises.
+4. **#49**: Claude re-review PASS at `4a8bd9d`. Before it can merge:
+   - Rebase onto `main` to resolve the `AUDIT_REPORT.md` conflict, so CI runs (the new `dashboard-tests` job has never run).
+   - Fix F-028: the literal `?` in `app.js` lines 44–45 from an encoding loss.
+   - Regenerate the stale snapshot.
+   - Optionally fix F-029, the hard-coded owner setup text.
+   The **owner must approve**, because it touches `.github/workflows/ci.yml`.
 5. Then **#46** (T46, READY, split normalization) on `main`; the data layer is merged. After that,
    **T5 #15** (backtest engine) once the Phase 2–4 interface spec (T3b, `feature/15-phase2-4-spec`)
    is in review.
@@ -115,7 +120,7 @@ PR instead. The next finding ID is **F-028**.
 |---|---|---|---|---|
 | #48 | T2 | claude | codex | FAIL at 38b7865: F-026/P2 infinite proposed target; F-027/P3 sizing overflow; Claude fix requested |
 | #50 | T4 | claude | codex | draft; pre-screen fixes pushed; **Codex: review from `22ff3ea` to head** (stacked) |
-| #49 | T47 | codex | claude | fixes at 4a8bd9d; Claude re-review in progress (touches `.github/**`, so the owner must approve) |
+| #49 | T47 | codex | claude | Claude PASS at 4a8bd9d (P3 F-028, F-029); **Codex: rebase + F-028; owner: approve (.github)** |
 | #53 | #1 | claude | codex + owner | governance docs reconcile (restricted) — **Codex: review; owner: approve** |
 | #55 | #52 | claude | codex | F-025 fix — **Codex: review** |
 | #51 | — | claude | codex | `.t3` migration docs — **Codex: review** |
@@ -236,3 +241,7 @@ PR instead. The next finding ID is **F-028**.
 - 2026-11-13 05:45 UTC · claude · Codex re-review of #36 at `2c396ef`: PASS. Merged #36 (`c424d48`). The data layer is
   on `main`. Opened #55 (F-025, closes #52). Claude is re-reviewing Codex's #49 fixes (`4a8bd9d`). Merge order next:
   #48 once Codex PASSes, then rebase #50 onto `main` and mark it ready.
+
+- 2026-11-13 06:05 UTC · claude · Claude re-review of #49 at `4a8bd9d`: PASS, with P3 F-028 (`?` mojibake in the banner) and
+  P3 F-029 (hard-coded owner setup text). It needs a rebase (`AUDIT_REPORT.md` conflict, so no CI yet) and owner
+  approval (`ci.yml`). Next finding ID F-030.
