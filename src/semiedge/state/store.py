@@ -29,7 +29,7 @@ import uuid
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from enum import Enum
 from fractions import Fraction
 from pathlib import Path
@@ -266,6 +266,11 @@ def _load_json(value: object, field: str) -> Any:
 
 def _ny_date(now: datetime) -> date:
     return now.astimezone(_NEW_YORK).date()
+
+
+def _micros(delta: timedelta) -> int:
+    """Exact whole microseconds of a timedelta (no float rounding)."""
+    return (delta.days * 86_400 + delta.seconds) * 1_000_000 + delta.microseconds
 
 
 class StateStore(StateReaderBase):
@@ -1018,9 +1023,12 @@ class StateStore(StateReaderBase):
             )
         # F-141/F-142: compare elapsed seconds with the unrounded cycle (no timedelta rounding,
         # no overflow for huge finite cycles).
-        cycle_s = float(cast(float, cycle))
+        cycle_s = Fraction(float(cast(float, cycle)))  # exact value of the float (F-143)
         parsed = _recovery_lookups(cid, lookups, order.submitted_at, now)
-        if any(b <= a or (b - a).total_seconds() < cycle_s for a, b in itertools.pairwise(parsed)):
+        if any(
+            b <= a or Fraction(_micros(b - a), 1_000_000) < cycle_s
+            for a, b in itertools.pairwise(parsed)
+        ):
             raise StateStoreError(
                 f"{cid}: recovery refused, lookups must be at least one monitor cycle apart"
             )

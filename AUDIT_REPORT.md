@@ -358,6 +358,7 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Fix:** the cycle must be finite and ≥ 1 s, and lookups must be strictly increasing and at least one cycle apart.
 - **Regression:** two new cases in `test_f120_recovery_needs_post_submission_spaced_evidence`.
 - **F-141 (P2) / F-142 (P3), Codex re-review:** `timedelta` rounding (a 1.0000004 s cycle accepted 1 s gaps) and overflow (1e308) are avoided by comparing `total_seconds()` with the unrounded cycle; regressions added.
+- **F-143 (P2), Codex re-review:** `total_seconds()` float rounding accepted a 1,000,002 µs gap for a 1.000002 s cycle; the comparison is now exact (integer microseconds vs `Fraction(cycle)`). Regression `test_f143_spacing_uses_exact_microseconds`.
 
 ---
 

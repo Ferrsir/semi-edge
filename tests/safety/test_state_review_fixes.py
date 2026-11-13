@@ -222,3 +222,21 @@ def test_f123_ingestion_records_filled_qty_through_the_transition_path(harness: 
     order = harness.store.get_order(entry)
     assert order is not None
     assert (order.status, order.filled_qty) == ("partially_filled", 40)
+
+
+def test_f143_spacing_uses_exact_microseconds(harness: Harness) -> None:
+    """F-143: a 1,000,002 us gap is shorter than the float 1.000002 s; no float rounding."""
+    entry = _unknown_entry(harness)
+    first = SUBMIT_AT + timedelta(seconds=30)
+    detail = {
+        "lookup_404_at": [
+            first.isoformat(),
+            (first + timedelta(microseconds=1_000_002)).isoformat(),
+        ],
+        "absent_from_list_orders_all": True,
+        "monitor_cycle_seconds": 1.000002,
+    }
+    with pytest.raises(StateStoreError, match="recovery refused"):
+        harness.store.transition_order(
+            entry, "staged", now=RECOVER_AT, event="recovered_unsent", detail=detail
+        )
