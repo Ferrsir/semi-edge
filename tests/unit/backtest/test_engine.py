@@ -184,3 +184,15 @@ def test_exact_spec_slipped_fill_uses_engine(scenario):
         ),
     )
     assert run((zero, data, gate, calendar)).trades[0].exit_reason == "end_of_window"
+
+
+def test_f096_open_below_stop_invalidates_even_if_slipped_fill_is_above(scenario):
+    """F-096: an open at or below the stop invalidates the entry; slippage cannot hide it.
+
+    Stop 9.5, 200 bps: open 9.4 fills the entry at 9.588 (> stop). The position is flattened
+    at the open, 9.4 * 0.98, not stopped later at the more favourable 9.5 * 0.98.
+    """
+    (trade,) = run(scenario([(9.4, 9.6, 9.3, 9.4, 100)], slip=200)).trades
+    assert trade.entry_price == pytest.approx(9.4 * 1.02)
+    assert trade.exit_reason == "entry_gap_flatten"
+    assert trade.exit_price == pytest.approx(9.4 * 0.98)

@@ -305,6 +305,15 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Fix:** tests for batch approvals exhausting gross exposure and cash with exact sizes, equal-rank
   symbol ties, a rejected earlier duplicate, and a property test with pending BUY/SELL orders.
 
+### F-096 · P3 · Backtest entry could be stopped out better than its open (Claude review of #75; fixed in #80)
+- **Fix:** ADR-008 also invalidates the entry when `open_d ≤ stop`. Regression: `test_f096_open_below_stop_invalidates_even_if_slipped_fill_is_above`.
+
+### F-130 · P2 · ADR-008 broke the stated backtest/paper parity (Codex review, PR #80)
+- **Fix (spec):** ADR-008 is a backtest-only conservative adjustment. §6.3 documents the parity
+  exception (paper has no trustworthy opening price at fill time), and the §10 parity test excludes
+  exactly that case. §19 item 4 and ADR-008 are updated.
+- **F-131 (P2, Codex re-review):** the §18 checklist still claimed unconditional parity; it now carries the same exception.
+
 ---
 
 ## Speculative concerns (not demonstrated; tracked for the relevant phase)
