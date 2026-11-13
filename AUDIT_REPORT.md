@@ -359,6 +359,7 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Regression:** two new cases in `test_f120_recovery_needs_post_submission_spaced_evidence`.
 - **F-141 (P2) / F-142 (P3), Codex re-review:** `timedelta` rounding (a 1.0000004 s cycle accepted 1 s gaps) and overflow (1e308) are avoided by comparing `total_seconds()` with the unrounded cycle; regressions added.
 - **F-143 (P2), Codex re-review:** `total_seconds()` float rounding accepted a 1,000,002 µs gap for a 1.000002 s cycle; the comparison is now exact (integer microseconds vs `Fraction(cycle)`). Regression `test_f143_spacing_uses_exact_microseconds`.
+- **F-144 (P2), Codex re-review:** `fromisoformat` truncated a 7-digit fraction, inflating a 0.9999991 s gap to 1 s. Lookup timestamps must now match an exact ISO form (≤ 6 fractional digits, `Z`/`±HH:MM` offset). Regression `test_f144_lookup_timestamps_must_not_lose_precision`.
 
 ---
 

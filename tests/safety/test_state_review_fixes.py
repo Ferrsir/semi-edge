@@ -240,3 +240,30 @@ def test_f143_spacing_uses_exact_microseconds(harness: Harness) -> None:
         harness.store.transition_order(
             entry, "staged", now=RECOVER_AT, event="recovered_unsent", detail=detail
         )
+
+
+@pytest.mark.parametrize(
+    "stamps",
+    [
+        ["2026-11-13T13:10:30.0000009+00:00", "2026-11-13T13:10:31.0000000+00:00"],
+        ["2026-11-13T13:10:30+00:00:30", "2026-11-13T13:12:30+00:00"],  # fractional offset
+        ["2026-11-13 13:10:30+00:00", "2026-11-13T13:12:30+00:00"],  # space separator
+    ],
+)
+def test_f144_lookup_timestamps_must_not_lose_precision(
+    harness: Harness, stamps: list[str]
+) -> None:
+    entry = _unknown_entry(harness)
+    detail = {
+        "lookup_404_at": stamps,
+        "absent_from_list_orders_all": True,
+        "monitor_cycle_seconds": 1.0,
+    }
+    with pytest.raises(StateStoreError, match="recovery refused"):
+        harness.store.transition_order(
+            entry, "staged", now=RECOVER_AT + timedelta(days=1), event="recovered_unsent",
+            detail=detail,
+        )  # fmt: skip
+    order = harness.store.get_order(entry)
+    assert order is not None
+    assert order.status == "unknown"

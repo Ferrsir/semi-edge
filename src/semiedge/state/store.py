@@ -1709,14 +1709,26 @@ def _order_avg_price(
     return _derived_float(exact, "filled_avg_price")  # exact: never an intermediate overflow
 
 
+_LOOKUP_STAMP = re.compile(
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,6})?(?:Z|[+-][0-9]{2}:[0-9]{2})"
+)
+
+
 def _recovery_lookups(
     cid: str, lookups: list[object], submitted_at: datetime, now: datetime
 ) -> list[datetime]:
     """Parse the 404 lookup timestamps: aware, after the last submission attempt, <= now."""
     parsed: list[datetime] = []
     for value in lookups:
+        # F-144: exact ISO form only (<= 6 fractional digits, offset +HH:MM or Z), so parsing can
+        # never truncate precision and inflate the measured spacing.
+        if type(value) is not str or _LOOKUP_STAMP.fullmatch(value) is None:
+            raise StateStoreError(
+                f"{cid}: recovery refused, lookup timestamps must be ISO datetimes with at most "
+                "microsecond precision and a +HH:MM offset"
+            )
         try:
-            stamp = datetime.fromisoformat(cast(str, value))
+            stamp = datetime.fromisoformat(value)
         except (TypeError, ValueError):
             raise StateStoreError(
                 f"{cid}: recovery refused, lookup timestamps must be ISO datetimes"
