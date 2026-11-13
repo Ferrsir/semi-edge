@@ -71,8 +71,8 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T3 | #13 | Read-only paper account snapshot (`semiedge.broker.account`) | claude | DONE (PR #39, merged ee66aaf; P3 F-025 → #52) | T0 |
 | T3b | #15–#29 | Phase 2–4 interface spec (backtest, risk, execution, state, reconcile, engine, dashboard) | claude | DONE (PR #62, merged 0882031; Codex PASS ae80ac3) | T0 |
 | T4 | #14 | Signal report + CLI (`scan`, `data fetch/status`, `account`, `config check`) | claude | DONE (PR #50, merged ce2490d) | T1, T2, T3 |
-| T5 | #15 | Event-driven backtest engine: next-open fills, costs, slippage | codex | REVIEW (PR #75, implemented by codex exec; Claude review running) | T1, T2 |
-| T6 | #16 | Performance metrics, SMH/QQQ benchmark comparison | codex | READY | T5 |
+| T5 | #15 | Event-driven backtest engine: next-open fills, costs, slippage | codex | DONE (PR #75, merged 1d147df; ADR-008 in #80, merged 03ce186; P3s #79) | T1, T2 |
+| T6 | #16 | Performance metrics, SMH/QQQ benchmark comparison | codex | IN PROGRESS (codex via lead-run `codex exec`) `feature/16-metrics`, worktree `codex-metrics-16`: interactive Codex, don't start it | T5 |
 | T7 | #17 | Walk-forward + parameter sensitivity | claude | READY | T5, T6 |
 | T8 | #19 | Deterministic independent risk manager (exposure incl. pending, halts) | claude | DONE (PR #69, merged f79a496; Codex PASS a87d30c) | T2 |
 | T9 | #21 | Paper order lifecycle: idempotent client IDs, partial fills, brackets | claude | READY | T3, T8 |
@@ -316,3 +316,6 @@ on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest
 - 2026-11-13 12:20 UTC · claude · Merged #75 (T5 backtest, `1d147df`; Claude PASS; P3s are in #79). Claude reviews: #76 FAIL (F-100 P2, F-101..F-104
   P3), #77 FAIL (F-110/F-111 P2); both are back with Codex. Opened #78 (state store, T9 part 1) and #80 (F-096/ADR-008: the backtest entry
   is invalidated when the open is at or below the stop, decided before any results); Codex reviews of both are running via `codex exec`.
+
+- 2026-11-13 11:35 UTC · claude · Merged #80 (ADR-008, `03ce186`; Codex FAIL F-130/F-131 parity-spec gaps, fixed, then PASS). The lead claimed T6 (#16) for a
+  `codex exec` run. #78 (state store) is being fixed for Codex's F-120..F-123.
