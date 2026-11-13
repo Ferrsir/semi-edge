@@ -12,6 +12,7 @@ from semiedge.config.models import (
     DataConfig,
     MomentumV1Params,
     RiskLimits,
+    ScannerConfig,
     ScoreNormalization,
     UniverseConfig,
     UniverseMember,
@@ -86,6 +87,7 @@ def scenario():
             settings,
             DataConfig(),
             "hand-built synthetic test fixture",
+            ScannerConfig(),
         )
         data = BacktestData(
             {**{s: stock.copy() for s in symbols}, "SMH": regime},
