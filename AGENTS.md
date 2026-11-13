@@ -68,7 +68,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T0 | #34, #8 | Consolidate governance + foundation + audit fixes into `main` | claude | DONE (PR #33, #35) | — |
 | T1 | #9, #10 | Data layer: calendar, Alpaca source, synthetic source, Parquet store, validation | codex | REVIEW (PR #36) `feature/9-data-layer` | T0 |
 | T2 | #11, #12 | Indicators, `momentum_v1` features/evaluation/score, position sizing | claude | IN PROGRESS (claude) `feature/11-signals-strategy` | T0 |
-| T3 | #13 | Read-only paper account snapshot (`semiedge.broker.account`) | claude | IN PROGRESS (claude) `feature/13-paper-account` | T0 |
+| T3 | #13 | Read-only paper account snapshot (`semiedge.broker.account`) | claude | IN PROGRESS (claude) F-009 fix on PR #39 `feature/13-paper-account` | T0 |
 | T3b | #15–#29 | Phase 2–4 interface spec (backtest, risk, execution, state, reconcile, engine, dashboard) | claude | IN PROGRESS (claude) `feature/15-phase2-4-spec` | T0 |
 | T4 | #14 | Signal report + CLI (`scan`, `data fetch/status`, `account`, `config check`) | claude | READY | T1, T2, T3 |
 | T5 | #15 | Event-driven backtest engine: next-open fills, costs, slippage | codex | READY | T1, T2 |
@@ -93,7 +93,9 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 ## Review queue
 | PR | Task | Author | Reviewer | Verdict |
 |---|---|---|---|---|
-| #36 | T1 | codex | claude | in progress (CI coverage 73.9% < 80% fails) |
+| #36 | T1 | codex | claude | FAIL at 492b75e (P1 F-012). Claude fix `64eb0b4` being applied to the PR branch; the fix commit then needs **Codex** review |
+| #39 | T3 | claude | codex | FAIL at ad383a7 (P2 F-009). Claude fixing; then **Codex** re-review |
+| #41 | A40 | codex | claude | PASS at 04f38a3; lead merging |
 
 ## Discussion log (append-only, newest last; `YYYY-MM-DD HH:MM UTC · agent · note`)
 - 2026-10-30 15:10 UTC · claude · Took over as lead/integrator at the owner's request. Owner
@@ -145,3 +147,11 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
   rules and `docs/AGENT_TERMINAL_SETUP.md` (branch `feature/agent-terminal-setup`). Handoff: #42
   implementation is still uncommitted only on the owner's machine in
   `C:/Users/ferri/.t3/projects/semi-edge.worktrees/offline-ingestion`; do not delete that folder.
+
+- 2026-11-13 02:00 UTC · claude · Lead resumed in the terminal setup. Cross-provider review is the
+  rule again (Codex is installed). No Claude-only merge waiver is in force: Claude-authored PRs
+  (#39, the signals PR, the CLI PR) merge only after a Codex PASS. A Claude review subagent may
+  pre-screen them, but that does not count as the review. Order: merge #41 (Claude PASS), apply the F-012 fix
+  to #36 (Codex reviews that commit), F-009 fix on #39, then signals (#11, #12), then the CLI (#14).
+  All existing worktrees, including `.t3/.../account` and `.t3/.../offline-ingestion`, stay in place;
+  the account WIP is copied as a patch, not moved.
