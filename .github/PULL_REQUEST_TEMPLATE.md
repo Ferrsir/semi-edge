@@ -8,7 +8,7 @@ Implemented-by: <!-- agent + model, e.g. claude-code / claude-opus-5-5, or codex
 <!-- What changed and why. -->
 
 ## Risk classification
-- [ ] Touches restricted paths (`.github/**`, `AGENTS.md`, `CLAUDE.md`, `docs/governance/**`, `scripts/governance/**`, `config/risk.yaml`, `src/semiedge/safety/**`) → human approval of the head commit required
+- [ ] Touches restricted paths (`.github/**`, `AGENTS.md`, `CLAUDE.md`, `docs/governance/**`, `scripts/governance/**`, `config/risk.yaml`, `src/semiedge/safety/**`, `.claude/**`, `.codex/**`) → human approval of the head commit required
 - [ ] Touches trading logic (signals, sizing, risk, execution, backtest) → Review B must cover it
 - [ ] Changes configuration defaults or risk limits
 - [ ] Database / persisted-data schema change (migration described below)
@@ -31,6 +31,8 @@ Implemented-by: <!-- agent + model, e.g. claude-code / claude-opus-5-5, or codex
 - [ ] Docs distinguish planned vs implemented vs tested
 
 ## Review gate
-Both independent AI reviews (A: software engineering, B: quant/security/financial safety) must
-PASS for the **latest** commit; findings are posted by the `ai-review` workflow. Do not mark
-review findings resolved without a code change or evidence.
+Current process (ADR-004): a cross-provider review (Claude ↔ Codex) posted on this PR must be
+PASS for the **latest** commit, with no open P0/P1, before the lead merges. Target state (after
+#4–#7): two independent reviews (A: software engineering, B: quant/security/financial safety)
+published by a trusted integration. Do not mark findings resolved without a code change or
+evidence.
