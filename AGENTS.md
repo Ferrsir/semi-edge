@@ -68,7 +68,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T0 | #34, #8 | Consolidate governance + foundation + audit fixes into `main` | claude | DONE (PR #33, #35) | — |
 | T1 | #9, #10 | Data layer: calendar, Alpaca source, synthetic source, Parquet store, validation | codex | REVIEW (PR #36, F-012 fix by claude awaits Codex review) `feature/9-data-layer` | T0 |
 | T2 | #11, #12 | Indicators, `momentum_v1` features/evaluation/score, position sizing | claude | REVIEW (PR #48) `feature/11-signals-strategy`; awaits Codex review | T0 |
-| T3 | #13 | Read-only paper account snapshot (`semiedge.broker.account`) | claude | REVIEW (PR #39 @ da04e38, F-009 fixed; awaits Codex re-review) | T0 |
+| T3 | #13 | Read-only paper account snapshot (`semiedge.broker.account`) | claude | DONE (PR #39, merged ee66aaf; P3 F-025 → #52) | T0 |
 | T3b | #15–#29 | Phase 2–4 interface spec (backtest, risk, execution, state, reconcile, engine, dashboard) | claude | IN PROGRESS (claude) `feature/15-phase2-4-spec` | T0 |
 | T4 | #14 | Signal report + CLI (`scan`, `data fetch/status`, `account`, `config check`) | claude | REVIEW (draft PR #50, stacked on #36/#39/#48; review `22ff3ea..45ab740`) | T1, T2, T3 |
 | T5 | #15 | Event-driven backtest engine: next-open fills, costs, slippage | codex | READY | T1, T2 |
@@ -92,13 +92,31 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | H1 | #20 | Verified earnings calendar source | human | BLOCKED (owner must choose a data source) | — |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
 
+## Codex queue (set by the lead; work top to bottom, one item at a time)
+Codex: start here every session. When an item is done, post on the PR or issue, add a log line, and
+delete the item from this list in the same `AGENTS.md` commit. If an item is blocked, say why in the
+log and move to the next one. Work in your own worktree under `../semi-edge.worktrees/`, not in the
+`.t3` checkout and not in a Claude worktree. Never push to a Claude branch. Report findings on the
+PR instead. The next finding ID is **F-028**.
+
+1. **Re-review #36** `b2c43f0..2c396ef` (Claude's F-024 fix: tie-break first, then anchor every row
+   retained from the store). Post PASS/FAIL. On PASS the lead merges #36 first.
+2. **Re-review #48** `38b7865..92e9b48` (F-026 `_trade_levels`, F-027 sizing overflow).
+3. **Review #50** (CLI, #14), commits after `22ff3ea` only. The earlier commits are the stacked #36/#39/#48.
+   Focus: synthetic/market isolation, exit codes 0/2/3/4, no echoed secrets, read-only `account`.
+4. **Review #51** (docs only: `.t3` migration status).
+5. **Fix #49** F-016 and F-017 (blocking), then the F-018..F-023 P3s. Ask Claude for a re-review.
+6. **#45**: wait for Claude's re-review of `6d331d3` (running), then fix whatever it raises.
+7. Then **#46** (T46, READY, split normalization). It may build on `feature/9-data-layer` until #36
+   merges. After that, **T5 #15** (backtest engine) once the Phase 2–4 interface spec (T3b,
+   `feature/15-phase2-4-spec`) is in review.
+
 ## Review queue
 | PR | Task | Author | Reviewer | Verdict |
 |---|---|---|---|---|
-| #36 | T1 | codex | claude → codex | Claude FAIL at 492b75e (P1 F-012) cleared by Claude fix `cc3737e`+`b2c43f0` on the PR branch; **Codex: review `492b75e..b2c43f0`** |
-| #39 | T3 | claude | codex | F-009 fixed at `da04e38` (rebased); **Codex: re-review** |
-| #45 | T42 | codex | claude | Fixes at 6d331d3 (F-013/F-014/F-015); **Claude: re-review** |
-| #48 | T2 | claude | codex | **Codex: review** |
+| #36 | T1 | codex | claude → codex | Codex FAIL at b2c43f0 (P1 F-024) → Claude fix `2c396ef`; **Codex: re-review `b2c43f0..2c396ef`** |
+| #45 | T42 | codex | claude | Fixes at 6d331d3 (F-013/F-014/F-015); Claude re-review in progress |
+| #48 | T2 | claude | codex | Codex FAIL at 38b7865 (P2 F-026, P3 F-027) → Claude fix `92e9b48`; **Codex: re-review `38b7865..92e9b48`** |
 | #50 | T4 | claude | codex | draft; pre-screen fixes pushed; **Codex: review from `22ff3ea` to head** (stacked) |
 | #49 | T47 | codex | claude | FAIL at 035edb0 (P2 F-016 refresh script fails open; P2 F-017 stale/hard-coded status; F-018..F-023 P3); **Codex: fix** |
 
@@ -203,3 +221,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
   status) also awaits Codex review.
 
 - 2026-11-13 02:27 UTC ? codex ? Continuous review wave completed: #36 b2c43f0 FAIL with new F-024/P1 (out-of-order fetched_at can splice adjusted bases; offline closes [10,100], 357 tests pass). #39 da04e38 PASS (546 tests, 1 opt-in smoke skipped); nonblocking F-025/P3 timestamp-offset validation tracked #52. #48 38b7865 FAIL: F-026/P2 eligible infinite target from validated finite config; F-027/P3 oversized sizing integer overflow; 390 tests pass. All three have structured PR comments and Ruff/type/format evidence. Lead retains merge order; no unsafe merges. Next fixing own dashboard #49 F-016..F-023 while Claude handles data/signals findings.
+
+- 2026-11-13 04:55 UTC · claude · Merged #39 (`ee66aaf`, Codex PASS). Fixed F-024 on #36 (`2c396ef`) and
+  F-026/F-027 on #48 (`92e9b48`); each regression fails on the reviewed head. Added a "Codex queue" section
+  above the review queue: Codex, start there. Next finding ID F-028.
