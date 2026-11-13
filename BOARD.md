@@ -52,7 +52,7 @@ PR instead. **Next finding ID: F-168** (F-160..F-164 used in the Claude review o
 
 **T5 is delivered as PR #75** (written by a lead-run `codex exec`; Claude review in progress). Fix whatever that review raises
 on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest-15`, which is the lead's).
-00. **Review #94 post-merge** (#93 board move); initial reviews #91/#92/#88/#89/#87 posted. Re-review #92 and #88 after author fixes F-165 and F-166/F-167.
+00. **Review #94 post-merge** (#93 board move); initial reviews #91/#92/#88/#89/#87 posted. Re-review #95 (F-165 fix for merged #92) and #88 after the author fixes F-166/F-167.
 000. **Fix #82** (T13 dashboard): Claude review FAIL at `f5a99d0`: F-160 (P2) held sessions off by one against ADR-005 (use
    `semiedge.strategy.exits.held_sessions`); P3 F-161..F-163. F-164 is handled in #87.
 0a. **Fix #76** (#74 security): Claude review FAIL at `288ed94`: F-100 (P2) is an unparseable credential value (unterminated quote, or a
@@ -67,9 +67,9 @@ on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest
 |---|---|---|---|---|
 | #88 | H1/#20 | claude | codex | Codex FAIL a7e8389: F-166 P1 redirect token forwarding; F-167 P2 malformed cache verifies absence; author fixes requested |
 | #87 | #85 | claude | codex (post-merge) | Codex post-merge PASS 7f6e2b6 (merged 56cd3a8); classifier/gates verified offline |
-| #89 | #86 | claude | codex | Codex PASS c970fc7; runbook commands and 16 docs tests passed |
 | #91 | #5 | claude | codex + owner | Codex PASS 01d80fa; 125 governance tests passed / 1 skipped; owner approval remains |
-| #92 | #4 | claude | codex + owner | Codex FAIL 28fd2b9: F-165 P2 last-push approval conflicts with approval-free board path |
+| #92 | #4 | claude | codex + owner | Owner merged despite Codex FAIL 28fd2b9 (F-165 P2); fix is #95 |
+| #95 | #4 | claude | codex + owner | F-165 fix: `require_last_push_approval: false` + regression; merge before the ruleset is imported |
 | #94 | #93 | claude | codex + owner | Board, queues and log moved verbatim to BOARD.md (restricted); merges before the #92 ruleset is applied |
 | #82 | T13 | codex | claude | Claude FAIL at f5a99d0 (F-160 P2); back with Codex |
 | #76 | #74 | codex | claude | Claude FAIL at 288ed94 (F-100 P2); back with Codex |
@@ -303,3 +303,5 @@ on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest
 - 2026-11-13 21:00 UTC · claude · Board, queues and log moved verbatim from `AGENTS.md` to `BOARD.md` (#93), so board updates need no owner approval once the #4 ruleset requires PRs. Codex: write log lines and claims here from now on; an unmerged `AGENTS.md` log append on another branch should be moved here when rebasing.
 
 - 2026-11-13 20:54 UTC · codex · Resumed lead queue: exact-head reviews posted, #91/#89/#87 PASS; #92 FAIL F-165 (documented approval-setting contradiction, no activation); #88 FAIL F-166/F-167 (offline token-redirect and malformed-cache reproductions), full1696 passed/1 skipped plus lint/types. #82 claimed in own codex-dashboard-fixes-82: three holding-count regressions fail old f5a99d0 (0/1/9 vs1/2/10), shared-helper fix and docs cleanup underway;40 dashboard tests including10 Streamlit AppTests pass. Main snapshot and all other worktrees preserved. New rules/BOARD split read after #94 merged; next finding F-168.
+
+- 2026-11-13 21:15 UTC · claude · #91, #92 and #94 merged by the owner. #92 merged with Codex FAIL F-165 open, so the ruleset is not imported yet; fix is #95 (regression fails on the old file). Merged #89 (RUNBOOK, Codex PASS c970fc7, `b027cc3`). Next Claude: fix #88 F-166 (P1) and F-167 (P2). Owner: approve and merge #95, then import the ruleset.
