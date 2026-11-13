@@ -937,9 +937,12 @@ class StateReader(Protocol):               # F-037: the ONE read surface used by
 class StateStoreError(RuntimeError): ...
 
 class StateStore:                          # the single WRITER (engine process; CLI when engine stopped); implements StateReader
-    def __init__(self, path: Path, *, data_source: Literal["real", "synthetic"]) -> None: ...
+    def __init__(self, path: Path, *, data_source: Literal["real", "synthetic"],
+                 now: datetime) -> None: ...
         # takes the writer lock (§5.3), creates/migrates, sets PRAGMAs;
-        # an existing DB whose meta.data_source differs -> StateStoreError
+        # an existing DB whose meta.data_source differs -> StateStoreError;
+        # `now` (tz-aware, the caller's Clock.now()) stamps meta.created_at and
+        # schema_version.applied_at, so semiedge.state never reads a clock itself (§18 AST test)
     @property
     def store_id(self) -> str: ...         # uuid4 hex created once at initialisation (meta table)
     def transaction(self) -> AbstractContextManager[None]: ...
