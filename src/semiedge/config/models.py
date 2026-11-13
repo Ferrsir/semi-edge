@@ -260,3 +260,26 @@ class BacktestSettings(_Frozen):
     initial_equity: float = Field(gt=0)
     costs: CostSettings
     earnings_policy: Literal["require_data", "waive_unavailable"]
+
+
+# ------------------------------------------------------------------ earnings (#20)
+
+
+class EarningsSettings(_Frozen):
+    """``config/earnings.yaml`` (spec earnings-calendar.md §5). Every field is required."""
+
+    lookahead_days: int = Field(ge=14, le=89)
+    min_forward_coverage_days: int = Field(ge=7)
+    max_age_hours: float = Field(gt=0, le=48)
+    max_attempts_per_day: int = Field(ge=1, le=5)
+    retry_interval_minutes: int = Field(ge=15, le=1440)
+    request_timeout_seconds: float = Field(gt=0, le=60)
+    finnhub_min_interval_seconds: float = Field(ge=1, le=60)
+    override_file: str = Field(pattern=r"^[A-Za-z0-9_\-]+\.ya?ml$")
+    override_max_age_days: int = Field(ge=1, le=90)
+
+    @model_validator(mode="after")
+    def _coverage_inside_window(self) -> EarningsSettings:
+        if self.min_forward_coverage_days >= self.lookahead_days:
+            raise ValueError("min_forward_coverage_days must be below lookahead_days")
+        return self

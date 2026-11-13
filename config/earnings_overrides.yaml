@@ -1,0 +1,13 @@
+# Manual earnings dates checked by hand on investor-relations pages (#20, spec §4 rule 1).
+# A fresh entry wins over both vendors for that symbol. Entries expire after
+# earnings.yaml:override_max_age_days or once the date has passed. Every field except note is
+# required; an invalid file blocks all entries (fail closed). Example (illustrative values only,
+# not a real earnings date):
+#
+# overrides:
+#   - symbol: NVDA
+#     next_earnings_date: 2026-11-19
+#     verified_on: 2026-11-13
+#     source_url: https://investor.nvidia.com/events-and-presentations/default.aspx
+#     note: confirmed on the IR events page
+overrides: []

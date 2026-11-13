@@ -34,3 +34,17 @@ is better than the open, so results would be optimistic. Made before any backtes
 (rule 3); found as F-096 in the review of #75. Strictly more conservative. Scope: backtest-only.
 The paper engine has no trustworthy opening price at fill time, so §6.3 documents a parity exception
 (F-130).
+
+ADR-009 (2026-11-13): earnings data for R16 (#20). Owner decision: Finnhub's earnings calendar is
+the primary source and Alpha Vantage's `EARNINGS_CALENDAR` is the cross-check. Keys come only from
+`FINNHUB_API_KEY` and `ALPHAVANTAGE_API_KEY`. A date counts as verified when both sources are fresh
+(`max_age_hours`), cover the query window and agree, or when a hand-checked entry in
+`config/earnings_overrides.yaml` (investor-relations page, `verified_on` within
+`override_max_age_days`) exists. Anything else (a missing key, a stale snapshot, a fetch error,
+short coverage or a disagreement) is `verified=False`, which R16 rejects with
+`earnings_data_unavailable`. A disagreement blocks only the affected symbol. An unusable source
+blocks every symbol. Each source is refreshed at most once per UTC day (free-tier limits;
+failures retry at most `max_attempts_per_day` times). R16, `earnings_blackout_sessions` and
+`require_verified_earnings_data: true` are unchanged. Yahoo and other unofficial feeds are
+excluded. The vendor calendar is not point-in-time, so backtests keep the labelled waiver.
+Spec: `docs/specifications/earnings-calendar.md`.
