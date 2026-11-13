@@ -6,22 +6,39 @@ Both agents work from the same repository and the same rules file, `AGENTS.md`. 
 
 All commands are for **PowerShell** in Windows Terminal unless marked otherwise.
 
-## 0. Rescue the uncommitted #42 work first
+## 0. Migration off `.t3` (status 2026-11-13)
 
-The offline-ingestion work for issue #42 exists only on this computer, uncommitted, in
-`C:\Users\ferri\.t3\projects\semi-edge.worktrees\offline-ingestion`. Do **not** delete the `.t3`
-folder until it is pushed.
+T3 orchestration is retired. Claude Code and Codex CLI run directly in a terminal and coordinate
+through `AGENTS.md`, GitHub issues and PRs. The primary clone is `C:\Users\ferri\projects\semi-edge`,
+with worktrees in `C:\Users\ferri\projects\semi-edge.worktrees\`. The old
+`C:\Users\ferri\.t3\projects\semi-edge` clone and its worktrees are a separate clone. Nothing was
+moved out of them, so no git worktree paths needed repair. They are kept in place until the
+checklist below passes.
+
+| `.t3` worktree | State found 2026-11-13 | Where the work is now |
+|---|---|---|
+| `offline-ingestion` (#42) | committed and pushed | PR #45 |
+| `spec23` (`feature/15-phase2-4-spec`, `badef76`) | committed, not pushed | pushed to `origin` |
+| `account` (`feature/13-paper-account`) | F-009 fix uncommitted | copied as a patch → PR #39 at `da04e38`; the `.t3` copy is untouched |
+| `data` (`feature/9-data-layer`, ahead 2) | pre-rebase copies of the PR #36 commits | superseded by `origin/feature/9-data-layer` |
+| `.claude/worktrees/wf_12ab529d-ad2-2` | two untracked early indicator folders | superseded by PR #48; left in place |
+
+Every `.t3` branch tip is also kept in the primary clone as a local ref:
+`git -C C:\Users\ferri\projects\semi-edge for-each-ref refs/t3-backup`.
+
+Before deleting `C:\Users\ferri\.t3\projects\semi-edge*` (owner only, after PRs #39 and #45 merge):
 
 ```powershell
-cd C:\Users\ferri\.t3\projects\semi-edge.worktrees\offline-ingestion
-git status                      # expect the csv_import / fixture_ingest files listed as changed/untracked
-git add -A
-git status                      # check that no .env, keys or data files are staged
-git commit -m "WIP #42: offline CSV-to-Parquet ingestion (unreviewed, from Codex)"
-git push -u origin feature/42-offline-ingestion
+$t3 = "C:\Users\ferri\.t3\projects\semi-edge"
+git -C $t3 worktree list
+foreach ($w in (git -C $t3 worktree list --porcelain | Select-String '^worktree ' | ForEach-Object { $_.Line.Substring(9) })) {
+  "== $w"; git -C $w status --short; git -C $w log --oneline '@{u}..HEAD'
+}
 ```
 
-Once pushed, any agent (or a fresh clone) can finish #42 from GitHub.
+Only `account` (uncommitted, superseded by `da04e38`), `data` (superseded) and the `wf_...` scratch
+worktree should report anything. Make sure no agent, Codex included, is still running inside
+`.t3` before removing it.
 
 ## 1. Install the prerequisites (once)
 
@@ -77,7 +94,7 @@ worktree next to the main clone:
 cd C:\Users\ferri\projects\semi-edge
 git fetch origin
 git worktree add ..\semi-edge.worktrees\signals -b feature/11-signals-strategy origin/feature/11-signals-strategy
-git worktree add ..\semi-edge.worktrees\offline-ingestion feature/42-offline-ingestion   # after step 0 is pushed
+git worktree add ..\semi-edge.worktrees\offline-ingestion -b feature/42-offline-ingestion origin/feature/42-offline-ingestion
 git worktree list
 ```
 

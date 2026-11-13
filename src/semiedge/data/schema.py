@@ -60,6 +60,10 @@ def validate_bar_frame(frame: pd.DataFrame, *, symbol: str = "?") -> None:
         raise DataSchemaError(f"{symbol}: index must be named {SESSION_INDEX_NAME!r}")
     if not isinstance(frame.index, pd.DatetimeIndex) or frame.index.tz is not None:
         raise DataSchemaError(f"{symbol}: index must be a tz-naive DatetimeIndex")
+    if frame.index.dtype != np.dtype("datetime64[ns]") or frame.index.hasnans:
+        raise DataSchemaError(f"{symbol}: session index must be datetime64[ns] without NaT")
+    if not frame.columns.is_unique:
+        raise DataSchemaError(f"{symbol}: duplicate columns")
     if len(frame.index) and not (frame.index == frame.index.normalize()).all():
         raise DataSchemaError(f"{symbol}: session index values must be normalised to midnight")
     if not frame.index.is_unique:
@@ -69,7 +73,7 @@ def validate_bar_frame(frame: pd.DataFrame, *, symbol: str = "?") -> None:
     missing = [c for c in REQUIRED_BAR_COLUMNS if c not in frame.columns]
     if missing:
         raise DataSchemaError(f"{symbol}: missing columns {missing}")
-    for col in REQUIRED_BAR_COLUMNS:
+    for col in (*REQUIRED_BAR_COLUMNS, *(c for c in OPTIONAL_BAR_COLUMNS if c in frame)):
         if frame[col].dtype != np.float64:
             raise DataSchemaError(
                 f"{symbol}: column {col!r} must be float64, got {frame[col].dtype}"

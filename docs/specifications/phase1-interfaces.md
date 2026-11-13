@@ -50,12 +50,15 @@ class MarketDataSource(Protocol):
 
 ```python
 class AlpacaMarketDataSource:  # implements MarketDataSource
-    def __init__(self, client: StockHistoricalDataClient, feed: DataFeed, adjustment: Adjustment) -> None: ...
+    def __init__(self, client: StockHistoricalDataClient, feed: DataFeed, adjustment: Adjustment,
+                 *, calendar: TradingCalendar | None = None) -> None: ...      # default TradingCalendar("XNYS")
     @classmethod
     def from_credentials(cls, api_key: str, secret_key: str, feed: DataFeed, adjustment: Adjustment) -> AlpacaMarketDataSource: ...
 ```
 - Uses `StockBarsRequest(timeframe=TimeFrame.Day, feed=..., adjustment=...)`. Maps our enums to alpaca enums.
 - Converts Alpaca daily bar timestamps to the America/New_York calendar date → `session` index.
+- Never returns a bar for a session that has not closed yet (`session_close > now`, early closes
+  respected): an in-progress daily bar is partial and would otherwise be cached as complete.
 - Raises `MarketDataError` (defined in this module) on API errors — never returns partial data silently.
 - Never requests bars that end after "now − 16 minutes" when `feed=sip` (free-plan SIP restriction);
   the caller passes `end`; the adapter clamps and records the clamp in a log line.
@@ -94,6 +97,15 @@ class ParquetBarStore:
 - Raw rows persisted with provenance columns `feed, adjustment, source, fetched_at` (UTC).
 - `write` merges with existing rows: on duplicate `session`, the newer `fetched_at` wins
   (vendor corrections), and a WARNING is logged when OHLCV values change for an existing session.
+- Adjusted series (`adjustment != raw`) are restated retroactively by the vendor (splits,
+  dividends), so a merge must prove that retained stored rows share the incoming basis: the
+  incoming frame must overlap at least one stored session, and every retained stored row (one the
+  incoming frame does not replace, including stored sessions missing *inside* the incoming range)
+  is anchored by its nearest shared session on each side that exists (the following one for rows
+  before all shared ones, the preceding one for rows after them, both for rows in between); the
+  close on each anchor must match. "Retained" means rows that survive the fetch-time tie-break
+  from the store, so a shared session whose stored fetch is newer is retained and anchors itself.
+  Otherwise `write` raises `ValueError` and the caller refetches the full stored range. Raw series may be appended without overlap.
 - Writes are atomic (write temp file in the same dir, then `os.replace`).
 - Synthetic data may only be written under a root whose path contains a `synthetic` component
   (raise otherwise) so it can never pollute the real cache.
@@ -207,18 +219,49 @@ Non-finite or non-positive inputs, or `stop >= entry`, → `shares=0, binding_co
 ## `semiedge.broker.account` (#13) — read-only
 
 ```python
+AccountReadPath = Literal["/account", "/clock", "/positions"]
+
+class ReadOnlyTradingClient(Protocol):          # alpaca TradingClient satisfies it structurally
+    def get(self, path: AccountReadPath) -> object: ...   # HTTP GET, returns the decoded JSON
+
+class AccountBlockReason(StrEnum):
+    STATUS_NOT_ACTIVE; ACCOUNT_BLOCKED; TRADING_BLOCKED; TRADE_SUSPENDED_BY_USER; UNSUPPORTED_CURRENCY
+
+@dataclass(frozen=True)
+class PositionSnapshot:
+    symbol: str; qty: float; side: Literal["long", "short"]; avg_entry_price: float
+    market_value: float; cost_basis: float; unrealized_pl: float; unrealized_plpc: float
+    current_price: float; asset_class: str
+
 @dataclass(frozen=True)
 class AccountSnapshot:
     account_number_masked: str; status: str; currency: str
     equity: float; last_equity: float; cash: float; buying_power: float
-    long_market_value: float; pattern_day_trader: bool; trading_blocked: bool
+    long_market_value: float; pattern_day_trader: bool | None   # None = not reported (Alpaca removed it)
+    trading_blocked: bool; account_blocked: bool; trade_suspended_by_user: bool
     market_is_open: bool; next_open: datetime; next_close: datetime; as_of: datetime
-    positions: tuple[PositionSnapshot, ...]
+    positions: tuple[PositionSnapshot, ...]                    # sorted by symbol
+    @property
+    def block_reasons(self) -> tuple[AccountBlockReason, ...]: ...  # empty iff tradable
+    @property
+    def is_tradable(self) -> bool: ...
 
-def fetch_account_snapshot(client: TradingClient) -> AccountSnapshot: ...   # get_account, get_clock, get_all_positions
+class BrokerError(RuntimeError): ...            # sanitised request failure (.operation, .status_code)
+class BrokerDataError(BrokerError): ...         # response violates the snapshot contract
+
+def fetch_account_snapshot(client: ReadOnlyTradingClient) -> AccountSnapshot: ...   # GET /v2/account, /v2/clock, /v2/positions
 ```
-Clients are only obtained via `semiedge.safety.broker.create_paper_trading_client`. No order
-methods are called anywhere in Phase 1.
+Clients are only obtained via `semiedge.safety.broker.create_paper_trading_client`; the client is
+re-checked (type-exact base URL, then `assert_paper_client`) before any request. No order methods are called anywhere in
+Phase 1. The raw JSON is validated, not the SDK models: their lax pydantic coercion turns `0` or
+`"false"` into `False` for a blocking flag (F-009). Exact JSON types are required: block flags,
+`is_open` and (when present) `pattern_day_trader` must be JSON booleans; timestamps must be RFC 3339
+strings with an explicit offset. Fail closed: missing/malformed/non-finite numbers, negative `equity`/`last_equity`/
+`buying_power`/`long_market_value`, missing or non-ISO currency, missing, `null` or non-boolean block flags,
+position values whose sign contradicts the side, and an inconsistent clock raise
+`BrokerDataError` (never defaults). Blocked accounts are reported via explicit `block_reasons`, not hidden.
+Money stays `float` (strictly parsed from Alpaca's decimal strings) to match the float-based
+sizing and risk interfaces. Errors never echo credentials, URLs or response bodies.
 
 ## `semiedge.reporting` and `semiedge.cli` (#14)
 
