@@ -1,4 +1,10 @@
-"""Thin Streamlit renderer; run through ``semiedge dashboard``."""
+"""Thin Streamlit renderer; run through ``semiedge dashboard``.
+
+External text reaches the page only through plain-text widgets (``st.text``, dataframes) after
+``display``. Widgets that render Markdown (``subheader``, ``caption``, ``warning``, ``error``)
+receive fixed strings, validated enums, numbers, or a component name that passed
+``safe_component``.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +18,12 @@ from typing import Any
 
 import pandas as pd
 
+from semiedge.dashboard.format import (
+    SECTION_LABELS,
+    stale_message,
+    summary_rows,
+    table_rows,
+)
 from semiedge.dashboard.viewmodel import (
     display,
     load_backtests,
@@ -21,6 +33,9 @@ from semiedge.dashboard.viewmodel import (
 from semiedge.reporting import SYNTHETIC_BANNER
 from semiedge.state.halt_control import request_manual_halt
 
+EQUITY_LINE_COLOR = "#3987e5"  # dataviz reference blue, dark step; validated on the dark surface
+MIN_CHART_POINTS = 4  # below this a table says more than a line
+
 
 def _plain(st: Any, value: object) -> None:
     text = json.dumps(value, default=str, indent=2, ensure_ascii=False)
@@ -28,78 +43,142 @@ def _plain(st: Any, value: object) -> None:
         st.text(display(text[offset : offset + 1800]))
 
 
-def _section(st: Any, value: object) -> None:
+def _table(st: Any, rows: list[dict[str, Any]]) -> None:
+    clean = [{display(k): display(v) for k, v in row.items()} for row in table_rows(rows)]
+    st.dataframe(pd.DataFrame(clean), hide_index=True, width="stretch")
+
+
+def _section(st: Any, value: object, *, label: str | None = None) -> None:
+    if label is not None:
+        st.subheader(SECTION_LABELS.get(label, "Details"))
     if isinstance(value, dict):
         for key, rows in value.items():
-            st.text(display(str(key).replace("_", " ").title()))
-            _section(st, rows)
+            _section(st, rows, label=str(key))
     elif isinstance(value, list) and value and all(isinstance(row, dict) for row in value):
-        rows = [{display(k): display(v) for k, v in row.items()} for row in value]
-        st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+        _table(st, value)
     elif value == [] or value is None:
-        st.text("No records available.")
+        st.text("No records yet.")
+    elif isinstance(value, str):
+        st.text(display(value))
     else:
         _plain(st, value)
 
 
-def render(st: Any, *, source: Any = "cache", now: datetime | None = None) -> None:  # noqa: PLR0912
+def _equity_chart(st: Any, equity: list[dict[str, Any]]) -> None:
+    points = [
+        (str(row["session"]), float(row["equity"]))
+        for row in equity
+        if isinstance(row.get("equity"), int | float)
+    ]
+    if len(points) < MIN_CHART_POINTS:
+        return
+    import altair as alt  # noqa: PLC0415 - streamlit dependency, only with the dashboard extra
 
+    frame = pd.DataFrame(points, columns=["Session", "Equity"])
+    frame["Session"] = pd.to_datetime(frame["Session"])
+    frame["Day"] = frame["Session"].dt.strftime("%b %d")  # one label per session, no 12 h ticks
+    line = (
+        alt.Chart(frame)
+        .mark_line(color=EQUITY_LINE_COLOR, strokeWidth=2, point=alt.OverlayMarkDef(size=40))
+        .encode(
+            x=alt.X("Day:O", title=None, sort=None, axis=alt.Axis(labelAngle=0)),
+            y=alt.Y(
+                "Equity:Q", title=None, scale=alt.Scale(zero=False), axis=alt.Axis(format=",.0f")
+            ),
+            tooltip=[
+                alt.Tooltip("Session:T", format="%Y-%m-%d"),
+                alt.Tooltip("Equity:Q", format=",.2f"),
+            ],
+        )
+        .properties(height=230)
+    )
+    st.subheader("Equity")
+    st.altair_chart(line, width="stretch")
+
+
+def _overview(st: Any, view: Any, root: Path, source: Any) -> None:
+    section = view.sections["Overview"]
+    for heartbeat in section["heartbeats"]:
+        if heartbeat["freshness"] == "stale":
+            st.error(stale_message(heartbeat))
+    glance, chart = st.columns([2, 3], gap="large")
+    with glance:
+        st.subheader("At a glance")
+        rows = summary_rows(section, positions=view.sections["Positions"], last_run=view.last_run)
+        st.dataframe(
+            pd.DataFrame([{k: display(v) for k, v in r.items()} for r in rows]),
+            hide_index=True,
+            width="stretch",
+        )
+    with chart:
+        _equity_chart(st, section["equity"])
+    _section(st, section)
+    try:
+        reports = load_backtests(root, source=source)
+    except (OSError, ValueError) as exc:
+        st.subheader("Backtest reports")
+        st.text("Backtest reports unavailable")
+        st.text(display(exc))
+        return
+    if reports:
+        st.subheader("Backtest reports")
+    for report in reports:
+        for label in report["labels"]:
+            st.text(display(label))
+        st.text(display(f"Command: {report['command']}"))
+        _plain(st, report)
+
+
+def _operations(st: Any, view: Any, path: Path, now: datetime | None) -> None:
+    _section(st, view.sections["Operations"])
+    st.subheader("Manual halt")
+    st.text("A manual halt stops new entries. Exits and protective stops keep running.")
+    with st.form("manual_halt"):
+        actor = st.text_input("Actor")
+        reason = st.text_input("Reason")
+        confirmation = st.text_input("Type HALT to confirm")
+        submitted = st.form_submit_button("Halt new entries")
+    if submitted:
+        if confirmation != "HALT" or not reason.strip():
+            st.text("Not recorded: type HALT and give a reason.")
+        else:
+            try:
+                halt_id = request_manual_halt(
+                    path, display(reason), actor, now or datetime.now(UTC)
+                )
+            except (ValueError, RuntimeError) as exc:
+                st.text(display(exc))
+            else:
+                st.text(f"Manual halt recorded: {halt_id}")
+
+
+def render(st: Any, *, source: Any = "cache", now: datetime | None = None) -> None:
     st.set_page_config(page_title="SEMI-EDGE", layout="wide")
-    st.title("SEMI-EDGE · PAPER only")
+    st.sidebar.text("SEMI-EDGE · PAPER only")
     root = source_root(Path(os.environ.get("SEMIEDGE_DATA_DIR", "data")), source)
     path = root / "state" / "semiedge.sqlite3"
     try:
         view = load_view(path, source=source, now=now or datetime.now(UTC))
     except (OSError, ValueError, RuntimeError) as exc:
-        st.text("Dashboard unavailable")
+        st.header("Dashboard unavailable")
         st.text(display(exc))
         return
     except Exception:
-        st.text("Dashboard unavailable: state database cannot be decoded.")
+        st.header("Dashboard unavailable")
+        st.text("The state database cannot be decoded.")
         return
-    st.text(display(f"Mode: {view.mode} | DB source: {view.source}"))
     if view.source == "synthetic":
-        st.text(SYNTHETIC_BANNER)
+        st.warning(SYNTHETIC_BANNER)
     page = st.sidebar.radio("Page", list(view.sections))
+    st.sidebar.button("Refresh")
     st.header(page)
-    st.button("Refresh")
+    st.caption(f"Mode {view.mode} · data source {view.source}")
     if page == "Overview":
-        for heartbeat in view.sections["Overview"]["heartbeats"]:
-            if heartbeat["freshness"] == "stale":
-                st.error("Stale heartbeat: more than three recorded intervals old.")
-                st.text(display(heartbeat["component"]))
-    _section(st, view.sections[page])
-    if page == "Overview":
-        try:
-            reports = load_backtests(root, source=source)
-        except (OSError, ValueError) as exc:
-            st.text("Backtest reports unavailable")
-            st.text(display(exc))
-        else:
-            for report in reports:
-                for label in report["labels"]:
-                    st.text(display(label))
-                st.text(display(f"Command: {report['command']}"))
-                _plain(st, report)
-    if page == "Operations":
-        st.text("Manual halt stops new entries. Exits and protective stops continue.")
-        with st.form("manual_halt"):
-            actor = st.text_input("Actor")
-            reason = st.text_input("Reason")
-            confirmation = st.text_input("Type HALT to confirm")
-            submitted = st.form_submit_button("Halt new entries")
-        if submitted:
-            if confirmation != "HALT" or not reason.strip():
-                st.text("Type HALT and provide a reason.")
-            else:
-                try:
-                    halt_id = request_manual_halt(
-                        path, display(reason), actor, now or datetime.now(UTC)
-                    )
-                except (ValueError, RuntimeError) as exc:
-                    st.text(display(exc))
-                else:
-                    st.text(f"Manual halt recorded: {halt_id}")
+        _overview(st, view, root, source)
+    elif page == "Operations":
+        _operations(st, view, path, now)
+    else:
+        _section(st, view.sections[page])
 
 
 def main() -> None:

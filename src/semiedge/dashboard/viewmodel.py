@@ -12,6 +12,7 @@ from typing import Any, Literal
 import pandas as pd
 
 from semiedge.backtest.results import BacktestResult
+from semiedge.dashboard.format import cell
 from semiedge.data.calendar import TradingCalendar
 from semiedge.reporting import SYNTHETIC_BANNER
 from semiedge.security.untrusted import UntrustedText
@@ -42,6 +43,7 @@ class DashboardView:
     source: str
     mode: str
     sections: dict[str, Any]
+    last_run: tuple[str, str] = ("unavailable: no recorded run", "unavailable: no recorded run")
 
 
 def heartbeat_freshness(detail: str, age: float) -> str:
@@ -112,6 +114,13 @@ def load_view(path: Path, *, source: Source, now: datetime) -> DashboardView:
                 if order.intent.symbol == position.symbol and order.status not in TERMINAL_STATUSES
             ] or "unavailable: no protection order recorded"
             positions.append(row)
+        last_run = ("unavailable: no recorded run", "unavailable: no recorded run")
+        if runs:
+            latest = runs[0]
+            last_run = (
+                f"{latest['kind']}, {latest['status']}",
+                str(cell("ts", latest["started_at"])),
+            )
         return DashboardView(
             actual,
             mode,
@@ -136,6 +145,7 @@ def load_view(path: Path, *, source: Source, now: datetime) -> DashboardView:
                     "outbox_errors": _records(store.outbox_errors(100)),
                 },
             },
+            last_run,
         )
     finally:
         store.close()
