@@ -75,11 +75,11 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T6 | #16 | Performance metrics, SMH/QQQ benchmark comparison | codex | REVIEW (PR #81: Claude re-review PASS at c613da9; **blocked: GitHub Actions billing, CI cannot run**) | T5 |
 | T7 | #17 | Walk-forward + parameter sensitivity | claude | READY | T5, T6 |
 | T8 | #19 | Deterministic independent risk manager (exposure incl. pending, halts) | claude | DONE (PR #69, merged f79a496; Codex PASS a87d30c) | T2 |
-| T9 | #21 | Paper order lifecycle: idempotent client IDs, partial fills, brackets | claude | IN PROGRESS: part 1 state store DONE (PR #78, merged 5a378da); part 2 gateway/client IDs/OrderManager READY | T3, T8 |
+| T9 | #21 | Paper order lifecycle: idempotent client IDs, partial fills, brackets | claude | IN PROGRESS (claude): part 1 DONE (#78); part 2 gateway/client IDs/OrderManager `feature/21-order-lifecycle` | T3, T8 |
 | T10 | #22 | Broker reconciliation + restart recovery | codex | READY | T9 |
 | T11 | #23 | Position management, stop/target, time exits | claude | READY | T9 |
 | T12 | #24 | Exchange-calendar scheduler / trading loop | codex | READY | T9, T10, T11 |
-| T13 | #25 | Streamlit dashboard (dark theme) | codex | READY | T4 |
+| T13 | #25 | Streamlit dashboard (dark theme) | codex | IN PROGRESS (codex via lead-run `codex exec`) `feature/25-trading-dashboard`, worktree `codex-dashboard-25`: interactive Codex, don't start it | T4 |
 | T14 | #26 | Discord notifications | codex | READY | T12 |
 | T15 | #27 | Docker / compose, health checks, graceful shutdown | claude | READY | T12 |
 | T16 | #29 | Security: secret handling, redaction, prompt-injection tests | codex | IN PROGRESS: core merged (PR #67, f0b093d); follow-ups #74; §13 e2e test open | T4 |
@@ -330,3 +330,6 @@ on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest
 
 - 2026-11-13 12:15 UTC · claude · Overnight report emailed to the owner and posted to Discord. Owner asks: H3 (Actions billing), merge restricted #73/#53/#66,
   #20 earnings source, and the #1 criterion decision. Merges are paused until CI runs again.
+
+- 2026-11-13 12:20 UTC · claude · While CI is blocked (H3), work continues on unblocked tasks with local validation as the gate. Claude: T9 part 2 (#21). `codex exec`:
+  T13 (#25) Streamlit trading dashboard (read-only state, manual-halt request only). Nothing merges until CI is back.
