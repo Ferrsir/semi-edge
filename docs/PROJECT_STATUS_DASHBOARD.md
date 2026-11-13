@@ -10,7 +10,7 @@ It shows the current phase, roadmap, board items by status and owner, dependency
 
 Reviewed source is under `project-status/`. The canonical hosted source has its own private Sites repository and can be opened through the Sites source workflow in a separate checkout. Preserve the Site ID in `.openai/hosting.json`.
 
-The dashboard uses an explicit snapshot from AGENTS.md and GitHub; it is not automatically synchronized. Reloading the page does not refresh project metadata. Its checked-at timestamp and stale-snapshot notice make this visible. No GitHub token or other credential is shipped to the browser.
+The dashboard uses an explicit snapshot from BOARD.md and GitHub; it is not automatically synchronized. Reloading the page does not refresh project metadata. Its checked-at timestamp and stale-snapshot notice make this visible. No GitHub token or other credential is shipped to the browser.
 
 To refresh the versioned source from a current project checkout:
 
@@ -27,4 +27,4 @@ The supplied Claude artifact link could not be fetched. Content instead uses the
 
 DOM interaction tests cover navigation, search/filtering, task dialogs, review counts, inert rendering of untrusted strings, browser checklist persistence and snapshot-help text. No visual browser layout verification was available in this session.
 
-The refresh parser refuses unknown board IDs/statuses and truncated metadata; a failed refresh preserves the previous snapshot. Review notes are read from AGENTS.md Review queue, while current phase and owner blockers are computed from tasks. Roadmap placeholders are labeled and derive issue state from GitHub. Both Python snapshot regression tests and JavaScript DOM tests are required CI checks; the refresh script is included in strict mypy.
+The refresh parser refuses unknown board IDs/statuses and truncated metadata; a failed refresh preserves the previous snapshot. Review notes are read from the BOARD.md Review queue, while current phase and owner blockers are computed from tasks. Roadmap placeholders are labeled and derive issue state from GitHub. Both Python snapshot regression tests and JavaScript DOM tests are required CI checks; the refresh script is included in strict mypy.

@@ -156,7 +156,7 @@ def build_snapshot(
         "schema_version": 2,
         "checked_at": checked_at.isoformat(),
         "repo": "Ferrsir/semi-edge",
-        "source": "AGENTS.md Board + Review queue; GitHub issues and PRs",
+        "source": "BOARD.md Board + Review queue; GitHub issues and PRs",
         "artifact_accessible": False,
         "tasks": tasks,
         "issues": issues,
@@ -182,7 +182,10 @@ def refresh_snapshot(repo: Path, destination: Path) -> dict[str, Any]:
     gh = shutil.which("gh")
     if gh is None:
         raise SnapshotError("GitHub CLI gh must be installed and on PATH")
-    board = (repo / "AGENTS.md").read_text(encoding="utf-8")
+    board_path = repo / "BOARD.md"
+    if not board_path.is_file():
+        raise SnapshotError(f"board file {board_path} is missing; the board lives in BOARD.md")
+    board = board_path.read_text(encoding="utf-8")
     issues = read_github(
         gh,
         repo,

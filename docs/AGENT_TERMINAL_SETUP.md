@@ -1,8 +1,8 @@
 # Running Claude Code and Codex on SEMI-EDGE (Windows terminal)
 
-Both agents work from the same repository and the same rules file, `AGENTS.md`. Codex reads
-`AGENTS.md` by itself; Claude Code reads `CLAUDE.md`, which imports `AGENTS.md`. Edit the rules in
-`AGENTS.md` only.
+Both agents work from the same repository, the same rules file, `AGENTS.md`, and the same status
+file, `BOARD.md`. Codex reads `AGENTS.md` by itself and is told there to read `BOARD.md`; Claude Code
+reads `CLAUDE.md`, which imports both. Edit the rules in `AGENTS.md` only.
 
 All commands are for **PowerShell** in Windows Terminal unless marked otherwise.
 
@@ -111,7 +111,7 @@ cd C:\Users\ferri\projects\semi-edge.worktrees\signals
 claude
 ```
 
-Good first prompt: `Read AGENTS.md, then refresh GitHub state with gh and tell me what's open.`
+Good first prompt: `Read AGENTS.md and BOARD.md, then refresh GitHub state with gh and tell me what's open.`
 Useful commands inside Claude Code: `/memory` (shows that CLAUDE.md + AGENTS.md loaded),
 `/permissions`, `/plugin`, `/clear`. Shift+Tab cycles permission modes; stay in the default
 "ask" mode for anything touching `src/semiedge/safety/**` or `config/risk.yaml`.
@@ -136,7 +136,7 @@ asking, and `/review` reviews the current diff.
      ..\semi-edge.worktrees\review-NN origin/<branch>`.)
    - Codex PR → same prompt in the Claude tab.
 3. Fixes go back to the author's worktree. Merge only when CI is green and the review is PASS.
-4. Both agents write status to the `AGENTS.md` board and discussion log, so a fresh session in
+4. Both agents write status to the `BOARD.md` board and discussion log, so a fresh session in
    either tool can pick up where the other stopped. When an agent hits a usage limit it commits
    WIP, pushes, and writes a `Handoff:` line.
 
