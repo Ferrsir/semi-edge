@@ -71,13 +71,13 @@ def test_roundtrip_preserves_contract_and_provenance(store, bars):
 
 def test_no_temporary_files_left_after_write(store, bars):
     path = _write(store, bars)
-    _write(store, bars.iloc[3:], T1)
+    _write(store, bars, T1)
     assert sorted(p.name for p in path.parent.iterdir()) == ["A.parquet"]
 
 
 def test_newer_fetch_wins_and_warns(store, bars, caplog):
     _write(store, bars)
-    corrected = bars.iloc[-2:].copy()
+    corrected = bars.copy()
     corrected.loc[corrected.index[-1], "high"] += 0.5
     with caplog.at_level(logging.WARNING, logger="semiedge.data.store"):
         _write(store, corrected, T1)
@@ -91,7 +91,7 @@ def test_newer_fetch_wins_and_warns(store, bars, caplog):
 def test_identical_refetch_does_not_warn(store, bars, caplog):
     _write(store, bars)
     with caplog.at_level(logging.WARNING, logger="semiedge.data.store"):
-        _write(store, bars.iloc[-3:], T1)
+        _write(store, bars, T1)
     assert "OHLCV correction" not in caplog.text
 
 
@@ -261,7 +261,9 @@ def test_backfill_checks_latest_shared_session(store, bars):
     # The stored 2024-11-22 row is newer than the backfill, so it is retained and anchors itself.
     with pytest.raises(ValueError, match="adjustment basis changed at 2024-11-22"):
         _write(store, rebased, T0)
-    _write(store, bars.iloc[:6], T0)  # same basis: backfill merges
+    with pytest.raises(ValueError, match="full stored range"):
+        _write(store, bars.iloc[:6], T0)  # absent retained sessions are unverified
+    _write(store, bars, T0)  # complete incoming coverage resolves the uncertainty
     stored = _read(store)
     assert stored is not None
     pd.testing.assert_frame_equal(stored.frame, bars)
@@ -276,7 +278,8 @@ def test_interior_gap_in_rebased_refetch_rejected(
     rebased["close"] = rebased["close"] / 10.0  # vendor restated history after a split
     with pytest.raises(ValueError, match="adjustment basis changed at 2024-11-20"):
         _write(store, rebased, T1)
-    _write(store, bars.drop(pd.Timestamp("2024-11-21")), T1)  # same basis: stored row kept
+    with pytest.raises(ValueError, match="full stored range"):
+        _write(store, bars.drop(pd.Timestamp("2024-11-21")), T1)
     stored = _read(store)
     assert stored is not None
     pd.testing.assert_frame_equal(stored.frame, bars)
@@ -320,7 +323,10 @@ def test_newer_stored_row_cannot_splice_bases_with_older_refetch(store: ParquetB
     """F-024: a stored row kept by a newer fetched_at is anchored like any retained row."""
     bars = _two_sessions()
     _write(store, bars, _at(4))
-    _write(store, bars.iloc[1:], _at(6))  # Jan 3 now has a newer fetch time than Jan 2
+    _corrupt(
+        store._path("A", DataFeed.SIP, Adjustment.SPLIT),
+        lambda raw: raw.assign(fetched_at=[_at(4), _at(6)]),
+    )  # seed legacy per-row fetch metadata without accepting a partial adjusted write
     with pytest.raises(ValueError, match="adjustment basis changed at 2024-01-03"):
         _write(store, _rebased(bars, 10.0), _at(5))  # older than Jan 3's stored fetch
     stored = _read(store)
@@ -331,7 +337,10 @@ def test_newer_stored_row_cannot_splice_bases_with_older_refetch(store: ParquetB
 def test_same_basis_out_of_order_refetch_is_accepted(store: ParquetBarStore) -> None:
     bars = _two_sessions()
     _write(store, bars, _at(4))
-    _write(store, bars.iloc[1:], _at(6))
+    _corrupt(
+        store._path("A", DataFeed.SIP, Adjustment.SPLIT),
+        lambda raw: raw.assign(fetched_at=[_at(4), _at(6)]),
+    )
     _write(store, bars, _at(5))  # older than one stored row, same basis: harmless
     stored = _read(store)
     assert stored is not None
