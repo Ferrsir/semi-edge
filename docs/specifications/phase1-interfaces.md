@@ -291,8 +291,9 @@ Implementation rules (#14):
 - Dates are `YYYY-MM-DD` only. `scan --as-of` and `data fetch --end` must be XNYS sessions no later
   than the last completed session (`TradingCalendar.last_completed_session` with
   `data.bar_settle_minutes`); a future or in-progress session exits 2. Defaults use that session.
-- Every command loads and validates env + YAML first. Validation failures exit 2 with a fixed
-  message that never echoes input. `diagnostics` (offline dashboard) is retained.
+- Every command except `version` loads and validates env + YAML first. Validation failures exit 2
+  with a fixed message that never echoes input. `scan --as-of` also needs the strategy's required
+  history of calendar sessions before it (exit 2). `diagnostics` (offline dashboard) is retained.
 - `scan --source synthetic` generates bars in memory and never writes them to any bar cache.
   `scan --source cache` reads the configured feed/adjustment from `{data_dir}`. It exits 4 if a
   series is synthetic, unreadable or tampered, or if the series come from more than one
@@ -300,8 +301,11 @@ Implementation rules (#14):
 - A report whose regime benchmark is not actionable is still rendered and persisted (so the reasons
   are visible) and the command exits 4. `--output` and the persisted JSON use exclusive creation and
   never overwrite.
-- `data fetch` accepts only configured universe symbols, validates arguments before creating any
-  source, refuses bars after `--end` (exit 4) and exits 4 if any symbol returned no bars.
+- `data fetch` accepts only configured universe symbols and validates arguments before creating any
+  source. It checks every returned frame before writing any: bars after `--end` mean exit 4 with
+  nothing stored. It exits 4 if any symbol returned no bars. `data status` timestamps are UTC.
+- `--output` is created (exclusively) before the report is persisted, so a taken path leaves no
+  persisted report.
 - `account` uses only `create_paper_trading_client` and `fetch_account_snapshot`. Broker failures
   exit 4 with the sanitised `BrokerError` text. Output shows the masked account number only.
 - Entry reference for proposed sizes is the signal-session close (`docs/specifications/momentum_v1.md`);

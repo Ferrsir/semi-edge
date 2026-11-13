@@ -149,6 +149,10 @@ def build_signal_report(
     regime = config.universe.regime_benchmark
     tradable = config.universe.tradable_symbols
     lookback = params.required_history()
+    try:
+        window = tuple(calendar.sessions_window(as_of, lookback))
+    except ValueError:
+        raise ReportDataError(f"as_of needs {lookback} sessions of calendar history") from None
     quality: dict[str, DataQualityReport] = {}
     for symbol in (*tradable, regime):
         frame = bars.get(symbol)
@@ -158,7 +162,7 @@ def build_signal_report(
                 as_of,
                 None,
                 False,
-                tuple(calendar.sessions_window(as_of, lookback)),
+                window,
                 feed,
                 ("no bars available",),
             )
@@ -495,7 +499,8 @@ def report_path(report: SignalReport, data_dir: Path) -> Path:
 def persist_report(report: SignalReport, data_dir: Path) -> Path:
     """Write the JSON report with exclusive creation (never overwrites); return its path."""
     path = report_path(report, data_dir)
+    text = render_json(report)  # rendered first: a rendering error leaves no empty file behind
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("x", encoding="utf-8") as output:
-        output.write(render_json(report))
+        output.write(text)
     return path

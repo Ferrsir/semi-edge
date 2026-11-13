@@ -353,3 +353,65 @@ def test_config_check_masks_credentials(
 def test_version(capsys: pytest.CaptureFixture[str]) -> None:
     assert cli.main(["version"]) == 0
     assert capsys.readouterr().out.startswith("semiedge ")
+
+
+# ------------------------------------------------------------------ pre-screen regressions
+
+
+@pytest.mark.parametrize("source", ["synthetic", "cache"])
+def test_as_of_without_enough_calendar_history_exits_2(
+    config_dir: Path, data_dir: Path, capsys: pytest.CaptureFixture[str], source: str
+) -> None:
+    # 1990-03-01 is a completed XNYS session, but the calendar starts 1990-01-02: fewer
+    # sessions than the strategy's required history exist before it.
+    assert _run(["scan", "--source", source, "--as-of", "1990-03-01"], config_dir) == 2
+    assert "sessions of calendar history" in capsys.readouterr().err
+    assert not data_dir.exists() or not any(data_dir.rglob("*.json"))
+
+
+def test_existing_output_path_leaves_no_persisted_report(
+    config_dir: Path, data_dir: Path, tmp_path: Path
+) -> None:
+    output = tmp_path / "taken.txt"
+    output.write_text("keep me", encoding="utf-8")
+    assert _run(["scan", "--source", "synthetic", "--output", str(output)], config_dir) == 2
+    assert output.read_text(encoding="utf-8") == "keep me"
+    assert _saved(data_dir, "synthetic") == []
+
+
+class _OnePastEnd(FakeMarketData):
+    """NVDA ends at the requested end; AMD has one extra session after it."""
+
+    def get_daily_bars(
+        self, symbols: Sequence[str], start: date, end: date
+    ) -> dict[str, pd.DataFrame]:
+        frames = SyntheticMarketDataSource().get_daily_bars(["NVDA"], start, end)
+        later = TradingCalendar().next_session(end)
+        frames.update(SyntheticMarketDataSource().get_daily_bars(["AMD"], start, later))
+        return frames
+
+
+def test_fetch_stores_nothing_when_any_symbol_is_refused(
+    config_dir: Path, data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli, "market_data_source", lambda settings, config: _OnePastEnd())
+    args = ["data", "fetch", "--symbols", "NVDA", "AMD", "--start", "2024-01-02"]
+    assert _run([*args, "--end", "2024-06-27"], config_dir) == cli.EXIT_DATA
+    assert not (data_dir / "raw").exists()
+
+
+def test_status_timestamps_are_utc(
+    config_dir: Path, data_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _fill_cache(data_dir, ["NVDA"])
+    assert _run(["data", "status"], config_dir) == 0
+    [series] = json.loads(capsys.readouterr().out)["series"]
+    assert series["last_fetched_at"] == NOW.isoformat()
+
+
+def test_version_needs_no_configuration(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("TRADING_MODE", "not-a-mode")
+    assert cli.main(["version"]) == 0  # documented exception to "validate config first"
+    assert capsys.readouterr().out.startswith("semiedge ")

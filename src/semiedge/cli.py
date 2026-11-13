@@ -318,7 +318,14 @@ def _cmd_data_fetch(args: argparse.Namespace) -> int:
     start = args.start or config.data.history_start
     if start > end:
         raise CommandError(EXIT_CONFIG, "--start must not be after --end")
-    source = market_data_source(settings, config)
+    try:
+        source = market_data_source(settings, config)
+    except (MissingCredentialsError, SafetyViolation):
+        raise
+    except Exception as exc:  # sanitised: SDK constructor errors may carry key material
+        raise CommandError(
+            EXIT_DATA, f"Cannot create the market data client ({type(exc).__name__})."
+        ) from None
     try:
         frames = source.get_daily_bars(symbols, start, end)
     except MarketDataError:
@@ -327,6 +334,12 @@ def _cmd_data_fetch(args: argparse.Namespace) -> int:
         raise CommandError(
             EXIT_DATA, f"Market data request failed ({type(exc).__name__}); nothing was stored."
         ) from None
+    for symbol in symbols:  # validate every frame before writing any, so a refusal stores nothing
+        frame = frames.get(symbol)
+        if frame is not None and len(frame) and frame.index[-1].date() > end:
+            raise CommandError(
+                EXIT_DATA, f"Refused {symbol}: bars after --end {end}; nothing was stored."
+            )
     store = ParquetBarStore(settings.data_dir)
     stored: dict[str, dict[str, object]] = {}
     for symbol in symbols:
@@ -334,8 +347,6 @@ def _cmd_data_fetch(args: argparse.Namespace) -> int:
         if frame is None or frame.empty:
             stored[symbol] = {"rows": 0, "first_session": None, "last_session": None}
             continue
-        if frame.index[-1].date() > end:  # fail closed: a vendor must not hand back later bars
-            raise CommandError(EXIT_DATA, f"Refused to store {symbol}: bars after --end {end}")
         try:
             store.write(
                 symbol,
@@ -369,6 +380,13 @@ def _cmd_data_fetch(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _utc_iso(value: object) -> str:
+    stamp = pd.Timestamp(value)  # type: ignore[arg-type]
+    if stamp.tzinfo is None:  # the store only holds tz-aware fetch times
+        raise CommandError(EXIT_DATA, "The bar cache holds a fetch time without a time zone.")
+    return stamp.tz_convert("UTC").isoformat()
+
+
 def _cmd_data_status(args: argparse.Namespace) -> int:
     settings, config, _ = _load(args)
     calendar = TradingCalendar(config.data.calendar)
@@ -391,7 +409,7 @@ def _cmd_data_status(args: argparse.Namespace) -> int:
                 "first_session": pd.Timestamp(row["first_session"]).date().isoformat(),
                 "last_session": last_session.isoformat(),
                 "rows": int(row["rows"]),
-                "last_fetched_at": pd.Timestamp(row["last_fetched_at"]).isoformat(),
+                "last_fetched_at": _utc_iso(row["last_fetched_at"]),
                 "fresh": last_session == last,
             }
         )
@@ -468,6 +486,13 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     calendar = TradingCalendar(config.data.calendar)
     now = utcnow()
     as_of = _completed_session(calendar, config, args.as_of, now, "--as-of")
+    required = config.strategy.required_history()
+    try:
+        calendar.sessions_window(as_of, required)
+    except ValueError:  # the window would start before the calendar's first session
+        raise CommandError(
+            EXIT_CONFIG, f"--as-of needs at least {required} sessions of calendar history"
+        ) from None
     symbols = (*config.universe.tradable_symbols, config.universe.regime_benchmark)
     if args.source == "synthetic":
         bars, provenance = _synthetic_bars(symbols, calendar, as_of, config)
@@ -502,14 +527,16 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     except ReportDataError as exc:
         raise CommandError(EXIT_DATA, f"Cannot build a trustworthy report: {exc}") from None
     rendered = _RENDERERS[args.format](report)
+    if args.output:  # claimed first, so a taken path never leaves an orphan persisted report
+        _write_new(args.output, rendered)
     try:
         saved = persist_report(report, settings.data_dir)
     except OSError:
+        if args.output:
+            args.output.unlink(missing_ok=True)
         raise CommandError(
             EXIT_CONFIG, "Cannot persist the report under the configured data directory."
         ) from None
-    if args.output:
-        _write_new(args.output, rendered)
     sys.stdout.write(rendered)
     sys.stderr.write(f"Report saved: {saved}\n")
     if not report.regime_actionable:
