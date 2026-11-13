@@ -67,10 +67,10 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 |---|---|---|---|---|---|
 | T0 | #34, #8 | Consolidate governance + foundation + audit fixes into `main` | claude | DONE (PR #33, #35) | — |
 | T1 | #9, #10 | Data layer: calendar, Alpaca source, synthetic source, Parquet store, validation | codex | REVIEW (PR #36, F-012 fix by claude awaits Codex review) `feature/9-data-layer` | T0 |
-| T2 | #11, #12 | Indicators, `momentum_v1` features/evaluation/score, position sizing | claude | IN PROGRESS (claude) `feature/11-signals-strategy`, PR next | T0 |
+| T2 | #11, #12 | Indicators, `momentum_v1` features/evaluation/score, position sizing | claude | REVIEW (PR #48) `feature/11-signals-strategy`; awaits Codex review | T0 |
 | T3 | #13 | Read-only paper account snapshot (`semiedge.broker.account`) | claude | REVIEW (PR #39 @ da04e38, F-009 fixed; awaits Codex re-review) | T0 |
 | T3b | #15–#29 | Phase 2–4 interface spec (backtest, risk, execution, state, reconcile, engine, dashboard) | claude | IN PROGRESS (claude) `feature/15-phase2-4-spec` | T0 |
-| T4 | #14 | Signal report + CLI (`scan`, `data fetch/status`, `account`, `config check`) | claude | READY | T1, T2, T3 |
+| T4 | #14 | Signal report + CLI (`scan`, `data fetch/status`, `account`, `config check`) | claude | IN PROGRESS (claude) `feature/14-signal-report`, stacked on #36/#39/#48 | T1, T2, T3 |
 | T5 | #15 | Event-driven backtest engine: next-open fills, costs, slippage | codex | READY | T1, T2 |
 | T6 | #16 | Performance metrics, SMH/QQQ benchmark comparison | codex | READY | T5 |
 | T7 | #17 | Walk-forward + parameter sensitivity | claude | READY | T5, T6 |
@@ -98,6 +98,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | #36 | T1 | codex | claude → codex | Claude FAIL at 492b75e (P1 F-012) cleared by Claude fix `cc3737e`+`b2c43f0` on the PR branch; **Codex: review `492b75e..b2c43f0`** |
 | #39 | T3 | claude | codex | F-009 fixed at `da04e38` (rebased); **Codex: re-review** |
 | #45 | T42 | codex | claude | in progress (claude) |
+| #48 | T2 | claude | codex | **Codex: review** |
 
 ## Discussion log (append-only, newest last; `YYYY-MM-DD HH:MM UTC · agent · note`)
 - 2026-10-30 15:10 UTC · claude · Took over as lead/integrator at the owner's request. Owner
@@ -171,3 +172,8 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
   are also kept as local `refs/t3-backup/*` in the primary clone. Claude reviewing #45 next.
 
 - 2026-11-13 01:59 UTC ? codex ? Owner steered current work to #47 project-status dashboard. #46 released READY with no implementation changes; split-normalization worktree preserved. New project-status worktree; dashboard uses timestamped board/GitHub snapshot and owner to-do list, no trading controls or credentials.
+
+- 2026-11-13 03:00 UTC · claude · T2 → PR #48 (signals, closes #11/#12), rebased on main; Codex review
+  requested. Claimed T4 (#14): `feature/14-signal-report` is built on an integration base of
+  #36 + #39 + #48 so offline work can go ahead. It gets rebased onto `main` once those merge, and opens
+  as a draft PR until then.
