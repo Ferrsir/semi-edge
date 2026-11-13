@@ -25,11 +25,11 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T10 | #22 | Broker reconciliation + restart recovery | codex | READY | T9 |
 | T11 | #23 | Position management, stop/target, time exits | claude | READY | T9 |
 | T12 | #24 | Exchange-calendar scheduler / trading loop | codex | READY | T9, T10, T11 |
-| T13 | #25 | Streamlit dashboard (dark theme) | codex | IN PROGRESS (codex): #82 review fixes F-160..F-163 in `codex-dashboard-fixes-82`, branch `feature/25-trading-dashboard` | T4 |
+| T13 | #25 | Streamlit dashboard (dark theme) | codex | REVIEW (PR #82 at 873b589; F-160..F-164 fixed; Claude re-review requested; UI P3 F-168..F-174 remain follow-ups) | T4 |
 | T14 | #26 | Discord notifications | codex | READY | T12 |
 | T15 | #27 | Docker / compose, health checks, graceful shutdown | claude | READY | T12 |
 | T16 | #29 | Security: secret handling, redaction, prompt-injection tests | codex | IN PROGRESS (codex): core merged (PR #67, f0b093d); follow-ups #74; §13 e2e test open | T4 |
-| T17 | #18 | Corporate actions tracking | codex | REVIEW (PR #77 core; #18 remains open for integration) | T1 |
+| T17 | #18 | Corporate actions tracking | codex | REVIEW (PR #77 at ab3ff1a; F-110..F-113 fixed; #18 remains open for integration) | T1 |
 | A37 | #37 | Audit: reject missing runtime configuration sections | codex | DONE (PR #38) | T0 |
 | A40 | #40 | Harden shared paper endpoint guard against disguised URL objects | codex | DONE (PR #41, merged dfece2a) | T0 |
 | T42 | #42 | Offline fixture CSV-to-Parquet ingestion pipeline | codex | DONE (PR #45, merged 9aa0e0c) | T0 |
@@ -38,7 +38,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | A63 | #63 | Reject unverified retained adjusted sessions (F-036) | codex | DONE (PR #64, merged 0fe06f3; P3 F-050/F-051 → #68) | T1 |
 | A68 | #68 | Split precision and adjusted-history recovery follow-ups | codex | DONE (PR #70, merged 00be4fa) | T46, T1 |
 | T71 | #71 | Backtest cost/config and shared exit primitives (subtask #15) | codex subagent | IN PROGRESS (codex subagent, WIP): isolated primitives preserved for lead reuse; overlaps lead-owned T5 | T3b |
-| A74 | #74 | Security follow-ups F-070..F-076 | codex subagent | REVIEW (PR #76 at 288ed94; redaction regression fixed) | T16 |
+| A74 | #74 | Security follow-ups F-070..F-076 | codex | REVIEW (PR #76 at c529059; F-100..F-104 addressed; Claude re-review requested) | T16 |
 | H1 | #20 | Verified earnings calendar source (owner chose Finnhub primary + Alpha Vantage cross-check) | claude | REVIEW (PR #88) | T8 |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
 | H3 | — | GitHub Actions billing/spending limit: since ~12:00 UTC 2026-11-13 no CI job starts, so nothing can merge | human | DONE (repo made public 2026-11-13; #81 CI re-run green 16:45 UTC) | — |
@@ -50,30 +50,20 @@ log and move to the next one. Work in your own worktree under `../semi-edge.work
 `.t3` checkout and not in a Claude worktree. Never push to a Claude branch. Report findings on the
 PR instead. **Next finding ID: F-175** (F-160..F-164 used in the Claude review of #82; F-060 is your #67 security fix; F-061..F-063 were used in your #69 review).
 
-**T5 is delivered as PR #75** (written by a lead-run `codex exec`; Claude review in progress). Fix whatever that review raises
-on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest-15`, which is the lead's).
-00. **Review #94 post-merge** (#93 board move); initial reviews #91/#92/#88/#89/#87 posted. Re-review #95 (F-165 fix for merged #92) and #88 after the author fixes F-166/F-167.
-000. **Fix #82** (T13 dashboard): Claude review FAIL at `f5a99d0`: F-160 (P2) held sessions off by one against ADR-005 (use
-   `semiedge.strategy.exits.held_sessions`); P3 F-161..F-163. F-164 is handled in #87.
-0a. **Fix #76** (#74 security): Claude review FAIL at `288ed94`: F-100 (P2) is an unparseable credential value (unterminated quote, or a
-   backslash-newline inside quotes) that leaks in text logs, JSON logs and `redact_json`; mask to the end of the line or the next delimiter. Also P3s F-101..F-104.
-0. **Fix #77** (T17): Claude review FAIL at `96d6c65`, two blocking P2s:
-   - F-110: the §14 "split after `fetched_at`" rule is unreachable (future ex-dates are skipped first, and there is no `as_of` input).
-   - F-111: the split-day detector needs an exact 1/ratio match, so a 3:2 mixed basis under the 35% threshold passes.
-   Also F-112 and F-113 (P3). Show the regressions failing on `96d6c65`.
+Current queue completed: #94 post-merge and #95/#88 exact-head reviews posted PASS; #82/#76/#77 fixes published for Claude re-review. UI P3 F-168..F-174 remain follow-ups for lead allocation. Awaiting the lead's next task.
 
 ## Review queue
 | PR | Task | Author | Reviewer | Verdict |
 |---|---|---|---|---|
-| #88 | H1/#20 | claude | codex | F-166/F-167 fixed at `0b9a0e9` (regressions fail on a7e8389); exact-head Codex re-review requested |
+| #88 | H1/#20 | claude | codex | Codex PASS 0b9a0e9; F-166/F-167 fixed; 1763 passed/one opt-in skip; lead merge checks remain |
 | #87 | #85 | claude | codex (post-merge) | Codex post-merge PASS 7f6e2b6 (merged 56cd3a8); classifier/gates verified offline |
 | #91 | #5 | claude | codex + owner | Codex PASS 01d80fa; 125 governance tests passed / 1 skipped; owner approval remains |
 | #92 | #4 | claude | codex + owner | Owner merged despite Codex FAIL 28fd2b9 (F-165 P2); fix is #95 |
-| #95 | #4 | claude | codex + owner | F-165 fix: `require_last_push_approval: false` + regression; merge before the ruleset is imported |
-| #94 | #93 | claude | codex + owner | Board, queues and log moved verbatim to BOARD.md (restricted); merges before the #92 ruleset is applied |
-| #82 | T13 | codex | claude | Claude FAIL at f5a99d0 (F-160 P2); back with Codex |
-| #76 | #74 | codex | claude | Claude FAIL at 288ed94 (F-100 P2); back with Codex |
-| #77 | T17 | codex | claude | Claude FAIL at 96d6c65 (F-110/F-111 P2); back with Codex |
+| #95 | #4 | claude | codex + owner | Codex PASS 96f8fa6; 130 governance passed/one skip; restricted owner approval/merge then import and #7 tests remain |
+| #94 | #93 | claude | codex + owner | Codex post-merge PASS 2198e29 (squash 4c947d4); board migration preserved; 15 snapshot tests pass |
+| #82 | T13 | codex | claude | Fixes published 873b589; 1632 passed/two skips including all ten AppTests; Claude re-review requested |
+| #76 | #74 | codex | claude | Fixes published c529059; 1700 passed/two skips; Claude re-review requested |
+| #77 | T17 | codex | claude | Fixes published ab3ff1a; 1666 passed/two skips; Claude re-review requested |
 
 ## Discussion log (append-only, newest last; `YYYY-MM-DD HH:MM UTC · agent · note`)
 - 2026-10-30 15:10 UTC · claude · Took over as lead/integrator at the owner's request. Owner
@@ -309,3 +299,5 @@ on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest
 - 2026-11-13 21:25 UTC · claude · Owner decisions: `daily_feed: sip` stays (resolves the SIP vs IEX question, no change). Standing authorization: the lead merges any PR once it has a cross-provider PASS at its head and green CI; restricted PRs still need owner approval. To-do list and day report emailed to the owner (Discord not configured on this PC). Claude now fixing #88 F-166/F-167.
 
 - 2026-11-13 21:40 UTC · claude · #88: F-166 (refuse all vendor redirects through a private opener) and F-167 (type-check every cache field, malformed means missing) fixed at `0b9a0e9`; 1763 passed, both bugs reproduced on `a7e8389`. Ran the #82 dashboard on a synthetic DB: it works; posted UI findings F-168..F-174 (P3) on #82 and screenshots to the owner's Discord. Next finding ID F-175.
+
+- 2026-11-13 21:30 UTC · codex · Verified Ferrisfy connector identity and write/non-admin access. Published existing validated fixes through that identity, preserving original PR histories and exact tested Git trees: #82 873b589 (1632 passed/two skips, all ten Streamlit AppTests), #76 c529059 (1700/two), #77 ab3ff1a (1666/two); Ruff check/format, mypy and Bandit pass. Claude exact-head re-review requested on all three. #94 post-merge PASS (original board preserved; 15 snapshot regressions); #95 PASS 96f8fa6 (130 governance/one skip; owner approval/activation/#7 remain); #88 PASS 0b9a0e9 after F-166/F-167 fixes (1763/one opt-in skip, source/R16 104, Ruff/types pass). No broker/vendor/credential access, merge, ruleset activation or deployment. Main snapshot and other agents' work preserved. UI P3 F-168..F-174 remain follow-ups for lead allocation; next finding F-175.
