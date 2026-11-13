@@ -8,9 +8,11 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from pydantic import BaseModel
 
 from semiedge.config.models import (
     AppConfig,
+    BacktestSettings,
     DataConfig,
     MomentumV1Params,
     RiskLimits,
@@ -89,3 +91,22 @@ def config_fingerprint(config: AppConfig) -> str:
     """Stable SHA-256 of the effective configuration, recorded with every run for audit."""
     canonical = json.dumps(config.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def load_backtest_settings(config_dir: Path) -> BacktestSettings:
+    """Load the required, strictly validated backtest configuration."""
+    try:
+        return BacktestSettings.model_validate(_read_yaml(config_dir / "backtest.yaml"))
+    except (ValueError, yaml.YAMLError, OSError) as exc:
+        raise ConfigError(str(exc)) from exc
+
+
+def run_fingerprint(app: AppConfig, *extra: BaseModel) -> str:
+    payload = {"app": app.model_dump(mode="json")}
+    for model in extra:
+        name = type(model).__name__
+        if name in payload:
+            raise ValueError(f"duplicate fingerprint model: {name}")
+        payload[name] = model.model_dump(mode="json")
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return hashlib.sha256(canonical.encode()).hexdigest()
