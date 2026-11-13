@@ -15,9 +15,11 @@ import json
 import math
 import re
 import secrets
+import shlex
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from html import escape
 from pathlib import Path
@@ -27,6 +29,7 @@ import pandas as pd
 from pydantic import ValidationError
 
 from semiedge import __version__
+from semiedge.backtest.engine import BacktestData, BacktestRequest, load_backtest_data, run_backtest
 from semiedge.broker.account import BrokerError, fetch_account_snapshot
 from semiedge.config import (
     AppConfig,
@@ -36,6 +39,7 @@ from semiedge.config import (
     config_fingerprint,
     load_app_config,
 )
+from semiedge.config.loader import load_backtest_settings, run_fingerprint
 from semiedge.data.alpaca_source import AlpacaMarketDataSource, MarketDataError
 from semiedge.data.calendar import TradingCalendar
 from semiedge.data.schema import DataFeed, DataSource
@@ -54,6 +58,7 @@ from semiedge.reporting import (
     render_table,
 )
 from semiedge.reporting.signal_report import EquitySource
+from semiedge.risk.manager import RiskManager, UnavailableEarningsCalendar
 from semiedge.safety.broker import create_paper_trading_client
 from semiedge.safety.modes import SafetyViolation
 
@@ -597,6 +602,77 @@ def _cmd_account(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _cmd_backtest(args: argparse.Namespace) -> int:
+    settings, config, _ = _load(args)
+    try:
+        backtest = load_backtest_settings(args.config_dir or settings.config_dir)
+    except (ConfigError, OSError):
+        raise CommandError(EXIT_CONFIG, _CONFIG_FAILED) from None
+    calendar = TradingCalendar(config.data.calendar)
+    try:
+        if args.source == "synthetic":
+            source = SyntheticMarketDataSource(calendar=calendar)
+            previous = calendar.previous_session(args.start)
+            first = calendar.sessions_window(previous, config.strategy.required_history())[0]
+            symbols = sorted(
+                {
+                    *config.universe.tradable_symbols,
+                    config.universe.regime_benchmark,
+                    *config.universe.comparison_benchmarks,
+                }
+            )
+            data = BacktestData(
+                source.get_daily_bars(symbols, first, args.end),
+                source.feed,
+                source.adjustment,
+                source.source,
+            )
+        else:
+            data = load_backtest_data(
+                ParquetBarStore(settings.data_dir),
+                config.universe,
+                config.data,
+                start=args.start,
+                end=args.end,
+                calendar=calendar,
+                corporate_actions=None,
+            )
+        gate = RiskManager(
+            config.risk,
+            calendar=calendar,
+            earnings=UnavailableEarningsCalendar(),
+            tradable_symbols=frozenset(config.universe.tradable_symbols),
+            earnings_waiver="backtest_unavailable"
+            if backtest.earnings_policy == "waive_unavailable"
+            else "none",
+        )
+        request = BacktestRequest(
+            args.start,
+            args.end,
+            config.universe,
+            config.strategy,
+            config.risk,
+            backtest,
+            config.data,
+            args.reproduce_command,
+        )
+        result = run_backtest(request, data, gate=gate, calendar=calendar)
+        result = replace(
+            result, git_sha=git_sha(), config_fingerprint=run_fingerprint(config, backtest)
+        )
+        # No output directory is created until the entire simulation succeeds.
+        if args.output is not None:
+            args.output.mkdir(parents=True, exist_ok=False)
+        path = result.save(args.output if args.output is not None else settings.data_dir)
+    except (ValueError, OSError, OverflowError):
+        raise CommandError(
+            EXIT_DATA, "Backtest failed: invalid or unavailable data/output."
+        ) from None
+    sys.stdout.write("\n".join(result.labels) + "\n")
+    sys.stdout.write(f"Command: {result.command}\nArtifact: {path}\n")
+    return EXIT_OK
+
+
 def build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--config-dir", type=Path, help="configuration directory")
@@ -643,6 +719,14 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser(
         "account", parents=[common], help="read-only PAPER account snapshot"
     ).set_defaults(handler=_cmd_account)
+    backtest = commands.add_parser("backtest", parents=[common], help="offline next-open backtest")
+    backtest.add_argument("--start", required=True, type=_iso_date)
+    backtest.add_argument("--end", required=True, type=_iso_date)
+    backtest.add_argument("--source", choices=("cache", "synthetic"), default="cache")
+    backtest.add_argument(
+        "--output", type=Path, help="new output directory (existing paths refused)"
+    )
+    backtest.set_defaults(handler=_cmd_backtest)
     return parser
 
 
@@ -658,6 +742,7 @@ def _utf8_streams() -> None:
 def main(argv: Sequence[str] | None = None) -> int:
     _utf8_streams()
     args = build_parser().parse_args(argv)
+    args.reproduce_command = shlex.join(["semiedge", *(sys.argv[1:] if argv is None else argv)])
     try:
         return int(args.handler(args))
     except CommandError as exc:

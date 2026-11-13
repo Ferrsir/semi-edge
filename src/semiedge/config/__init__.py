@@ -1,8 +1,16 @@
 """Configuration: YAML models (``models``), environment settings (``settings``), loading."""
 
-from semiedge.config.loader import ConfigError, config_fingerprint, load_app_config
+from semiedge.config.loader import (
+    ConfigError,
+    config_fingerprint,
+    load_app_config,
+    load_backtest_settings,
+    run_fingerprint,
+)
 from semiedge.config.models import (
     AppConfig,
+    BacktestSettings,
+    CostSettings,
     DataConfig,
     MomentumV1Params,
     RiskLimits,
@@ -22,7 +30,9 @@ __all__ = [
     "REQUIRED_ALPACA_ENV_VARS",
     "AppConfig",
     "AppSettings",
+    "BacktestSettings",
     "ConfigError",
+    "CostSettings",
     "DataConfig",
     "MissingCredentialsError",
     "MomentumV1Params",
@@ -34,4 +44,6 @@ __all__ = [
     "UniverseMember",
     "config_fingerprint",
     "load_app_config",
+    "load_backtest_settings",
+    "run_fingerprint",
 ]
