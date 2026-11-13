@@ -5,12 +5,15 @@ The risk manager is real; the calendar resolves real ``SourceSnapshot``s built i
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 
 import pytest
 
+from semiedge.clock import FrozenClock
 from semiedge.config.models import RiskLimits
 from semiedge.data.calendar import TradingCalendar
 from semiedge.data.earnings import (
@@ -22,6 +25,7 @@ from semiedge.data.earnings import (
     SourceSnapshot,
     resolve_earnings,
 )
+from semiedge.data.earnings_sources import EarningsProvider, EarningsProviderSettings
 from semiedge.risk import RiskManager
 from semiedge.risk.earnings import CrossCheckedEarningsCalendar
 from semiedge.risk.types import EntryProposal, PortfolioView
@@ -184,3 +188,60 @@ def test_unverified_result_never_carries_a_date() -> None:
         CrossCheckedEarningsCalendar(lambda s, d: truthy).next_earnings("AAA", SESSION).verified
         is False
     )
+
+
+# ------------------------------------------------------------------ F-167: cache -> risk manager
+
+
+def _cache_provider(tmp_path: Path, events: object) -> EarningsProvider:
+    """Both caches fresh and healthy except ``events``, loaded by the real provider."""
+    settings = EarningsProviderSettings(
+        lookahead_days=60,
+        min_forward_coverage_days=21,
+        max_age_hours=30,
+        max_attempts_per_day=3,
+        retry_interval_minutes=60,
+        request_timeout_seconds=5,
+        finnhub_min_interval_seconds=1.1,
+        override_max_age_days=14,
+    )
+    provider = EarningsProvider(
+        settings,
+        cache_dir=tmp_path / "earnings",
+        override_path=tmp_path / "earnings_overrides.yaml",
+        universe=("AAA",),
+        finnhub_api_key=None,
+        alphavantage_api_key=None,
+        clock=FrozenClock(NOW),
+    )
+    for source, symbols in ((FINNHUB, ["AAA"]), (ALPHAVANTAGE, None)):
+        path = provider.cache_path(source)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        raw = {
+            "schema_version": 1,
+            "source": source,
+            "fetched_at": (NOW - timedelta(hours=2)).isoformat(),
+            "coverage_start": SESSION.isoformat(),
+            "coverage_end": (SESSION + timedelta(days=60)).isoformat(),
+            "symbols": symbols,
+            "events": events,
+            "status": "ok",
+            "error": None,
+            "attempts": {},
+        }
+        path.write_text(json.dumps(raw), encoding="utf-8")
+    return provider
+
+
+@pytest.mark.parametrize("events", [{}, "", None, 0])
+def test_malformed_cache_events_reject_the_entry(tmp_path: Path, events: object) -> None:
+    calendar = CrossCheckedEarningsCalendar(_cache_provider(tmp_path, events).resolver())
+    decision = _decide(calendar)
+    assert decision.approved is False
+    assert "earnings_data_unavailable" in decision.reasons
+
+
+def test_well_formed_empty_cache_still_approves(tmp_path: Path) -> None:
+    """Control: the same files with ``events: []`` are a verified 'no report' and pass R16."""
+    calendar = CrossCheckedEarningsCalendar(_cache_provider(tmp_path, []).resolver())
+    assert _decide(calendar).approved is True

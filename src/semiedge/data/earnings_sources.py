@@ -26,6 +26,7 @@ from urllib.parse import urlencode
 
 from semiedge.clock import Clock
 from semiedge.data.earnings import (
+    _SYMBOL,
     ALPHAVANTAGE,
     FINNHUB,
     AlphaVantageParseError,
@@ -66,15 +67,49 @@ HttpGet = Callable[[str, Mapping[str, str], float], tuple[int, bytes]]
 """``(url, headers, timeout_seconds) -> (status, body)``; may raise on transport errors."""
 
 
+class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """Never follow a redirect (F-166).
+
+    urllib copies request headers onto the redirected request, so following a 3xx from a vendor
+    would send ``X-Finnhub-Token`` (or a query-string key) to whatever host the ``Location``
+    names, including a plain-http one. Returning ``None`` makes urllib raise ``HTTPError`` with
+    the 3xx status. :func:`urllib_get` turns that into ``(status, b"")`` and the provider into
+    the error code ``http_3xx``.
+    """
+
+    def redirect_request(  # noqa: PLR0917 - urllib calls this with six positional arguments
+        self,
+        req: urllib.request.Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        headers: Any,
+        newurl: str,
+    ) -> None:
+        return None
+
+
+def _build_opener(*handlers: urllib.request.BaseHandler) -> urllib.request.OpenerDirector:
+    """The default transport's opener; tests add a fake HTTPS handler through this same path."""
+    return urllib.request.build_opener(_RefuseRedirects, *handlers)
+
+
+_OPENER = _build_opener()
+
+
 def urllib_get(url: str, headers: Mapping[str, str], timeout: float) -> tuple[int, bytes]:
-    """Default HTTPS GET. Only the two fixed vendor hosts are ever passed in."""
+    """Default HTTPS GET to the two fixed vendor URLs only. Redirects are refused (F-166)."""
     if not (url.startswith(_FINNHUB_URL + "?") or url.startswith(_ALPHAVANTAGE_URL + "?")):
         raise ValueError("refusing an unexpected URL")
     request = urllib.request.Request(url, headers=dict(headers), method="GET")  # noqa: S310
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310  # nosec B310 - fixed https hosts checked above
+        with _OPENER.open(request, timeout=timeout) as response:
+            if (
+                response.geturl() != url
+            ):  # defence in depth: never accept a response from another URL
+                raise ValueError("refusing a redirected response")
             return int(response.status), response.read(_MAX_BODY + 1)
-    except urllib.error.HTTPError as exc:  # non-2xx: keep only the status code
+    except urllib.error.HTTPError as exc:  # non-2xx, including a refused 3xx: keep only the code
         return int(exc.code), b""
 
 
@@ -134,30 +169,72 @@ def _snapshot_to_json(snap: SourceSnapshot, attempts: Mapping[str, Any]) -> dict
     }
 
 
+_ATTEMPT_KEYS = frozenset({"date", "count", "last_attempt_at"})
+
+
+def _req(raw: Mapping[str, Any], key: str, kind: type | tuple[type, ...]) -> Any:
+    """Field ``key`` with exactly type ``kind``, never coerced (F-167). A bool is not an int."""
+    value = raw[key]
+    if isinstance(value, bool) and bool not in (kind if isinstance(kind, tuple) else (kind,)):
+        raise EarningsDataError(f"cache field {key} has the wrong type")
+    if not isinstance(value, kind):
+        raise EarningsDataError(f"cache field {key} has the wrong type")
+    return value
+
+
+def _symbol(value: Any) -> str:
+    if not isinstance(value, str) or not _SYMBOL.match(value):
+        raise EarningsDataError("cache holds an invalid symbol")
+    return value
+
+
+def _event_from_json(raw: Any) -> EarningsEvent:
+    if not isinstance(raw, dict) or set(raw) != {"symbol", "report_date", "hour"}:
+        raise EarningsDataError("cache event malformed")
+    hour = _req(raw, "hour", (str, type(None)))
+    return EarningsEvent(
+        _symbol(raw["symbol"]), date.fromisoformat(_req(raw, "report_date", str)), hour
+    )
+
+
+def _attempts_from_json(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        raise EarningsDataError("cache attempts missing")
+    if not raw:
+        return {}
+    if set(raw) != _ATTEMPT_KEYS:
+        raise EarningsDataError("cache attempts malformed")
+    date.fromisoformat(_req(raw, "date", str))
+    if _req(raw, "count", int) < 0:
+        raise EarningsDataError("cache attempt count negative")
+    last = datetime.fromisoformat(_req(raw, "last_attempt_at", str))
+    if last.tzinfo is None:
+        raise EarningsDataError("cache last_attempt_at must be timezone-aware")
+    return dict(raw)
+
+
 def _snapshot_from_json(raw: Any, source: SourceName) -> tuple[SourceSnapshot, dict[str, Any]]:
+    """Rebuild a snapshot from its cache file, rejecting every container or type mismatch (F-167).
+
+    A malformed field must make the cache count as missing, never as "verified, no report".
+    """
     if not isinstance(raw, dict) or raw.get("schema_version") != CACHE_SCHEMA_VERSION:
         raise EarningsDataError("cache schema mismatch")
     if raw.get("source") != source:
         raise EarningsDataError("cache source mismatch")
-    fetched = datetime.fromisoformat(raw["fetched_at"])
-    symbols = raw["symbols"]
+    symbols = _req(raw, "symbols", (list, type(None)))
+    events = _req(raw, "events", list)
     snap = SourceSnapshot(
         source=source,
-        fetched_at=fetched,
-        coverage_start=date.fromisoformat(raw["coverage_start"]),
-        coverage_end=date.fromisoformat(raw["coverage_end"]),
-        symbols=None if symbols is None else frozenset(str(s) for s in symbols),
-        events=tuple(
-            EarningsEvent(str(e["symbol"]), date.fromisoformat(e["report_date"]), e["hour"])
-            for e in raw["events"]
-        ),
-        status=raw["status"],
-        error=raw["error"],
+        fetched_at=datetime.fromisoformat(_req(raw, "fetched_at", str)),
+        coverage_start=date.fromisoformat(_req(raw, "coverage_start", str)),
+        coverage_end=date.fromisoformat(_req(raw, "coverage_end", str)),
+        symbols=None if symbols is None else frozenset(_symbol(s) for s in symbols),
+        events=tuple(_event_from_json(e) for e in events),
+        status=_req(raw, "status", str),
+        error=_req(raw, "error", (str, type(None))),
     )
-    attempts = raw.get("attempts")
-    if not isinstance(attempts, dict):
-        raise EarningsDataError("cache attempts missing")
-    return snap, attempts
+    return snap, _attempts_from_json(raw.get("attempts"))
 
 
 def load_snapshot(path: Path, source: SourceName) -> tuple[SourceSnapshot | None, dict[str, Any]]:

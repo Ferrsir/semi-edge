@@ -6,8 +6,12 @@ fixture bodies, and a guard fails the test if the default urllib transport is ev
 
 from __future__ import annotations
 
+import email.message
+import io
 import json
 import logging
+import socket
+import urllib.request
 from collections.abc import Mapping
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -45,6 +49,11 @@ def _no_real_transport(monkeypatch: pytest.MonkeyPatch) -> None:
         raise AssertionError("a test reached the real network transport")
 
     monkeypatch.setattr(earnings_sources.urllib.request, "urlopen", refuse)
+
+    class _RefusingOpener:
+        open = staticmethod(refuse)
+
+    monkeypatch.setattr(earnings_sources, "_OPENER", _RefusingOpener())
 
 
 class FakeHttp:
@@ -346,3 +355,141 @@ def test_empty_universe_is_refused(tmp_path: Path) -> None:
 def test_default_transport_refuses_other_urls() -> None:
     with pytest.raises(ValueError, match="unexpected URL"):
         earnings_sources.urllib_get("https://example.com/?x=1", {}, 1.0)
+
+
+def test_network_guard_covers_the_default_transport() -> None:
+    """The autouse guard must stop the real opener, or 'no network' tests would not mean much."""
+    with pytest.raises(AssertionError, match="real network transport"):
+        earnings_sources.urllib_get("https://finnhub.io/api/v1/calendar/earnings?x=1", {}, 1.0)
+
+
+# ------------------------------------------------------------------ F-166: redirects
+
+
+class _FakeVendorHTTPS(urllib.request.HTTPSHandler):
+    """Answers in-process through a real urllib opener; records (host, token) for every request."""
+
+    def __init__(self, status: int, location: str | None) -> None:
+        super().__init__()
+        self.status = status
+        self.location = location
+        self.seen: list[tuple[str, str | None]] = []
+
+    def https_open(self, req: urllib.request.Request) -> urllib.request.addinfourl:  # type: ignore[override]
+        self.seen.append((req.host, req.get_header("X-finnhub-token")))
+        headers = email.message.Message()
+        if self.location is not None and not self.seen[1:]:
+            headers["Location"] = self.location
+            status = self.status
+        else:
+            status = 200
+        response = urllib.request.addinfourl(io.BytesIO(b"[]"), headers, req.full_url, status)
+        response.msg = "fake"
+        return response
+
+    http_open = https_open  # catch an https -> http downgrade too
+
+
+@pytest.mark.parametrize("status", [301, 302, 303, 307, 308])
+@pytest.mark.parametrize(
+    "location",
+    [
+        "https://untrusted.invalid/collect",
+        "http://finnhub.io/api/v1/calendar/earnings?from=x",  # downgrade, same host
+        "https://finnhub.io/api/v1/other",  # same origin, other path
+    ],
+)
+def test_default_transport_never_follows_a_redirect(
+    monkeypatch: pytest.MonkeyPatch, status: int, location: str
+) -> None:
+    def no_sockets(*_: object, **__: object) -> None:
+        raise AssertionError("a socket was opened")
+
+    monkeypatch.setattr(socket, "socket", no_sockets)
+    vendor = _FakeVendorHTTPS(status, location)
+    monkeypatch.setattr(earnings_sources, "_OPENER", earnings_sources._build_opener(vendor))
+    url = "https://finnhub.io/api/v1/calendar/earnings?from=2026-11-13&symbol=NVDA"
+    result = earnings_sources.urllib_get(url, {"X-Finnhub-Token": FH_KEY}, 1.0)
+    assert result == (status, b"")
+    assert vendor.seen == [("finnhub.io", FH_KEY)]  # one request; the token went nowhere else
+
+
+def test_default_transport_still_returns_a_direct_200(monkeypatch: pytest.MonkeyPatch) -> None:
+    vendor = _FakeVendorHTTPS(200, None)
+    monkeypatch.setattr(earnings_sources, "_OPENER", earnings_sources._build_opener(vendor))
+    url = "https://finnhub.io/api/v1/calendar/earnings?symbol=NVDA"
+    assert earnings_sources.urllib_get(url, {"X-Finnhub-Token": FH_KEY}, 1.0) == (200, b"[]")
+
+
+def test_a_refused_redirect_becomes_a_failed_refresh(tmp_path: Path) -> None:
+    http = FakeHttp({"NVDA": (302, b"")})
+    outcome = _provider(tmp_path, http, FrozenClock(START)).refresh()[0]
+    assert (outcome.action, outcome.status, outcome.error) == ("failed", "error", "http_302")
+
+
+# ------------------------------------------------------------------ F-167: malformed cache
+
+
+def _fresh_cache(tmp_path: Path) -> tuple[EarningsProvider, dict[str, object], dict[str, object]]:
+    provider = _provider(tmp_path, FakeHttp(), FrozenClock(START))
+    provider.refresh()
+    fh = json.loads(provider.cache_path(FINNHUB).read_text(encoding="utf-8"))
+    av = json.loads(provider.cache_path(ALPHAVANTAGE).read_text(encoding="utf-8"))
+    return provider, fh, av
+
+
+_MALFORMED: list[tuple[str, object]] = [
+    ("events", {}),
+    ("events", ""),
+    ("events", None),
+    ("events", [{"symbol": "nvda", "report_date": "2026-11-20", "hour": None}]),
+    ("events", [{"symbol": "NVDA", "report_date": "2026-11-20", "hour": 5}]),
+    ("events", [{"symbol": "NVDA", "report_date": 20261120, "hour": None}]),
+    ("events", [{"symbol": "NVDA", "report_date": "2026-11-20"}]),
+    ("events", [["NVDA", "2026-11-20", None]]),
+    ("symbols", "NVDA"),
+    ("symbols", {"NVDA": 1}),
+    ("symbols", ["NVDA", 7]),
+    ("fetched_at", 1763071200),
+    ("coverage_end", None),
+    ("status", 1),
+    ("error", 0),
+    ("attempts", {"date": "2026-11-13", "count": "1", "last_attempt_at": START.isoformat()}),
+    ("attempts", {"date": "2026-11-13", "count": True, "last_attempt_at": START.isoformat()}),
+    ("attempts", {"date": "2026-11-13", "count": -1, "last_attempt_at": START.isoformat()}),
+    ("attempts", {"date": "2026-11-13", "count": 1}),
+    ("attempts", {"date": "2026-11-13", "count": 1, "last_attempt_at": "2026-11-13T22:00"}),
+    ("attempts", []),
+]
+
+
+@pytest.mark.parametrize(("field", "value"), _MALFORMED)
+@pytest.mark.parametrize("source", [FINNHUB, ALPHAVANTAGE])
+def test_malformed_cache_field_counts_as_missing(
+    tmp_path: Path, source: str, field: str, value: object
+) -> None:
+    provider, fh, av = _fresh_cache(tmp_path)
+    raw = fh if source == FINNHUB else av
+    raw[field] = value
+    path = provider.cache_path(source)  # type: ignore[arg-type]
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    assert load_snapshot(path, source) == (None, {})  # type: ignore[arg-type]
+
+
+def test_both_caches_with_object_events_never_verify_absence(tmp_path: Path) -> None:
+    """Codex's F-167 reproduction: ``events: {}`` in both fresh caches is not a 'no report'."""
+    provider, fh, av = _fresh_cache(tmp_path)
+    for source, raw in ((FINNHUB, fh), (ALPHAVANTAGE, av)):
+        raw["events"] = {}
+        provider.cache_path(source).write_text(json.dumps(raw), encoding="utf-8")  # type: ignore[arg-type]
+    resolution = provider.resolver()("NVDA", START.date())
+    assert resolution.verified is False
+    assert resolution.reason != "verified"
+
+
+def test_well_formed_cache_still_loads(tmp_path: Path) -> None:
+    provider, _, _ = _fresh_cache(tmp_path)
+    for source in (FINNHUB, ALPHAVANTAGE):
+        snap, attempts = load_snapshot(provider.cache_path(source), source)
+        assert snap is not None
+        assert set(attempts) == {"date", "count", "last_attempt_at"}
