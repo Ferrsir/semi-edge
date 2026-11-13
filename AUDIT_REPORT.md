@@ -287,6 +287,10 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 ### F-045 · P3 · Acceptance example used the removed float split API (Codex re-review, PR #62)
 - **Fix (spec):** the example uses `new_shares`/`old_shares`; a 1:3 case was added.
 
+### F-046 · P3 · Ambiguous F-044 acceptance sequence (Codex re-review, PR #62)
+- **Fix (spec):** one monotonic sequence on a fresh DB (empty at B=40 → [A(30)] at B=50 →
+  [A(30), C(20)] at B=50), with replay and provisional-notional assertions at every stage.
+
 ---
 
 ## Speculative concerns (not demonstrated; tracked for the relevant phase)

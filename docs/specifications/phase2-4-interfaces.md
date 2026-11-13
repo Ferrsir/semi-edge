@@ -1202,12 +1202,16 @@ Test paths derive from `tmp_path` (CWD is `tmp_path` via `tests/conftest.py`).
   and no change. Non-binary ratio (F-045): a 1:3 reverse split (`new_shares=1, old_shares=3`) on
   300 shares → qty 100 and prices × 3 exactly (no float round-trip); on 100 shares →
   `StateStoreError` (100/3 is not an integer).
-- Fill ingestion with incomplete activities (F-044): stored provisional `cum_qty=30`, broker
-  `B=50`, available activities `[A(30)]` → the 30-row is superseded, one provisional row
-  `cum_qty=50, qty=20` is inserted, `W=50`, no halt; an available **empty** response with `B=40`
-  → one provisional `qty=40`; later activities `A(30), C(20)` → both provisional rows superseded,
-  `W=50`; replaying any step through ingestion, `sync_open_orders` and `reconcile` adds nothing
-  and raises no halt.
+- Fill ingestion with incomplete activities (F-044, F-046), one order on a fresh DB, one monotonic
+  sequence; after every stage replay it (ingestion, `sync_open_orders`, `reconcile`) and assert
+  rows, keys, quantities and notional are unchanged and no halt is raised:
+  1. activities available but **empty**, `B=40`, `filled_avg_price=10.0` → one provisional row
+     `cid:40` (`qty=40, cum_qty=40`); `W=40`; order notional `40·10.0 = 400.0`.
+  2. activities `[A(30)]`, `B=50`, `filled_avg_price=10.2` → `A` inserted `final`; `cid:40` stays
+     (`cum_qty 40 > A=30`); remainder row `cid:50` (`qty=10, cum_qty=50`); `W=50`; notional
+     `50·10.2 = 510.0` (a provisional row is active).
+  3. activities `[A(30), C(20)]`, `B=50` → `C` inserted; `A=50`; `cid:40` and `cid:50` become
+     `superseded`; no new row; `W=50`; notional = `Σ qty·price` of `A` and `C`.
 - `data_source()` parity (F-043): `StateStore` and `ReadOnlyStateStore` return the same value; a
   `FIXTURE` split against a `"real"` DB is not verified (no adjustment, mismatch halts) and both
   stores give identical `diff_state` reports for that case.
