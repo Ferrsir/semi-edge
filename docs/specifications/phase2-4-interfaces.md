@@ -622,7 +622,8 @@ adjustment from the cache only (no network). A missing regime/comparison benchma
 `BacktestInputError`. When `corporate_actions` is given (T17), symbols failing
 `check_adjustment_consistency` are dropped from the tradable set and listed in the result
 (`labels` gains `ADJUSTMENT-INCONSISTENT SYMBOLS EXCLUDED: …`); `None` is allowed only until
-T17 merges and adds the label `CORPORATE ACTIONS NOT CHECKED`.
+#18 completes source/consumer integration and adds the label `CORPORATE ACTIONS NOT CHECKED`.
+The initial typed ledger/adapter core alone does not certify coverage or activate this gate.
 
 ### 3.5 Results (`semiedge.backtest.results`)
 
@@ -2002,10 +2003,18 @@ class CorporateAction:
 class CorporateActionSource(Protocol):
     def get_actions(self, symbols: Sequence[str], start: date, end: date) -> tuple[CorporateAction, ...]: ...
 
-class AlpacaCorporateActionSource: ...     # alpaca-py market-data corporate actions client; MarketDataError on failure
+class AlpacaCorporateActionSource:        # raw GET, exact market-data endpoint; no broker/order methods
+    def __init__(self, client: CorporateActionReadClient, *,
+                 knowledge: Callable[[str], datetime], now: Callable[[], datetime]) -> None: ...
+    # knowledge(event_id) MUST come from verified announcement/publication evidence, never fetched_at.
+    # Caller supplies evidence; code checks timestamp validity, not the truth/completeness of that evidence.
+    # get_actions uses provider process_date bounds, bounded pagination, explicit US/all-quality params;
+    # malformed/incomplete/unsupported records or missing knowledge -> MarketDataError, never partial results.
 class CorporateActionStore:                # {root}/raw/corporate_actions/{SYMBOL}.parquet, atomic writes
     def write(self, actions: Sequence[CorporateAction]) -> None: ...
     def read(self, symbol: str) -> tuple[CorporateAction, ...]: ...
+    # Missing ledger -> FileNotFoundError; immutable event terms, one source per symbol.
+    # Empty writes do not establish no-action coverage. See docs/CORPORATE_ACTIONS.md.
 
 @dataclass(frozen=True, slots=True)
 class AdjustmentCheck:
@@ -2036,7 +2045,11 @@ Policy (documented in DECISIONS.md by T17):
   history refetch replaces every row.
 - A one-session close-to-close move beyond `±jump_threshold` with no matching action → issue
   (ineligible until a human or a matching action explains it). Ratio-consistent moves on a
-  split ex-date with matching action are accepted.
+  split ex-date with matching action are **not** accepted in already SPLIT/ALL-adjusted bars:
+  an explained raw split discontinuity still means inconsistent share bases (proposed F-077
+  clarification on #18). Require full refetch. A known cash-dividend drop may explain SPLIT
+  price-return history but not ALL-adjusted history. Events effective after the stored last
+  session do not invalidate the historical prefix; ordinary freshness gates remain separate.
 - Held-position handling: §9.4.
 
 Acceptance: synthetic 4:1 split fixture — mixed-basis stored series (written as raw Parquet in
