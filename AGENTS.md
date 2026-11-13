@@ -71,7 +71,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T3 | #13 | Read-only paper account snapshot (`semiedge.broker.account`) | claude | DONE (PR #39, merged ee66aaf; P3 F-025 → #52) | T0 |
 | T3b | #15–#29 | Phase 2–4 interface spec (backtest, risk, execution, state, reconcile, engine, dashboard) | claude | DONE (PR #62, merged 0882031; Codex PASS ae80ac3) | T0 |
 | T4 | #14 | Signal report + CLI (`scan`, `data fetch/status`, `account`, `config check`) | claude | DONE (PR #50, merged ce2490d) | T1, T2, T3 |
-| T5 | #15 | Event-driven backtest engine: next-open fills, costs, slippage | codex | IN PROGRESS (lead-run codex), codex-backtest-15; interactive agent does not edit | T1, T2 |
+| T5 | #15 | Event-driven backtest engine: next-open fills, costs, slippage | codex | REVIEW (PR #75, implemented by codex exec; Claude review running) | T1, T2 |
 | T6 | #16 | Performance metrics, SMH/QQQ benchmark comparison | codex | READY | T5 |
 | T7 | #17 | Walk-forward + parameter sensitivity | claude | READY | T5, T6 |
 | T8 | #19 | Deterministic independent risk manager (exposure incl. pending, halts) | claude | DONE (PR #69, merged f79a496; Codex PASS a87d30c) | T2 |
@@ -82,7 +82,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T13 | #25 | Streamlit dashboard (dark theme) | codex | READY | T4 |
 | T14 | #26 | Discord notifications | codex | READY | T12 |
 | T15 | #27 | Docker / compose, health checks, graceful shutdown | claude | READY | T12 |
-| T16 | #29 | Security: secret handling, redaction, prompt-injection tests | codex | REVIEW (PR #67 at 13d12dd; boundary core only, consumer integration remains #29) | T4 |
+| T16 | #29 | Security: secret handling, redaction, prompt-injection tests | codex | IN PROGRESS: core merged (PR #67, f0b093d); follow-ups #74; §13 e2e test open | T4 |
 | T17 | #18 | Corporate actions tracking | codex | IN PROGRESS (interactive codex), feature/18-corporate-actions | T1 |
 | A37 | #37 | Audit: reject missing runtime configuration sections | codex | DONE (PR #38) | T0 |
 | A40 | #40 | Harden shared paper endpoint guard against disguised URL objects | codex | DONE (PR #41, merged dfece2a) | T0 |
@@ -116,6 +116,8 @@ Claude is reviewing your #67 and #70.
 | PR | Task | Author | Reviewer | Verdict |
 |---|---|---|---|---|
 | #67 | T16 | codex | claude | boundary core/F-060 at 13d12dd; cross-provider review requested |
+| #75 | T5 | codex | claude | Claude review running |
+| #73 | #54 | claude | codex + owner | Codex PASS at c24c43b (F-077..F-079 fixed); **owner: approve** (restricted) |
 | #66 | #47 | claude (Codex job) | owner | restricted `ci.yml`, **owner: approve** |
 | #53 | #1 | claude | codex + owner | Codex PASS (source); owner approval required |
 
@@ -296,3 +298,8 @@ Claude is reviewing your #67 and #70.
   lead-run `codex exec` in `codex-backtest-15`, so interactive Codex should take T17 (#18) next. Corrected the finding-ID register: next is F-064.
 
 - 2026-11-13 07:01 UTC ? codex ? Coordination correction: T5 branch already belongs to lead-run Codex; creation failed safely, no edits to its worktree. Following lead 09:30 handoff, interactive Codex now claims T17/#18 in new feature/18-corporate-actions. #71 agent preserves isolated primitives for possible lead reuse, no duplicate PR. SDK inspection shows corporate-action models lack an announcement timestamp; will not invent known_at from fetched_at. Building typed core/store/consistency with explicit verified knowledge requirements and offline tests; vendor support limits will be documented.
+
+- 2026-11-13 10:40 UTC · claude · Merged #70 (#68, `00be4fa`) and #67 (#29 security core, `f0b093d`), both Claude PASS. Follow-ups F-070 (P2) through F-076 are in
+  #74 for Codex. #73 (#54 governance tooling): Codex FAIL F-077, then F-078/F-079 (P2 reviewer-config bypasses via a truncated diff,
+  renames and quoted paths), all fixed, then Codex PASS at `c24c43b`. It is restricted, so it waits for the owner. T5 backtest delivered by `codex exec` as #75;
+  Claude review running. Next finding ID F-080 (F-090..F-099 reserved for the #75 review).
