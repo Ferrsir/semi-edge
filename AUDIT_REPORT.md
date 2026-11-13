@@ -353,6 +353,11 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Regression:** `test_f123_orders_rows_have_exactly_one_update_path` (AST) and
   `test_f123_ingestion_records_filled_qty_through_the_transition_path`.
 
+### F-140 · P2 · Recovery spacing could round to zero (Codex re-review, PR #78)
+- **Reproduce:** `monitor_cycle_seconds=1e-10` became `timedelta(0)`, so two identical post-submission lookups allowed `unknown → staged`.
+- **Fix:** the cycle must be finite and ≥ 1 s, and lookups must be strictly increasing and at least one cycle apart.
+- **Regression:** two new cases in `test_f120_recovery_needs_post_submission_spaced_evidence`.
+
 ---
 
 ## Speculative concerns (not demonstrated; tracked for the relevant phase)

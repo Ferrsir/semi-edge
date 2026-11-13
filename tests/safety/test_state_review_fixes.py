@@ -73,6 +73,8 @@ def test_f120_recovery_refuses_a_supplied_broker_order_id(harness: Harness) -> N
         _evidence(30, 120, cycle=True),
         _evidence(30, 120, cycle=float("nan")),
         _evidence(30, 120, cycle="60"),
+        _evidence(30, 30, cycle=1e-10),  # F-140: spacing that rounds to zero, equal timestamps
+        _evidence(30, 31, cycle=0.5),  # F-140: sub-second monitor cycle is not credible evidence
     ],
 )
 def test_f120_recovery_needs_post_submission_spaced_evidence(

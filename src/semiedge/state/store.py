@@ -1009,14 +1009,16 @@ class StateStore(StateReaderBase):
         if not isinstance(lookups, list) or len(lookups) < 2:
             raise StateStoreError(f"{cid}: recovery refused, needs two confirmed 404 lookups")
         cycle = detail.get("monitor_cycle_seconds")
-        if not is_finite(cycle) or cast(float, cycle) <= 0:
+        # F-140: a sub-second cycle (e.g. 1e-10) would round the spacing to zero; real monitor
+        # cycles are at least a second, so anything smaller is not credible evidence.
+        if not is_finite(cycle) or cast(float, cycle) < 1:
             raise StateStoreError(
-                f"{cid}: recovery refused, needs monitor_cycle_seconds (finite > 0) as "
+                f"{cid}: recovery refused, needs monitor_cycle_seconds (finite >= 1) as "
                 "spacing evidence"
             )
         spacing = timedelta(seconds=float(cast(float, cycle)))
         parsed = _recovery_lookups(cid, lookups, order.submitted_at, now)
-        if any(b - a < spacing for a, b in itertools.pairwise(parsed)):
+        if any(b <= a or b - a < spacing for a, b in itertools.pairwise(parsed)):
             raise StateStoreError(
                 f"{cid}: recovery refused, lookups must be at least one monitor cycle apart"
             )
