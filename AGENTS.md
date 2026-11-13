@@ -82,7 +82,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T13 | #25 | Streamlit dashboard (dark theme) | codex | IN PROGRESS (codex via lead-run `codex exec`) `feature/25-trading-dashboard`, worktree `codex-dashboard-25`: interactive Codex, don't start it | T4 |
 | T14 | #26 | Discord notifications | codex | READY | T12 |
 | T15 | #27 | Docker / compose, health checks, graceful shutdown | claude | READY | T12 |
-| T16 | #29 | Security: secret handling, redaction, prompt-injection tests | codex | IN PROGRESS: core merged (PR #67, f0b093d); follow-ups #74; §13 e2e test open | T4 |
+| T16 | #29 | Security: secret handling, redaction, prompt-injection tests | codex | IN PROGRESS (codex): core merged (PR #67, f0b093d); follow-ups #74; §13 e2e test open | T4 |
 | T17 | #18 | Corporate actions tracking | codex | REVIEW (PR #77 core; #18 remains open for integration) | T1 |
 | A37 | #37 | Audit: reject missing runtime configuration sections | codex | DONE (PR #38) | T0 |
 | A40 | #40 | Harden shared paper endpoint guard against disguised URL objects | codex | DONE (PR #41, merged dfece2a) | T0 |
@@ -91,11 +91,11 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T47 | #47 | Project status dashboard (separate from trading UI) | codex | DONE (PR #65, merged 068e01f; CI job split to restricted #66, owner approval) | T0 |
 | A63 | #63 | Reject unverified retained adjusted sessions (F-036) | codex | DONE (PR #64, merged 0fe06f3; P3 F-050/F-051 → #68) | T1 |
 | A68 | #68 | Split precision and adjusted-history recovery follow-ups | codex | DONE (PR #70, merged 00be4fa) | T46, T1 |
-| T71 | #71 | Backtest cost/config and shared exit primitives (subtask #15) | codex subagent | WIP (isolated primitives preserved for lead reuse; overlaps lead-owned T5) | T3b |
+| T71 | #71 | Backtest cost/config and shared exit primitives (subtask #15) | codex subagent | IN PROGRESS (codex subagent, WIP): isolated primitives preserved for lead reuse; overlaps lead-owned T5 | T3b |
 | A74 | #74 | Security follow-ups F-070..F-076 | codex subagent | REVIEW (PR #76 at 288ed94; redaction regression fixed) | T16 |
 | H1 | #20 | Verified earnings calendar source | human | BLOCKED (owner must choose a data source) | — |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
-| H3 | — | GitHub Actions billing/spending limit: since ~12:00 UTC 2026-11-13 no CI job starts, so nothing can merge | human | BLOCKED (owner) | — |
+| H3 | — | GitHub Actions billing/spending limit: since ~12:00 UTC 2026-11-13 no CI job starts, so nothing can merge | human | DONE (repo made public 2026-11-13; #81 CI re-run green 16:45 UTC) | — |
 
 ## Codex queue (set by the lead; work top to bottom, one item at a time)
 Codex: start here every session. When an item is done, post on the PR or issue, add a log line, and
@@ -333,3 +333,5 @@ on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest
 
 - 2026-11-13 12:20 UTC · claude · While CI is blocked (H3), work continues on unblocked tasks with local validation as the gate. Claude: T9 part 2 (#21). `codex exec`:
   T13 (#25) Streamlit trading dashboard (read-only state, manual-halt request only). Nothing merges until CI is back.
+
+- 2026-11-13 16:55 UTC · claude · H3 resolved: the owner made the repo public, and #81's failed CI re-ran green. Fixed board statuses for T16 and T71, which made `project-status/scripts/refresh-snapshot.py` refuse to refresh (status must start with READY, IN PROGRESS, REVIEW, DONE or BLOCKED followed by a space). Owner decision: AGENTS.md is canonical; #1's criterion was amended and PR #53 now closes #1.
