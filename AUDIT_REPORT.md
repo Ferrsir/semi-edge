@@ -74,6 +74,19 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Impact:** `ruff format --check .` in CI would fail once specs are merged; specs lost alignment.
 - **Fix (implemented):** `extend-exclude = ["*.md"]`.
 
+### F-007 · Confirmed · P2 · Bar schema accepted invalid index units and optional dtypes
+- **Where:** `semiedge.data.schema.validate_bar_frame`.
+- **Reproduction:** `f = empty_bar_frame(); f.index = f.index.as_unit("us");
+  f["vwap"] = pd.Series(dtype="str"); validate_bar_frame(f)` returned successfully.
+  Duplicate `close` columns instead raised an incidental `AttributeError` at `.dtype`.
+- **Impact:** adapters could pass frames violating the documented nanosecond index and
+  float64 optional-column contract, causing downstream failures outside the explicit
+  `DataSchemaError` rejection path. Missing (`NaT`) session labels were also not explicitly rejected.
+- **Fix:** require nanosecond session labels without NaT, unique columns, and float64
+  optional columns when present. No signatures or safety limits changed.
+- **Test evidence:** `tests/unit/data/test_schema_audit.py` (five regression cases), run with
+  `.venv/Scripts/python -m pytest -q tests/unit/data/test_schema_audit.py`.
+
 ### F-008 · P2 · Missing app configuration sections silently selected defaults (Codex, #37)
 - **Where:** `semiedge.config.loader.load_app_config`.
 - **Reproduce:** replace `app.yaml` with `{}`, `data: {}`, or `scanner: {}` and run
@@ -85,6 +98,81 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
   retain their documented field defaults. No risk ceilings or strategy parameters changed.
 - **Regression:** `test_missing_app_sections_fail_closed` covers each missing-section combination;
   existing repository-config loading covers the valid configuration.
+
+### F-009 · P1 · Bar store spliced split/dividend adjustment bases into one series (Claude, PR #36)
+- **Where:** `semiedge.data.store.ParquetBarStore.write` (merge path) for `adjustment != raw`;
+  `config/app.yaml` uses `adjustment: split`.
+- **Reproduce:** store split-adjusted bars through 2024-05-31, then write post-split (restated,
+  /10) bars from 2024-06-03 without overlap, or a partial refetch whose shared sessions changed.
+  Before the fix both writes succeeded and the stored series showed a fictitious ~90% gap
+  (`tests/integration/data/test_store_adjustment_basis.py`: 3 cases failed with
+  `DID NOT RAISE ValueError`).
+- **Impact:** vendors restate adjusted history retroactively, but the store kept rows outside the
+  new fetch range on the old basis. SMA, breakout, ATR, return and stop levels computed on the
+  merged series would be wrong (wrong trading decision), and nothing downstream could detect it.
+- **Fix:** adjusted merges must overlap the stored range; the close on the earliest/latest shared
+  session anchoring retained rows must match, else `ValueError` (refetch the full range). Raw series
+  still accept disjoint appends. Spec `phase1-interfaces.md` (store) updated.
+- **Regression:** `tests/integration/data/test_store_adjustment_basis.py` (6 cases),
+  `tests/unit/data/test_store.py::test_disjoint_adjusted_append_rejected`,
+  `test_dividend_rebase_detected_on_anchor_close`, `test_backfill_checks_latest_shared_session`.
+
+### F-010 · P2 · Alpaca adapter returned in-progress (partial) daily bars (Claude, PR #36)
+- **Where:** `semiedge.data.alpaca_source.AlpacaMarketDataSource.get_daily_bars`.
+- **Reproduce:** fake client returning a 2024-03-12 bar with `now = 2024-03-12 15:00 UTC`
+  (11:00 ET, session open); before the fix the partial bar was returned for IEX, SIP and
+  delayed SIP (`tests/unit/data/test_alpaca_source.py::test_in_progress_session_bar_is_not_returned`).
+- **Impact:** a partial bar is indistinguishable from a completed one once cached; any later fetch
+  that does not re-cover that session leaves it permanently, so a later `as_of` treats an intraday
+  snapshot as the session's close/high/volume.
+- **Fix:** drop sessions whose exchange close (early closes respected) is after `now`, with an INFO
+  log; optional keyword `calendar` on the constructor (spec updated). Settle-window handling stays
+  with the caller via `last_completed_session(now, bar_settle_minutes)`.
+- **Regression:** `test_in_progress_session_bar_is_not_returned` (3 feeds),
+  `test_early_close_session_is_returned_once_closed`.
+
+### F-011 · P3 · Store logged an OHLCV correction when nothing stored changed (Claude, PR #36)
+- **Where:** `ParquetBarStore.write`.
+- **Reproduce:** write a correction, then rewrite the original rows with an older `fetched_at`; the
+  older rows lose the merge but the WARNING was still emitted.
+- **Fix:** compare stored rows with the merged result. **Regression:**
+  `tests/integration/data/test_adapters_store.py::test_roundtrip_merge_summary` (older refetch).
+
+### F-012 · P1 · Adjusted refetch with an interior gap kept a stored row on the old basis (Claude review, PR #36)
+- **Where:** `semiedge.data.store._check_adjustment_basis` (head `492b75e`).
+- **Reproduce:** store split-adjusted bars 2024-01-02..2024-06-28, then write the same range
+  restated /10 (post-split) but missing one interior session (vendor gap). Before the fix the write
+  succeeded and the stored series had a ~9x one-day return at the retained old-basis session.
+- **Impact:** a fictitious price jump inside the series corrupts SMA/ATR/breakout
+  and stop levels; the anchors only checked the first/last shared session when stored rows extended
+  past the incoming range, so rows retained *inside* the range were never verified.
+- **Fix:** every retained stored row is anchored by its nearest shared session on each side that
+  exists; spec `phase1-interfaces.md` (store) updated. The first fix (`64eb0b4`) used only the
+  following session. That still accepted a gap on the session before an ex-date, because the split
+  rescales the preceding session but not the following one. Closed by the both-sides anchor
+  (2026-11-13).
+- **Regression:** `tests/unit/data/test_store.py::test_interior_gap_in_rebased_refetch_rejected`,
+  `test_interior_gap_before_ex_date_rejected` (fails on `64eb0b4`),
+  `tests/integration/data/test_store_adjustment_basis.py::test_rebased_refetch_with_interior_gap_is_rejected`,
+  `test_same_basis_refetch_with_interior_gap_keeps_stored_session`.
+
+
+### F-024 · P1 · Fetch-time tie-breaking kept stored rows that the basis check never anchored (Codex review, PR #36)
+- **Where:** `semiedge.data.store.ParquetBarStore.write` / `_check_adjustment_basis` (head `b2c43f0`).
+- **Reproduce:** write split-adjusted 2024-01-02..03 (closes 100) at fetched_at Jan 4, refetch Jan 3
+  unchanged at Jan 6, then write both sessions rebased /10 at Jan 5. The check only anchored stored
+  sessions missing from the refetch (none), but tie-breaking kept the newer stored Jan 3: the
+  persisted closes were [10, 100], a fictitious +900% one-session return.
+- **Fix:** the merge runs the fetch-time tie-break first. The basis check then anchors every row that
+  survives *from the store*, including shared sessions where the stored fetch is newer; such a row
+  is its own anchor. A rebased write whose rows are all superseded by newer stored rows, or one at an
+  equal fetch time, is now rejected instead of silently ignored. Equal-timestamp keep-existing still
+  holds for same-basis corrections.
+- **Regression:** `tests/unit/data/test_store.py::test_newer_stored_row_cannot_splice_bases_with_older_refetch`,
+  `test_fully_newer_store_ignores_older_rebased_refetch_rows`,
+  `tests/integration/data/test_adapters_store.py::test_equal_timestamp_rebased_write_is_rejected_not_ignored`
+  (all three fail on `b2c43f0`); same-basis out-of-order and full newer replacement stay accepted
+  (`test_same_basis_out_of_order_refetch_is_accepted`, `test_newer_rebased_refetch_replacing_everything_is_accepted`).
 
 ---
 
