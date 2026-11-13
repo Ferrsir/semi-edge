@@ -100,12 +100,17 @@ Codex: start here every session. When an item is done, post on the PR or issue, 
 delete the item from this list in the same `AGENTS.md` commit. If an item is blocked, say why in the
 log and move to the next one. Work in your own worktree under `../semi-edge.worktrees/`, not in the
 `.t3` checkout and not in a Claude worktree. Never push to a Claude branch. Report findings on the
-PR instead. The next finding ID is **F-061** (F-041..F-059 reserved for Claude reviews; F-060 security fix).
+PR instead. **Next finding ID: F-064** (F-060 is your #67 security fix; F-061..F-063 were used in your #69 review).
 
-1. **#62** (Phase 2–4 spec): the lead runs your re-review via `codex exec` (F-043..F-045 fixed at `481f8b5`). Then T5 starts.
-2. **#68** P3 follow-ups (F-041 exact chained splits, F-050 doc recovery path, F-051 test match strings).
-3. **T5 #15** backtest engine against #62 once it PASSes. **T13 #25** (Streamlit trading dashboard) after T5.
-4. Review Claude's T8 risk-manager PR (#19) when it opens.
+**Do not start T5:** it is already being implemented by a `codex exec` run that the lead launched, in
+`../semi-edge.worktrees/codex-backtest-15` (branch `feature/15-backtest-engine`). Don't touch that worktree or branch.
+1. **T17 #18** corporate actions (`semiedge.data.corporate_actions`, spec §14) on top of the merged
+   `semiedge.data.splits` (#61): `CorporateAction` with exact `new_shares`/`old_shares` and `known_at`
+   (F-042), and `check_adjustment_consistency`.
+2. **Review Claude's state store PR** (T9 part 1, #21, `feature/21-state-store`) when it opens.
+3. **Review Claude's #54 governance fix PR** when it opens (restricted, so the owner approves too).
+4. **T13 #25** Streamlit trading dashboard once T5 and the state store merge.
+Claude is reviewing your #67 and #70.
 
 ## Review queue
 | PR | Task | Author | Reviewer | Verdict |
@@ -286,3 +291,6 @@ PR instead. The next finding ID is **F-061** (F-041..F-059 reserved for Claude r
 - 2026-11-13 06:52 UTC ? codex ? Delivered lead-queue #68 as PR #70 at8cef298, own feature/68-data-followups. Fraction composition applies each row once; inverse-chain exact equality and events=None regressions fail on old source/pass now; numeric refusal guards preserved. Added manual no-delete cache recovery guide, tightened F-051 error matches, marked initial counts historical. Full1088 passed/1 skipped; split43 cases; Ruff/format/mypy/Bandit clean. Claude exact-head review requested. #62 is merged; next T5 can use the resolved contract, subject to lead review priorities.
 
 - 2026-11-13 06:56 UTC ? codex ? Started T5/#15 against merged #62. Own feature/15-backtest-engine in codex-backtest-engine. Delegated bounded #71 primitives to Codex agent in a separate feature/71-backtest-primitives worktree; public helper signatures coordinated, root owns shared risk types/proposals and engine/results. Claude retains T8. No fake/permissive gate in shipped CLI; test gates only in fixtures. No market performance result or live/credential access.
+
+- 2026-11-13 09:30 UTC · claude · Closed duplicate #72; Codex's own #70 covers #68 and Claude is reviewing it along with #67. **T5 is taken** by a
+  lead-run `codex exec` in `codex-backtest-15`, so interactive Codex should take T17 (#18) next. Corrected the finding-ID register: next is F-064.
