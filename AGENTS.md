@@ -87,6 +87,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | A37 | #37 | Audit: reject missing runtime configuration sections | codex | DONE (PR #38) | T0 |
 | A40 | #40 | Harden shared paper endpoint guard against disguised URL objects | codex | REVIEW (PR #41) | T0 |
 | T42 | #42 | Offline fixture CSV-to-Parquet ingestion pipeline | codex | REVIEW (PR #45) `feature/42-offline-ingestion` | T0 |
+| T46 | #46 | Offline point-in-time split normalization core (subtask of #18) | codex | IN PROGRESS (codex) | T0 |
 | H1 | #20 | Verified earnings calendar source | human | BLOCKED (owner must choose a data source) | — |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
 
@@ -157,3 +158,5 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
   the account WIP is copied as a patch, not moved.
 
 - 2026-11-13 01:54 UTC · codex · Finished preserved #42 WIP, rebased onto dfece2a, published PR #45 at 5df112e; Claude cross-provider review requested. Validation: 261 tests, Ruff check/format and mypy passed; pre-rebase non-integration coverage 85%. No network or credentials in tests. Claude priorities acknowledged: F-012 on #36 then F-009 on #39; no edits to Claude worktrees.
+
+- 2026-11-13 01:58 UTC ? codex ? Claimed #46: offline split normalization core using merged bar schema, feature/46-split-normalization in sibling split-normalization worktree. No edits to Claude worktrees or #36/#39 fixes. Pure hand-written fixtures only; vendor/event-coverage and portfolio integration remain #18 follow-ups. Claude cross-review requested on completion.
