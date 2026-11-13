@@ -66,7 +66,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | ID | Issue | Task | Owner | Status | Depends on |
 |---|---|---|---|---|---|
 | T0 | #34, #8 | Consolidate governance + foundation + audit fixes into `main` | claude | DONE (PR #33, #35) | — |
-| T1 | #9, #10 | Data layer: calendar, Alpaca source, synthetic source, Parquet store, validation | codex | REVIEW (PR #36, F-012 fix by claude awaits Codex review) `feature/9-data-layer` | T0 |
+| T1 | #9, #10 | Data layer: calendar, Alpaca source, synthetic source, Parquet store, validation | codex | DONE (PR #36, merged c424d48) | T0 |
 | T2 | #11, #12 | Indicators, `momentum_v1` features/evaluation/score, position sizing | claude | REVIEW (PR #48) `feature/11-signals-strategy`; awaits Codex review | T0 |
 | T3 | #13 | Read-only paper account snapshot (`semiedge.broker.account`) | claude | DONE (PR #39, merged ee66aaf; P3 F-025 → #52) | T0 |
 | T3b | #15–#29 | Phase 2–4 interface spec (backtest, risk, execution, state, reconcile, engine, dashboard) | claude | IN PROGRESS (claude) `feature/15-phase2-4-spec` | T0 |
@@ -99,15 +99,13 @@ log and move to the next one. Work in your own worktree under `../semi-edge.work
 `.t3` checkout and not in a Claude worktree. Never push to a Claude branch. Report findings on the
 PR instead. The next finding ID is **F-028**.
 
-1. **Re-review #36** `b2c43f0..2c396ef` (Claude's F-024 fix: tie-break first, then anchor every row
-   retained from the store). Post PASS/FAIL. On PASS the lead merges #36 first.
-2. **Re-review #48** `38b7865..92e9b48` (F-026 `_trade_levels`, F-027 sizing overflow).
-3. **Review #50** (CLI, #14), commits after `22ff3ea` only. The earlier commits are the stacked #36/#39/#48.
+1. **Re-review #48** `38b7865..92e9b48` (F-026 `_trade_levels`, F-027 sizing overflow).
+2. **Review #50** (CLI, #14), commits after `22ff3ea` only. The earlier commits are the stacked #36/#39/#48.
    Focus: synthetic/market isolation, exit codes 0/2/3/4, no echoed secrets, read-only `account`.
-4. **Review #51** (docs only: `.t3` migration status).
+3. **Review #51** (docs only: `.t3` migration status).
    Also **review #53** (governance docs reconcile; restricted paths, so the owner must approve too).
    Also **review #55** (F-025 fix: RFC 3339 offset minutes 00..59, closes #52; small).
-5. **Fix #49** F-016 and F-017 (blocking), then the F-018..F-023 P3s. Ask Claude for a re-review.
+4. **Fix #49** F-016 and F-017 (blocking), then the F-018..F-023 P3s. Ask Claude for a re-review.
 6. Then **#46** (T46, READY, split normalization). It may build on `feature/9-data-layer` until #36
    merges. After that, **T5 #15** (backtest engine) once the Phase 2–4 interface spec (T3b,
    `feature/15-phase2-4-spec`) is in review.
@@ -115,10 +113,9 @@ PR instead. The next finding ID is **F-028**.
 ## Review queue
 | PR | Task | Author | Reviewer | Verdict |
 |---|---|---|---|---|
-| #36 | T1 | codex; fixes claude | codex | FAIL at b2c43f0: F-024/P1 mixed adjustment bases via fetched_at precedence; Claude fix requested |
 | #48 | T2 | claude | codex | FAIL at 38b7865: F-026/P2 infinite proposed target; F-027/P3 sizing overflow; Claude fix requested |
 | #50 | T4 | claude | codex | draft; pre-screen fixes pushed; **Codex: review from `22ff3ea` to head** (stacked) |
-| #49 | T47 | codex | claude | FAIL at 035edb0 (P2 F-016 refresh script fails open; P2 F-017 stale/hard-coded status; F-018..F-023 P3); **Codex: fix** |
+| #49 | T47 | codex | claude | fixes at 4a8bd9d; Claude re-review in progress (touches `.github/**`, so the owner must approve) |
 | #53 | #1 | claude | codex + owner | governance docs reconcile (restricted) — **Codex: review; owner: approve** |
 | #55 | #52 | claude | codex | F-025 fix — **Codex: review** |
 | #51 | — | claude | codex | `.t3` migration docs — **Codex: review** |
@@ -235,3 +232,7 @@ PR instead. The next finding ID is **F-028**.
   Phase 0 audit: #2 meets its criteria. #3 is a code-complete disabled prototype, blocked on #4–#6. #1 has
   docs drift, fixed in PR #53 (restricted, needs the owner). Governance tooling defects are filed as #54. Next
   finding ID F-028.
+
+- 2026-11-13 05:45 UTC · claude · Codex re-review of #36 at `2c396ef`: PASS. Merged #36 (`c424d48`). The data layer is
+  on `main`. Opened #55 (F-025, closes #52). Claude is re-reviewing Codex's #49 fixes (`4a8bd9d`). Merge order next:
+  #48 once Codex PASSes, then rebase #50 onto `main` and mark it ready.
