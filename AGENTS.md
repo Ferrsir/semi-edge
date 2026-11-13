@@ -71,7 +71,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T3 | #13 | Read-only paper account snapshot (`semiedge.broker.account`) | claude | DONE (PR #39, merged ee66aaf; P3 F-025 → #52) | T0 |
 | T3b | #15–#29 | Phase 2–4 interface spec (backtest, risk, execution, state, reconcile, engine, dashboard) | claude | DONE (PR #62, merged 0882031; Codex PASS ae80ac3) | T0 |
 | T4 | #14 | Signal report + CLI (`scan`, `data fetch/status`, `account`, `config check`) | claude | DONE (PR #50, merged ce2490d) | T1, T2, T3 |
-| T5 | #15 | Event-driven backtest engine: next-open fills, costs, slippage | codex | IN PROGRESS (codex via `codex exec`, run by the lead) `feature/15-backtest-engine` | T1, T2 |
+| T5 | #15 | Event-driven backtest engine: next-open fills, costs, slippage | codex | IN PROGRESS (codex), feature/15-backtest-engine; consumes #71 primitives and Claude T8 | T1, T2 |
 | T6 | #16 | Performance metrics, SMH/QQQ benchmark comparison | codex | READY | T5 |
 | T7 | #17 | Walk-forward + parameter sensitivity | claude | READY | T5, T6 |
 | T8 | #19 | Deterministic independent risk manager (exposure incl. pending, halts) | claude | DONE (PR #69, merged f79a496; Codex PASS a87d30c) | T2 |
@@ -91,6 +91,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T47 | #47 | Project status dashboard (separate from trading UI) | codex | DONE (PR #65, merged 068e01f; CI job split to restricted #66, owner approval) | T0 |
 | A63 | #63 | Reject unverified retained adjusted sessions (F-036) | codex | DONE (PR #64, merged 0fe06f3; P3 F-050/F-051 → #68) | T1 |
 | A68 | #68 | Split precision and adjusted-history recovery follow-ups | codex | REVIEW (PR #70 at 8cef298) | T46, T1 |
+| T71 | #71 | Backtest cost/config and shared exit primitives (subtask #15) | codex subagent | IN PROGRESS (codex) | T3b |
 | H1 | #20 | Verified earnings calendar source | human | BLOCKED (owner must choose a data source) | — |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
 
@@ -283,3 +284,5 @@ PR instead. The next finding ID is **F-061** (F-041..F-059 reserved for Claude r
   Claude reviewer reviews it. Leftover: `../semi-edge.worktrees/codex-run-69/.review-pytest-tmp` is permission-locked (harmless).
 
 - 2026-11-13 06:52 UTC ? codex ? Delivered lead-queue #68 as PR #70 at8cef298, own feature/68-data-followups. Fraction composition applies each row once; inverse-chain exact equality and events=None regressions fail on old source/pass now; numeric refusal guards preserved. Added manual no-delete cache recovery guide, tightened F-051 error matches, marked initial counts historical. Full1088 passed/1 skipped; split43 cases; Ruff/format/mypy/Bandit clean. Claude exact-head review requested. #62 is merged; next T5 can use the resolved contract, subject to lead review priorities.
+
+- 2026-11-13 06:56 UTC ? codex ? Started T5/#15 against merged #62. Own feature/15-backtest-engine in codex-backtest-engine. Delegated bounded #71 primitives to Codex agent in a separate feature/71-backtest-primitives worktree; public helper signatures coordinated, root owns shared risk types/proposals and engine/results. Claude retains T8. No fake/permissive gate in shipped CLI; test gates only in fixtures. No market performance result or live/credential access.
