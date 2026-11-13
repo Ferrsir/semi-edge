@@ -1,18 +1,19 @@
 """Parsing and invariant tests for :mod:`semiedge.broker.account` (issue #13).
 
-Offline: every client is a plain fake object. No SDK client, no HTTP, no credentials.
+Offline: every client is a plain fake object whose ``get`` returns decoded JSON (dicts, lists,
+strings), as the SDK's ``TradingClient.get`` does. No SDK client, no HTTP, no credentials.
 """
 
 from __future__ import annotations
 
 import dataclasses
+from collections import OrderedDict
 from datetime import UTC, datetime, timedelta, timezone
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from alpaca.trading.enums import AccountStatus
 
+import semiedge.broker.account as account_module
 from semiedge.broker.account import (
     AccountSnapshot,
     BrokerDataError,
@@ -26,7 +27,7 @@ from semiedge.safety.broker import PAPER_TRADING_BASE_URL
 EDT = timezone(timedelta(hours=-4))
 
 
-def _account(**overrides: object) -> SimpleNamespace:
+def _account(**overrides: object) -> dict[str, object]:
     fields: dict[str, object] = {
         "account_number": "PA1234567890",
         "status": "ACTIVE",
@@ -42,21 +43,21 @@ def _account(**overrides: object) -> SimpleNamespace:
         "trade_suspended_by_user": False,
     }
     fields.update(overrides)
-    return SimpleNamespace(**fields)
+    return fields
 
 
-def _clock(**overrides: object) -> SimpleNamespace:
+def _clock(**overrides: object) -> dict[str, object]:
     fields: dict[str, object] = {
-        "timestamp": datetime(2026, 10, 30, 10, 15, 30, tzinfo=EDT),
+        "timestamp": "2026-10-30T10:15:30-04:00",
         "is_open": True,
-        "next_open": datetime(2026, 11, 2, 14, 30, tzinfo=UTC),
-        "next_close": datetime(2026, 10, 30, 16, 0, tzinfo=EDT),
+        "next_open": "2026-11-02T14:30:00Z",
+        "next_close": "2026-10-30T16:00:00-04:00",
     }
     fields.update(overrides)
-    return SimpleNamespace(**fields)
+    return fields
 
 
-def _position(**overrides: object) -> SimpleNamespace:
+def _position(**overrides: object) -> dict[str, object]:
     fields: dict[str, object] = {
         "symbol": "NVDA",
         "qty": "40",
@@ -70,7 +71,7 @@ def _position(**overrides: object) -> SimpleNamespace:
         "asset_class": "us_equity",
     }
     fields.update(overrides)
-    return SimpleNamespace(**fields)
+    return fields
 
 
 _DEFAULT = object()
@@ -85,14 +86,10 @@ class FakeClient:
         self._clock = _clock() if clock is _DEFAULT else clock
         self._positions = [] if positions is _DEFAULT else positions
 
-    def get_account(self) -> object:
-        return self._account
-
-    def get_clock(self) -> object:
-        return self._clock
-
-    def get_all_positions(self) -> object:
-        return self._positions
+    def get(self, path: str) -> object:
+        return {"/account": self._account, "/clock": self._clock, "/positions": self._positions}[
+            path
+        ]
 
 
 def _snapshot(**kwargs: Any) -> AccountSnapshot:
@@ -112,12 +109,12 @@ def test_valid_snapshot_parses_every_field() -> None:
         current_price="210",
     )
     snap = _snapshot(
-        account=_account(status=AccountStatus.ACTIVE, pattern_day_trader=False),
+        account=_account(pattern_day_trader=False),
         positions=[_position(), short],
     )
 
     assert snap.account_number_masked == "****7890"
-    assert snap.status == "ACTIVE"  # enum value, not "AccountStatus.ACTIVE"
+    assert snap.status == "ACTIVE"
     assert snap.currency == "USD"
     assert snap.equity == 100523.31
     assert snap.last_equity == 100012.40
@@ -139,8 +136,9 @@ def test_valid_snapshot_parses_every_field() -> None:
 
 def test_missing_pattern_day_trader_is_unknown_not_false() -> None:
     account = _account()
-    del account.pattern_day_trader
+    del account["pattern_day_trader"]
     assert _snapshot(account=account).pattern_day_trader is None
+    assert _snapshot(account=_account(pattern_day_trader=None)).pattern_day_trader is None
 
 
 def test_cash_may_be_negative_on_margin() -> None:
@@ -182,18 +180,35 @@ def test_decimal_fields_accept_well_formed_numbers(value: object) -> None:
 
 def test_missing_field_is_reported_by_name() -> None:
     account = _account()
-    del account.last_equity
+    del account["last_equity"]
     with pytest.raises(BrokerDataError, match="required field 'last_equity' is missing"):
         _snapshot(account=account)
 
 
-@pytest.mark.parametrize("value", [1, "true"])
+@pytest.mark.parametrize("value", [1, 0, "true", "false"])
 def test_pattern_day_trader_must_be_bool_when_present(value: object) -> None:
     with pytest.raises(BrokerDataError, match="pattern_day_trader"):
         _snapshot(account=_account(pattern_day_trader=value))
 
 
-@pytest.mark.parametrize("value", [123, AccountStatus.ACTIVE.value + " "])
+@pytest.mark.parametrize("value", [0, 1, 0.0, "false", "False", "true", "", [], {}])
+@pytest.mark.parametrize("field", ["trading_blocked", "account_blocked", "trade_suspended_by_user"])
+def test_blocking_flags_must_be_json_booleans(field: str, value: object) -> None:
+    with pytest.raises(BrokerDataError, match=f"'{field}' must be a boolean"):
+        _snapshot(account=_account(**{field: value}))
+
+
+@pytest.mark.parametrize("field", ["trading_blocked", "account_blocked", "trade_suspended_by_user"])
+def test_missing_or_null_blocking_flags_fail_closed(field: str) -> None:
+    account = _account()
+    del account[field]
+    with pytest.raises(BrokerDataError, match=f"required field '{field}' is missing"):
+        _snapshot(account=account)
+    with pytest.raises(BrokerDataError, match=f"required field '{field}' is missing"):
+        _snapshot(account=_account(**{field: None}))
+
+
+@pytest.mark.parametrize("value", [123, "ACTIVE "])
 def test_text_fields_reject_non_strings_and_padding(value: object) -> None:
     with pytest.raises(BrokerDataError, match="status"):
         _snapshot(account=_account(status=value))
@@ -212,19 +227,40 @@ def test_mask_account_number_keeps_only_last_four() -> None:
             mask_account_number(too_short)
 
 
-@pytest.mark.parametrize("raw", [None, {"equity": "1"}])
-def test_account_must_be_a_model_object(raw: object) -> None:
-    with pytest.raises(BrokerDataError, match="account"):
+@pytest.mark.parametrize(
+    "raw", [None, [], "ACTIVE", 1, OrderedDict(_account()), type("Model", (), _account())()]
+)
+def test_account_must_be_a_decoded_json_object(raw: object) -> None:
+    with pytest.raises(BrokerDataError, match="account: expected a JSON object"):
         _snapshot(account=raw)
+
+
+@pytest.mark.parametrize("raw", [None, [], "open"])
+def test_clock_must_be_a_decoded_json_object(raw: object) -> None:
+    with pytest.raises(BrokerDataError, match="clock: expected a JSON object"):
+        _snapshot(clock=raw)
 
 
 @pytest.mark.parametrize(
     ("field", "value", "match"),
     [
-        ("timestamp", datetime(2026, 10, 30, 14, 15), "timezone-naive"),  # noqa: DTZ001
-        ("next_open", "2026-11-02T09:30:00-05:00", "must be a datetime"),
+        ("timestamp", "2026-10-30T14:15:00", "with an offset"),
+        ("timestamp", 1793370930, "must be an RFC 3339 timestamp string"),
+        ("timestamp", datetime(2026, 10, 30, 14, 15, tzinfo=UTC), "timestamp string"),
+        ("timestamp", "2026-10-30 14:15:00Z", "with an offset"),
+        ("timestamp", "2026-10-30", "with an offset"),
+        ("timestamp", " 2026-10-30T14:15:00Z", "with an offset"),
+        ("timestamp", "2026-10-30T14:15:00.1234567890Z", "with an offset"),
+        ("timestamp", "2026-10-30T14:15:00+0000", "with an offset"),
+        ("timestamp", "2026-10-30t14:15:00z", "with an offset"),
+        ("timestamp", "2026-13-30T14:15:00Z", "not a valid RFC 3339"),
+        ("next_open", "2026-11-02T25:30:00Z", "not a valid RFC 3339"),
+        ("next_open", "2026-11-02T09:30:00+24:00", "not a valid RFC 3339"),
+        ("next_open", "２０２６-11-02T09:30:00Z", "with an offset"),
         ("next_close", None, "missing"),
         ("is_open", "true", "must be a boolean"),
+        ("is_open", 1, "must be a boolean"),
+        ("is_open", 0, "must be a boolean"),
     ],
 )
 def test_clock_fields_fail_closed(field: str, value: object, match: str) -> None:
@@ -232,14 +268,38 @@ def test_clock_fields_fail_closed(field: str, value: object, match: str) -> None
         _snapshot(clock=_clock(**{field: value}))
 
 
-@pytest.mark.parametrize("raw", [None, {"NVDA": 1}, "NVDA", 3])
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("2026-10-30T14:15:30Z", datetime(2026, 10, 30, 14, 15, 30, tzinfo=UTC)),
+        ("2026-10-30T10:15:30.5-04:00", datetime(2026, 10, 30, 14, 15, 30, 500000, tzinfo=UTC)),
+        (
+            "2026-10-30T10:15:30.123456789-04:00",  # Alpaca nanoseconds: truncated, not rounded
+            datetime(2026, 10, 30, 14, 15, 30, 123456, tzinfo=UTC),
+        ),
+        ("2026-10-30T15:45:30+01:30", datetime(2026, 10, 30, 14, 15, 30, tzinfo=UTC)),
+    ],
+)
+def test_rfc3339_timestamps_are_parsed_to_utc(value: str, expected: datetime) -> None:
+    snap = _snapshot(clock=_clock(timestamp=value))
+    assert snap.as_of == expected
+    assert snap.as_of.tzinfo is UTC
+
+
+@pytest.mark.parametrize("raw", [None, {"NVDA": 1}, "NVDA", 3, (), ("NVDA",)])
 def test_positions_must_be_a_list(raw: object) -> None:
     with pytest.raises(BrokerDataError, match="positions: expected a list"):
         _snapshot(positions=raw)
 
 
-def test_position_items_must_be_model_objects() -> None:
-    with pytest.raises(BrokerDataError, match=r"positions\[0\]"):
+@pytest.mark.parametrize("item", [None, "NVDA", ["NVDA"], 1])
+def test_position_items_must_be_json_objects(item: object) -> None:
+    with pytest.raises(BrokerDataError, match=r"positions\[0\]: expected a JSON object"):
+        _snapshot(positions=[item])
+
+
+def test_incomplete_position_object_fails_closed() -> None:
+    with pytest.raises(BrokerDataError, match=r"position NVDA: required field 'qty' is missing"):
         _snapshot(positions=[{"symbol": "NVDA"}])
 
 
@@ -352,8 +412,10 @@ class _FailingClient(FakeClient):
         super().__init__()
         self._error = error
 
-    def get_clock(self) -> object:
-        raise self._error
+    def get(self, path: str) -> object:
+        if path == "/clock":
+            raise self._error
+        return super().get(path)
 
 
 @pytest.mark.parametrize(
@@ -364,7 +426,7 @@ def test_http_status_is_only_reported_when_plausible(status: object, expected: i
     with pytest.raises(BrokerError) as caught:
         fetch_account_snapshot(_FailingClient(_StatusError(status)))
     assert caught.value.status_code == expected
-    assert caught.value.operation == "get_clock"
+    assert caught.value.operation == "GET /clock"
     assert "boom" not in str(caught.value)
 
 
@@ -383,10 +445,10 @@ def test_unsorted_positions_are_rejected_on_direct_construction() -> None:
 @pytest.mark.parametrize(
     ("overrides", "match"),
     [
-        ({"next_open": datetime(2020, 1, 2, 14, 30, tzinfo=UTC)}, "must be after the timestamp"),
-        ({"next_close": datetime(2020, 1, 2, 21, 0, tzinfo=UTC)}, "must be after the timestamp"),
+        ({"next_open": "2020-01-02T14:30:00Z"}, "must be after the timestamp"),
+        ({"next_close": "2020-01-02T21:00:00Z"}, "must be after the timestamp"),
         ({"is_open": False}, "is_open contradicts"),
-        ({"timestamp": datetime(2026, 11, 2, 14, 30, tzinfo=UTC)}, "must be after the timestamp"),
+        ({"timestamp": "2026-11-02T14:30:00Z"}, "must be after the timestamp"),
     ],
 )
 def test_inconsistent_clock_fails_closed(overrides: dict[str, object], match: str) -> None:
@@ -397,19 +459,18 @@ def test_inconsistent_clock_fails_closed(overrides: dict[str, object], match: st
 def test_closed_market_clock_is_accepted() -> None:
     snap = _snapshot(
         clock=_clock(
-            timestamp=datetime(2026, 10, 31, 15, 0, tzinfo=UTC),  # Saturday
+            timestamp="2026-10-31T15:00:00Z",  # Saturday
             is_open=False,
-            next_open=datetime(2026, 11, 2, 14, 30, tzinfo=UTC),
-            next_close=datetime(2026, 11, 2, 21, 0, tzinfo=UTC),
+            next_open="2026-11-02T14:30:00Z",
+            next_close="2026-11-02T21:00:00Z",
         )
     )
     assert snap.market_is_open is False
 
 
 def test_out_of_range_datetime_is_a_broker_data_error() -> None:
-    edge = datetime(1, 1, 1, tzinfo=timezone(timedelta(hours=1)))
     with pytest.raises(BrokerDataError, match="outside the representable range"):
-        _snapshot(clock=_clock(timestamp=edge))
+        _snapshot(clock=_clock(timestamp="0001-01-01T00:00:00+01:00"))
 
 
 class _LyingStr(str):
@@ -425,24 +486,25 @@ def test_str_subclasses_are_rejected(field: str) -> None:
         _snapshot(account=_account(**{field: _LyingStr("100")}))
 
 
-class _ExplodingAccount:
-    def __init__(self, failing: str) -> None:
-        self._failing = failing
-        self._data = vars(_account())
-
-    def __getattr__(self, name: str) -> object:
-        if name == self._failing:
-            raise ValueError("secret-ish response body")
-        try:
-            return self._data[name]
-        except KeyError:
-            raise AttributeError(name) from None
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("equity", "SECRET-ish-1"), ("status", " SECRET-ish"), ("trading_blocked", "SECRET-ish")],
+)
+def test_rejected_values_are_never_echoed(field: str, value: object) -> None:
+    with pytest.raises(BrokerDataError, match=field) as caught:
+        _snapshot(account=_account(**{field: value}))
+    assert "SECRET" not in str(caught.value)
 
 
-@pytest.mark.parametrize("failing", ["equity", "pattern_day_trader"])
-def test_failing_attribute_is_wrapped_without_its_message(failing: str) -> None:
-    with pytest.raises(BrokerDataError) as caught:
-        _snapshot(account=_ExplodingAccount(failing))
+def test_unexpected_parsing_failure_is_wrapped_without_its_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def explode(value: object, label: str) -> None:
+        raise ValueError("secret-ish response body")
+
+    monkeypatch.setattr(account_module, "_check_text", explode)
+    with pytest.raises(BrokerDataError, match=r"could not be parsed \(ValueError\)") as caught:
+        _snapshot()
     assert "secret-ish" not in str(caught.value)
     assert caught.value.__cause__ is None
     assert caught.value.__context__ is None

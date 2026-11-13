@@ -198,10 +198,10 @@ Non-finite or non-positive inputs, or `stop >= entry`, → `shares=0, binding_co
 ## `semiedge.broker.account` (#13) — read-only
 
 ```python
+AccountReadPath = Literal["/account", "/clock", "/positions"]
+
 class ReadOnlyTradingClient(Protocol):          # alpaca TradingClient satisfies it structurally
-    def get_account(self) -> object: ...
-    def get_clock(self) -> object: ...
-    def get_all_positions(self) -> object: ...
+    def get(self, path: AccountReadPath) -> object: ...   # HTTP GET, returns the decoded JSON
 
 class AccountBlockReason(StrEnum):
     STATUS_NOT_ACTIVE; ACCOUNT_BLOCKED; TRADING_BLOCKED; TRADE_SUSPENDED_BY_USER; UNSUPPORTED_CURRENCY
@@ -228,12 +228,15 @@ class AccountSnapshot:
 class BrokerError(RuntimeError): ...            # sanitised request failure (.operation, .status_code)
 class BrokerDataError(BrokerError): ...         # response violates the snapshot contract
 
-def fetch_account_snapshot(client: ReadOnlyTradingClient) -> AccountSnapshot: ...   # get_account, get_clock, get_all_positions
+def fetch_account_snapshot(client: ReadOnlyTradingClient) -> AccountSnapshot: ...   # GET /v2/account, /v2/clock, /v2/positions
 ```
 Clients are only obtained via `semiedge.safety.broker.create_paper_trading_client`; the client is
 re-checked (type-exact base URL, then `assert_paper_client`) before any request. No order methods are called anywhere in
-Phase 1. Fail closed: missing/malformed/non-finite numbers, negative `equity`/`last_equity`/
-`buying_power`/`long_market_value`, missing or non-ISO currency, missing block flags,
+Phase 1. The raw JSON is validated, not the SDK models: their lax pydantic coercion turns `0` or
+`"false"` into `False` for a blocking flag (F-009). Exact JSON types are required: block flags,
+`is_open` and (when present) `pattern_day_trader` must be JSON booleans; timestamps must be RFC 3339
+strings with an explicit offset. Fail closed: missing/malformed/non-finite numbers, negative `equity`/`last_equity`/
+`buying_power`/`long_market_value`, missing or non-ISO currency, missing, `null` or non-boolean block flags,
 position values whose sign contradicts the side, and an inconsistent clock raise
 `BrokerDataError` (never defaults). Blocked accounts are reported via explicit `block_reasons`, not hidden.
 Money stays `float` (strictly parsed from Alpaca's decimal strings) to match the float-based

@@ -22,7 +22,7 @@ import copy
 import json
 import socket
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from http import HTTPStatus
 from typing import Any
 
@@ -145,29 +145,6 @@ def _no_network(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(socket, "create_connection", forbid)
 
 
-@dataclass
-class StaticPaperClient:
-    """Minimal stand-in exposing exactly the read surface, returning prepared model objects."""
-
-    account: object
-    clock: object
-    positions: object
-    _base_url: str = PAPER_TRADING_BASE_URL
-    calls: list[str] = field(default_factory=list)
-
-    def get_account(self) -> object:
-        self.calls.append("get_account")
-        return self.account
-
-    def get_clock(self) -> object:
-        self.calls.append("get_clock")
-        return self.clock
-
-    def get_all_positions(self) -> object:
-        self.calls.append("get_all_positions")
-        return self.positions
-
-
 def make_response(status: int, body: object, url: str) -> requests.Response:
     """Build the ``requests.Response`` Alpaca's REST client would receive."""
     response = requests.Response()
@@ -232,9 +209,3 @@ class FakeCredentials:
 def fake_credentials() -> FakeCredentials:
     """Fake key, secret and unmasked account number used by the fixtures above."""
     return FakeCredentials(FAKE_PAPER_KEY_ID, FAKE_PAPER_SECRET, ACCOUNT_NUMBER)
-
-
-@pytest.fixture
-def static_client() -> type[StaticPaperClient]:
-    """Constructor for :class:`StaticPaperClient` (conftest modules are not imported directly)."""
-    return StaticPaperClient

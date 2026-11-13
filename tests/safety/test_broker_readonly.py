@@ -1,7 +1,9 @@
 """Safety invariants of the read-only PAPER account snapshot (issue #13).
 
 * ``fetch_account_snapshot`` touches nothing on the client except the attribute the paper guard
-  inspects (``_base_url``) and the three read methods, each called once without arguments.
+  inspects (``_base_url``) and ``get``, called exactly once for each of the three read-only paths
+  ``/account``, ``/clock`` and ``/positions`` with no other argument. It reads the raw JSON rather
+  than SDK models, so lax SDK coercion cannot hide a malformed blocking flag (F-009).
 * A client bound to anything but the PAPER endpoint is refused before any request.
 * No order (or other non-read) client method is referenced anywhere in ``semiedge.broker``.
 * Broker failures are wrapped in ``BrokerError`` without credentials, URLs or response bodies.
@@ -17,10 +19,8 @@ import pkgutil
 import re
 import socket
 import traceback
-from datetime import UTC, datetime
 from pathlib import Path
-from types import SimpleNamespace
-from typing import Any
+from typing import Any, get_args, get_type_hints
 
 import pytest
 import requests
@@ -46,7 +46,8 @@ from semiedge.safety.broker import (
 
 pytestmark = pytest.mark.safety
 
-ALLOWED_READS = ("get_account", "get_clock", "get_all_positions")
+READ_METHOD = "get"  # the only client method: RESTClient.get, i.e. an HTTP GET
+READ_PATHS = ("/account", "/clock", "/positions")  # the only paths it may be called with
 PAPER_GUARD_ATTRIBUTE = "_base_url"  # the only client attribute assert_paper_client inspects
 FAKE_KEY_ID = "PKFAKESAFETYKEY0001"
 FAKE_SECRET = "fake-safety-secret-value"
@@ -61,7 +62,7 @@ class ForbiddenClientAccess(BaseException):
     """
 
 
-def _account(**overrides: object) -> SimpleNamespace:
+def _account(**overrides: object) -> dict[str, object]:
     fields: dict[str, object] = {
         "account_number": ACCOUNT_NUMBER,
         "status": "ACTIVE",
@@ -77,20 +78,23 @@ def _account(**overrides: object) -> SimpleNamespace:
         "trade_suspended_by_user": False,
     }
     fields.update(overrides)
-    return SimpleNamespace(**fields)
+    return fields
 
 
-def _clock() -> SimpleNamespace:
-    return SimpleNamespace(
-        timestamp=datetime(2026, 10, 30, 14, 15, tzinfo=UTC),
-        is_open=True,
-        next_open=datetime(2026, 11, 2, 14, 30, tzinfo=UTC),
-        next_close=datetime(2026, 10, 30, 20, 0, tzinfo=UTC),
-    )
+def _clock() -> dict[str, object]:
+    return {
+        "timestamp": "2026-10-30T14:15:00Z",
+        "is_open": True,
+        "next_open": "2026-11-02T14:30:00Z",
+        "next_close": "2026-10-30T20:00:00Z",
+    }
 
 
 class StrictReadOnlyClient:
     """A broker client that refuses every attribute except the permitted read surface.
+
+    Only ``get`` is answered, and only with exactly one positional argument from
+    :data:`READ_PATHS`; it returns decoded JSON like the SDK's ``RESTClient.get``.
 
     Every instance attribute access - permitted or not, dunder or not - is recorded before it is
     answered, so a forbidden access is detected even if the code under test catches the error.
@@ -109,9 +113,9 @@ class StrictReadOnlyClient:
             "accessed": [],
             "calls": [],
             "responses": {
-                "get_account": account if account is not None else _account(),
-                "get_clock": _clock(),
-                "get_all_positions": list(positions),  # type: ignore[call-overload]
+                "/account": account if account is not None else _account(),
+                "/clock": _clock(),
+                "/positions": list(positions),  # type: ignore[call-overload]
             },
             "fail_with": fail_with or {},
         }
@@ -122,15 +126,18 @@ class StrictReadOnlyClient:
         state["accessed"].append(name)
         if name == PAPER_GUARD_ATTRIBUTE:
             return state["base_url"]
-        if name in ALLOWED_READS:
+        if name == READ_METHOD:
 
             def read(*args: object, **kwargs: object) -> object:
-                if args or kwargs:
-                    raise ForbiddenClientAccess(f"{name} called with arguments")
-                state["calls"].append(name)
-                if name in state["fail_with"]:
-                    raise state["fail_with"][name]
-                return state["responses"][name]
+                if kwargs or len(args) != 1 or type(args[0]) is not str:
+                    raise ForbiddenClientAccess("get must be called with exactly one path")
+                path = args[0]
+                if path not in READ_PATHS:
+                    raise ForbiddenClientAccess(f"forbidden broker path {path!r}")
+                state["calls"].append(path)
+                if path in state["fail_with"]:
+                    raise state["fail_with"][path]
+                return state["responses"][path]
 
             return read
         raise ForbiddenClientAccess(f"forbidden client attribute {name!r}")
@@ -169,6 +176,9 @@ def _no_network(monkeypatch: pytest.MonkeyPatch) -> None:
         "close_position",
         "close_all_positions",
         "get_orders",
+        "get_account",  # SDK model methods: lax coercion would hide malformed flags (F-009)
+        "get_clock",
+        "get_all_positions",
         "post",
         "delete",
         "_session",
@@ -191,29 +201,41 @@ def test_strict_client_refuses_and_records_any_other_attribute(name: str) -> Non
     assert _state(client)["accessed"] == [name, name, name]
     with pytest.raises(ForbiddenClientAccess):
         client.anything = 1
-    with pytest.raises(ForbiddenClientAccess):  # permitted reads refuse any argument
-        client.get_account(1)
+    for args, kwargs in (
+        ((), {}),
+        (("/orders",), {}),
+        (("/account/activities",), {}),
+        (("/account", {"status": "all"}), {}),
+        (("/account",), {"data": {"x": 1}}),
+        (("account",), {}),
+    ):
+        with pytest.raises(ForbiddenClientAccess):  # get refuses any other path or argument
+            client.get(*args, **kwargs)
+    assert _state(client)["calls"] == []
 
 
 # ------------------------------------------------------------------ read-only surface
 
 
-def test_snapshot_touches_only_paper_guard_and_three_read_methods() -> None:
+def test_snapshot_touches_only_paper_guard_and_three_read_paths() -> None:
     client = StrictReadOnlyClient()
 
     snapshot = fetch_account_snapshot(client)  # type: ignore[arg-type]
 
     state = _state(client)
     # the base URL is read by the strict type-exact check and by assert_paper_client
-    assert state["accessed"] == [PAPER_GUARD_ATTRIBUTE, PAPER_GUARD_ATTRIBUTE, *ALLOWED_READS]
-    assert state["calls"] == list(ALLOWED_READS)
+    assert state["accessed"] == [PAPER_GUARD_ATTRIBUTE] * 2 + [READ_METHOD] * 3
+    assert state["calls"] == list(READ_PATHS)
     assert snapshot.equity == 100000.0
     assert snapshot.positions == ()
 
 
-def test_read_only_protocol_declares_only_the_three_read_methods() -> None:
+def test_read_only_protocol_declares_only_get_of_the_three_paths() -> None:
     declared = {name for name in vars(ReadOnlyTradingClient) if not name.startswith("_")}
-    assert declared == set(ALLOWED_READS)
+    assert declared == {READ_METHOD}
+    hints = get_type_hints(ReadOnlyTradingClient.get)
+    assert set(hints) == {"path", "return"}
+    assert get_args(hints["path"]) == READ_PATHS
 
 
 def _broker_modules() -> list[str]:
@@ -245,7 +267,8 @@ def test_broker_package_references_no_order_or_other_client_method() -> None:
     """Phase 1: ``semiedge.broker`` is read-only.
 
     Every public or private method of the SDK ``TradingClient`` (orders, positions closing,
-    watchlists, raw HTTP verbs, ...) except the three reads must be absent from the source.
+    watchlists, the other raw HTTP verbs, the model-returning reads, ...) except ``get`` must be
+    absent from the source; ``get`` itself is pinned to the three paths by the usage scan below.
     When the order lifecycle (#21) lands, narrow this scan to the read-only modules
     deliberately, in a reviewed change.
     """
@@ -255,7 +278,8 @@ def test_broker_package_references_no_order_or_other_client_method() -> None:
         if callable(getattr(TradingClient, name)) and not name.startswith("__")
     }
     assert {"submit_order", "cancel_orders", "close_all_positions", "post"} <= client_methods
-    forbidden = client_methods - set(ALLOWED_READS)
+    assert READ_METHOD in client_methods
+    forbidden = client_methods - {READ_METHOD}
 
     modules = _broker_modules()
     assert "semiedge.broker.account" in modules
@@ -292,7 +316,11 @@ _CLIENT_CONSUMERS = {"assert_paper_client", "_assert_exact_paper_endpoint"}
 
 
 def _client_usage_violations(source: str) -> list[str]:
-    """Every use of a name ``client`` that is not an allowed read or a paper-guard call."""
+    """Every use of a name ``client`` that is not an allowed read or a paper-guard call.
+
+    The only allowed read is ``client.get("<path>")`` with a single string literal from
+    :data:`READ_PATHS`: no variable path, no query data, no keyword argument.
+    """
     tree = ast.parse(source)
     parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
     violations: list[str] = []
@@ -300,10 +328,17 @@ def _client_usage_violations(source: str) -> list[str]:
         if not (isinstance(node, ast.Name) and node.id == "client"):
             continue
         parent = parents[node]
-        if isinstance(parent, ast.Attribute) and parent.attr in ALLOWED_READS:
+        if isinstance(parent, ast.Attribute) and parent.attr == READ_METHOD:
             grand = parents[parent]
-            if isinstance(grand, ast.Call) and grand.func is parent and not grand.args:
-                continue  # client.get_account() etc., called without arguments
+            if (
+                isinstance(grand, ast.Call)
+                and grand.func is parent
+                and not grand.keywords
+                and len(grand.args) == 1
+                and isinstance(grand.args[0], ast.Constant)
+                and grand.args[0].value in READ_PATHS
+            ):
+                continue  # client.get("/account") etc.
         if isinstance(parent, ast.Call) and parent.args and parent.args[0] is node:
             func = parent.func
             if isinstance(func, ast.Name) and func.id in _CLIENT_CONSUMERS:
@@ -332,7 +367,7 @@ def _module_sources() -> dict[str, str]:
 
 
 def test_broker_package_uses_the_client_only_for_the_three_reads() -> None:
-    """Allowlist: ``client`` may only be read via the three methods or handed to a paper guard.
+    """Allowlist: ``client`` may only ``get`` the three paths or be handed to a paper guard.
 
     Aliasing (``c = client``), passing it to another helper, computed ``getattr`` names or raw
     session access are all rejected, so a renamed or string-built order call cannot slip in.
@@ -349,8 +384,14 @@ def test_broker_package_uses_the_client_only_for_the_three_reads() -> None:
         "def f(client):\n    client._session.request('POST', 'u')",
         "def f(client):\n    c = client\n    c.submit_order(1)",
         "def f(client):\n    helper(client)",
-        "def f(client):\n    client.get_account(1)",
-        "def f(client):\n    return client.get_account",
+        "def f(client):\n    client.get_account()",
+        "def f(client):\n    client.get('/orders')",
+        "def f(client):\n    client.get('/account', {'a': 1})",
+        "def f(client):\n    client.get('/account', data=1)",
+        "def f(client, path):\n    client.get(path)",
+        "def f(client):\n    client.get('/' + 'orders')",
+        "def f(client):\n    client.post('/account')",
+        "def f(client):\n    return client.get",
     ],
 )
 def test_client_usage_scan_catches_bypasses(snippet: str) -> None:
@@ -472,7 +513,7 @@ def test_paper_sdk_client_sends_exactly_three_get_requests(monkeypatch: pytest.M
     bodies: dict[str, object] = {
         "/v2/account": {
             "id": "a3d9c3a4-3b0e-4c5e-9d7e-0b8a3d0f8e11",
-            **vars(_account()),
+            **_account(),
         },
         "/v2/clock": {
             "timestamp": "2026-10-30T10:15:00-04:00",
@@ -515,13 +556,10 @@ def _http_api_error(status: int, operation_path: str) -> APIError:
     return APIError(response.text, http_error)
 
 
-_PATHS = {"get_account": "/account", "get_clock": "/clock", "get_all_positions": "/positions"}
-
-
-def _leaky_errors(operation: str) -> list[tuple[Exception, int | None]]:
-    url = f"{PAPER_TRADING_BASE_URL}/v2{_PATHS[operation]}"
+def _leaky_errors(path: str) -> list[tuple[Exception, int | None]]:
+    url = f"{PAPER_TRADING_BASE_URL}/v2{path}"
     return [
-        (_http_api_error(401, _PATHS[operation]), 401),
+        (_http_api_error(401, path), 401),
         (
             requests.ConnectionError(
                 f"HTTPSConnectionPool(host='paper-api.alpaca.markets', port=443): "
@@ -533,11 +571,12 @@ def _leaky_errors(operation: str) -> list[tuple[Exception, int | None]]:
     ]
 
 
-@pytest.mark.parametrize("operation", ALLOWED_READS)
+@pytest.mark.parametrize("path", READ_PATHS)
 @pytest.mark.parametrize("case", [0, 1, 2])
-def test_client_failures_are_wrapped_without_credentials_or_urls(operation: str, case: int) -> None:
-    error, status = _leaky_errors(operation)[case]
-    client = StrictReadOnlyClient(fail_with={operation: error})
+def test_client_failures_are_wrapped_without_credentials_or_urls(path: str, case: int) -> None:
+    error, status = _leaky_errors(path)[case]
+    operation = f"GET {path}"
+    client = StrictReadOnlyClient(fail_with={path: error})
 
     with pytest.raises(BrokerError) as caught:
         fetch_account_snapshot(client)  # type: ignore[arg-type]
@@ -549,12 +588,12 @@ def test_client_failures_are_wrapped_without_credentials_or_urls(operation: str,
     assert failure.__cause__ is None
     assert failure.__context__ is None  # the leaky original is not even implicitly chained
     rendered = "".join(traceback.format_exception(failure)) + repr(failure) + str(failure)
-    for leak in (FAKE_KEY_ID, FAKE_SECRET, "alpaca.markets", "http", "/v2/", "rejected"):
+    for leak in (FAKE_KEY_ID, FAKE_SECRET, "alpaca.markets", "http", "/v2", "rejected"):
         assert leak not in rendered
     assert operation in str(failure)
     assert type(error).__name__ in str(failure)
     calls = _state(client)["calls"]
-    assert calls == list(ALLOWED_READS[: ALLOWED_READS.index(operation) + 1])
+    assert calls == list(READ_PATHS[: READ_PATHS.index(path) + 1])
 
 
 # ------------------------------------------------------------------ fail closed
@@ -568,10 +607,13 @@ def test_unusable_money_values_fail_closed_never_default(field: str, value: obje
         fetch_account_snapshot(client)  # type: ignore[arg-type]
 
 
-@pytest.mark.parametrize("value", [None, "false", 0])
+@pytest.mark.parametrize("value", [None, "false", 0, 1, "true", "missing"])
 @pytest.mark.parametrize("field", ["trading_blocked", "account_blocked", "trade_suspended_by_user"])
 def test_unknown_block_state_fails_closed(field: str, value: object) -> None:
-    client = StrictReadOnlyClient(account=_account(**{field: value}))
+    account = _account(**{field: value})
+    if value == "missing":
+        del account[field]
+    client = StrictReadOnlyClient(account=account)
     with pytest.raises(BrokerDataError, match=field):
         fetch_account_snapshot(client)  # type: ignore[arg-type]
 

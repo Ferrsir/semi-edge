@@ -133,6 +133,114 @@ def test_sdk_payload_gaps_fail_closed(
         fetch_account_snapshot(client)
 
 
+BLOCKING_FLAGS = ("trading_blocked", "account_blocked", "trade_suspended_by_user")
+
+
+@pytest.mark.parametrize("value", [0, "false"])
+@pytest.mark.parametrize("field", BLOCKING_FLAGS)
+def test_sdk_coercible_blocking_flags_fail_closed(
+    paper_client_factory: Factory,
+    account_payload: dict[str, Any],
+    clock_payload: dict[str, Any],
+    field: str,
+    value: object,
+) -> None:
+    """F-009: the SDK model would coerce ``0``/``"false"`` to ``False`` (tradable)."""
+    account_payload[field] = value
+    client, _ = paper_client_factory(_routes(account_payload, clock_payload, []))
+
+    with pytest.raises(BrokerDataError, match=f"'{field}' must be a boolean"):
+        fetch_account_snapshot(client)
+
+
+@pytest.mark.parametrize("value", [1, "true", "False", "0", "", [], {}, 0.0, "missing"], ids=repr)
+@pytest.mark.parametrize("field", BLOCKING_FLAGS)
+def test_malformed_or_missing_blocking_flags_fail_closed(
+    paper_client_factory: Factory,
+    account_payload: dict[str, Any],
+    clock_payload: dict[str, Any],
+    field: str,
+    value: object,
+) -> None:
+    if value == "missing":
+        del account_payload[field]
+    else:
+        account_payload[field] = value
+    client, _ = paper_client_factory(_routes(account_payload, clock_payload, []))
+
+    with pytest.raises(BrokerDataError, match=field):
+        fetch_account_snapshot(client)
+
+
+@pytest.mark.parametrize(
+    ("payload", "field", "value"),
+    [
+        ("clock", "is_open", 1),
+        ("clock", "is_open", "true"),
+        ("clock", "timestamp", 1793370930),  # the SDK would read an epoch number as a datetime
+        ("clock", "next_open", "2026-11-02T09:30:00"),  # no offset: the SDK would accept it
+        ("clock", "next_close", "2026-10-30 16:00:00-04:00"),
+        ("account", "pattern_day_trader", 0),
+        ("account", "pattern_day_trader", "false"),
+        ("account", "status", 1),
+        ("account", "currency", ["USD"]),
+    ],
+)
+def test_other_sdk_coercible_fields_fail_closed(
+    paper_client_factory: Factory,
+    account_payload: dict[str, Any],
+    clock_payload: dict[str, Any],
+    *,
+    payload: str,
+    field: str,
+    value: object,
+) -> None:
+    {"account": account_payload, "clock": clock_payload}[payload][field] = value
+    client, _ = paper_client_factory(_routes(account_payload, clock_payload, []))
+
+    with pytest.raises(BrokerDataError, match=field):
+        fetch_account_snapshot(client)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("qty", None), ("side", 1), ("side", "LONG"), ("symbol", 7), ("current_price", True)],
+)
+def test_malformed_sdk_position_fields_fail_closed(
+    paper_client_factory: Factory,
+    account_payload: dict[str, Any],
+    clock_payload: dict[str, Any],
+    positions_payload: list[dict[str, Any]],
+    *,
+    field: str,
+    value: object,
+) -> None:
+    positions_payload[0][field] = value
+    client, _ = paper_client_factory(_routes(account_payload, clock_payload, positions_payload))
+
+    with pytest.raises(BrokerDataError, match=field):
+        fetch_account_snapshot(client)
+
+
+@pytest.mark.parametrize(
+    ("path", "body"),
+    [("/account", []), ("/account", "ACTIVE"), ("/clock", None), ("/positions", {"0": {}})],
+)
+def test_non_object_sdk_responses_fail_closed(
+    paper_client_factory: Factory,
+    account_payload: dict[str, Any],
+    clock_payload: dict[str, Any],
+    path: str,
+    body: object,
+) -> None:
+    routes = _routes(account_payload, clock_payload, [])
+    routes[path] = (200, body)
+    client, _ = paper_client_factory(routes)
+
+    with pytest.raises(BrokerDataError, match=r"expected a (JSON object|list)"):
+        fetch_account_snapshot(client)
+
+
 def test_http_error_is_sanitised(
     paper_client_factory: Factory,
     account_payload: dict[str, Any],
@@ -146,7 +254,7 @@ def test_http_error_is_sanitised(
     with pytest.raises(BrokerError) as caught:
         fetch_account_snapshot(client)
 
-    assert caught.value.operation == "get_clock"
+    assert caught.value.operation == "GET /clock"
     assert caught.value.status_code == 401
     assert fake_credentials.key_id not in str(caught.value)
     assert "alpaca.markets" not in str(caught.value)

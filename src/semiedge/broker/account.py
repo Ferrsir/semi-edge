@@ -2,14 +2,21 @@
 
 :func:`fetch_account_snapshot` first verifies that the client is bound to the PAPER endpoint
 (a type-exact base-URL check, then :func:`semiedge.safety.broker.assert_paper_client`) and then
-makes exactly three read requests: ``get_account``, ``get_clock`` and ``get_all_positions``.
-Nothing here can change broker state. The client parameter is typed with
-:class:`ReadOnlyTradingClient`, a protocol that exposes only those three methods, so mypy
-rejects any other broker call; ``tests/safety/test_broker_readonly.py`` proves the same at
-runtime with a client that refuses every other attribute.
+makes exactly three read requests through the SDK's ``get``: ``GET /v2/account``, ``/v2/clock``
+and ``/v2/positions`` (the same requests ``get_account``, ``get_clock`` and ``get_all_positions``
+send). Nothing here can change broker state. The client parameter is typed with
+:class:`ReadOnlyTradingClient`, a protocol whose only method is ``get`` restricted to those three
+literal paths, so mypy rejects any other broker call; ``tests/safety/test_broker_readonly.py``
+proves the same at runtime with a client that refuses every other attribute, argument and path.
+
+Raw JSON, not SDK models (F-009). The SDK's pydantic models coerce in lax mode (``0`` or
+``"false"`` become ``False`` for a blocking flag, a number becomes a datetime), which would hide
+a malformed blocking state before it could be rejected. The decoded JSON is therefore validated
+directly with exact JSON types: flags must be JSON booleans, text must be JSON strings and
+timestamps must be RFC 3339 strings with an explicit offset.
 
 Fail closed. Alpaca serialises money and quantities as decimal strings. Every field the snapshot
-needs is parsed strictly: a missing, mistyped, unparseable or non-finite value raises
+needs is parsed strictly: a missing, ``null``, mistyped, unparseable or non-finite value raises
 :class:`BrokerDataError` and is never replaced by a default such as ``0``. Error messages name the
 field and the problem but never echo raw values, credentials or URLs.
 
@@ -22,10 +29,9 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from enum import Enum, StrEnum
+from enum import StrEnum
 from typing import Final, Literal, Protocol
 
 from alpaca.common.enums import BaseURL
@@ -34,6 +40,8 @@ from semiedge.safety.broker import PAPER_TRADING_BASE_URL, assert_paper_client
 from semiedge.safety.modes import SafetyViolation
 
 PositionSide = Literal["long", "short"]
+# The only broker paths this module may request (relative to ``/v2``), all with ``GET``.
+AccountReadPath = Literal["/account", "/clock", "/positions"]
 
 ACCOUNT_MASK_PREFIX: Final = "****"
 TRADABLE_ACCOUNT_STATUS: Final = "ACTIVE"
@@ -48,7 +56,12 @@ MIN_ACCOUNT_NUMBER_CHARS: Final = 8  # the mask must hide at least half of the a
 # surrounding whitespace, ``1_000``, non-ASCII digits, ``nan`` and ``inf``.
 _DECIMAL: Final = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
 _MISSING: Final = object()
-_FAILED: Final = object()
+# RFC 3339 date-time with a mandatory offset, ASCII digits only. Alpaca sends up to nanoseconds;
+# the fraction is truncated to microseconds (``datetime`` resolution) before parsing.
+_TIMESTAMP: Final = re.compile(
+    r"([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(?:\.([0-9]{1,9}))?"
+    r"(Z|[+-][0-9]{2}:[0-9]{2})"
+)
 # Ticker symbols (equities incl. class shares, crypto pairs, OCC option symbols). Validated before
 # a symbol is ever echoed in an error message, so broker data cannot inject log lines.
 _SYMBOL: Final = re.compile(r"[A-Z0-9][A-Z0-9./-]{0,31}")
@@ -86,17 +99,14 @@ class AccountBlockReason(StrEnum):
 
 
 class ReadOnlyTradingClient(Protocol):
-    """The only broker surface this module may use.
+    """The only broker surface this module may use: ``GET`` of three fixed read-only paths.
 
-    ``alpaca.trading.client.TradingClient`` satisfies it structurally. Obtain clients only from
+    ``alpaca.trading.client.TradingClient`` satisfies it structurally (its ``get`` returns the
+    decoded JSON body). Obtain clients only from
     :func:`semiedge.safety.broker.create_paper_trading_client`.
     """
 
-    def get_account(self) -> object: ...
-
-    def get_clock(self) -> object: ...
-
-    def get_all_positions(self) -> object: ...
+    def get(self, path: AccountReadPath) -> object: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -272,13 +282,14 @@ def fetch_account_snapshot(client: ReadOnlyTradingClient) -> AccountSnapshot:
     """
     _assert_exact_paper_endpoint(client)
     assert_paper_client(client)
-    operation = "get_account"
+    # Raw JSON on purpose: SDK models would coerce malformed values before validation (F-009).
+    operation = "GET /account"
     try:
-        account = client.get_account()
-        operation = "get_clock"
-        clock = client.get_clock()
-        operation = "get_all_positions"
-        positions = client.get_all_positions()
+        account = client.get("/account")
+        operation = "GET /clock"
+        clock = client.get("/clock")
+        operation = "GET /positions"
+        positions = client.get("/positions")
     except Exception as exc:
         failure = _sanitised_failure(operation, exc)
     else:
@@ -343,9 +354,11 @@ def _http_status(exc: Exception) -> int | None:
 # ------------------------------------------------------------------ parsing
 
 
-def _build_snapshot(account: object, clock: object, positions: object) -> AccountSnapshot:
-    _require_model(account, "account")
-    _require_model(clock, "clock")
+def _build_snapshot(
+    raw_account: object, raw_clock: object, raw_positions: object
+) -> AccountSnapshot:
+    account = _json_object(raw_account, "account")
+    clock = _json_object(raw_clock, "clock")
     return AccountSnapshot(
         account_number_masked=mask_account_number(_text(account, "account_number", "account")),
         status=_text(account, "status", "account"),
@@ -363,68 +376,66 @@ def _build_snapshot(account: object, clock: object, positions: object) -> Accoun
         next_open=_utc_datetime(clock, "next_open", "clock"),
         next_close=_utc_datetime(clock, "next_close", "clock"),
         as_of=_utc_datetime(clock, "timestamp", "clock"),
-        positions=_parse_positions(positions),
+        positions=_parse_positions(raw_positions),
     )
 
 
 def _parse_positions(raw: object) -> tuple[PositionSnapshot, ...]:
-    if not isinstance(raw, (list, tuple)):
+    if type(raw) is not list:  # exact: a decoded JSON array is a plain list
         raise BrokerDataError(f"positions: expected a list, got {type(raw).__name__}")
     parsed = [_parse_position(item, index) for index, item in enumerate(raw)]
     return tuple(sorted(parsed, key=lambda p: p.symbol))
 
 
 def _parse_position(raw: object, index: int) -> PositionSnapshot:
-    _require_model(raw, f"positions[{index}]")
-    symbol = _text(raw, "symbol", f"positions[{index}]")
+    position = _json_object(raw, f"positions[{index}]")
+    symbol = _text(position, "symbol", f"positions[{index}]")
     if _SYMBOL.fullmatch(symbol) is None:
         raise BrokerDataError(f"positions[{index}]: 'symbol' is not a valid ticker symbol")
     where = f"position {symbol}"
     return PositionSnapshot(
         symbol=symbol,
-        qty=_decimal(raw, "qty", where),
-        side=_side(raw, where),
-        avg_entry_price=_decimal(raw, "avg_entry_price", where),
-        market_value=_decimal(raw, "market_value", where),
-        cost_basis=_decimal(raw, "cost_basis", where),
-        unrealized_pl=_decimal(raw, "unrealized_pl", where),
-        unrealized_plpc=_decimal(raw, "unrealized_plpc", where),
-        current_price=_decimal(raw, "current_price", where),
-        asset_class=_text(raw, "asset_class", where),
+        qty=_decimal(position, "qty", where),
+        side=_side(position, where),
+        avg_entry_price=_decimal(position, "avg_entry_price", where),
+        market_value=_decimal(position, "market_value", where),
+        cost_basis=_decimal(position, "cost_basis", where),
+        unrealized_pl=_decimal(position, "unrealized_pl", where),
+        unrealized_plpc=_decimal(position, "unrealized_plpc", where),
+        current_price=_decimal(position, "current_price", where),
+        asset_class=_text(position, "asset_class", where),
     )
 
 
-def _require_model(obj: object, where: str) -> None:
-    if obj is None or isinstance(obj, Mapping):
-        raise BrokerDataError(
-            f"{where}: expected an Alpaca model object, got {type(obj).__name__} "
-            "(raw-data clients are not supported)"
-        )
+def _json_object(raw: object, where: str) -> dict[str, object]:
+    """The decoded JSON object itself: exact ``dict`` (no SDK model, no mapping subclass)."""
+    if type(raw) is not dict:
+        raise BrokerDataError(f"{where}: expected a JSON object, got {type(raw).__name__}")
+    return raw
 
 
-def _field(obj: object, name: str, where: str) -> object:
-    try:
-        value = getattr(obj, name, _MISSING)
-    except Exception:  # a failing property: never let its message (maybe a body) escape
-        value = _FAILED
-    if value is _FAILED:
-        raise BrokerDataError(f"{where}: required field {name!r} could not be read")
+def _field(obj: dict[str, object], name: str, where: str) -> object:
+    value = obj.get(name, _MISSING)
     if value is _MISSING or value is None:
         raise BrokerDataError(f"{where}: required field {name!r} is missing")
     return value
 
 
-def _decimal(obj: object, name: str, where: str) -> float:
+def _decimal(obj: dict[str, object], name: str, where: str) -> float:
     raw = _field(obj, name, where)
-    # exact types (isinstance alone admits bool, str subclasses with a lying __float__, numpy)
-    if not isinstance(raw, (str, int, float)) or type(raw) not in (str, int, float):
+    # exact types: ``isinstance`` alone admits bool and str subclasses with a lying __float__
+    if type(raw) is str:
+        if _DECIMAL.fullmatch(raw) is None:
+            raise BrokerDataError(f"{where}: {name!r} is not a finite decimal number")
+        number: str | int | float = raw
+    elif type(raw) is int or type(raw) is float:
+        number = raw
+    else:
         raise BrokerDataError(
             f"{where}: {name!r} must be a decimal string, got {type(raw).__name__}"
         )
-    if isinstance(raw, str) and _DECIMAL.fullmatch(raw) is None:
-        raise BrokerDataError(f"{where}: {name!r} is not a finite decimal number")
     try:
-        value = float(raw)
+        value = float(number)
     except OverflowError:  # an int beyond the float range
         raise BrokerDataError(f"{where}: {name!r} is not finite") from None
     if not math.isfinite(value):
@@ -432,17 +443,15 @@ def _decimal(obj: object, name: str, where: str) -> float:
     return value
 
 
-def _text(obj: object, name: str, where: str) -> str:
+def _text(obj: dict[str, object], name: str, where: str) -> str:
     raw = _field(obj, name, where)
-    if isinstance(raw, Enum):  # alpaca enums mix in str; str() would give "Enum.MEMBER"
-        raw = raw.value
     if type(raw) is not str:  # exact: a str subclass could override comparison or formatting
         raise BrokerDataError(f"{where}: {name!r} must be a string, got {type(raw).__name__}")
     _check_text(raw, f"{where}: {name}")
     return raw
 
 
-def _side(obj: object, where: str) -> PositionSide:
+def _side(obj: dict[str, object], where: str) -> PositionSide:
     side = _text(obj, "side", where)
     if side == "long":
         return "long"
@@ -451,30 +460,43 @@ def _side(obj: object, where: str) -> PositionSide:
     raise BrokerDataError(f"{where}: 'side' must be 'long' or 'short'")
 
 
-def _flag(obj: object, name: str, where: str) -> bool:
+def _flag(obj: dict[str, object], name: str, where: str) -> bool:
     raw = _field(obj, name, where)
-    if not isinstance(raw, bool):
+    if type(raw) is not bool:  # a JSON boolean only: never 0, 1, "false" or "true"
         raise BrokerDataError(f"{where}: {name!r} must be a boolean, got {type(raw).__name__}")
     return raw
 
 
-def _optional_flag(obj: object, name: str, where: str) -> bool | None:
-    raw = getattr(obj, name, None)
+def _optional_flag(obj: dict[str, object], name: str, where: str) -> bool | None:
+    raw = obj.get(name)  # absent or null: not reported (unknown), never False
     if raw is None:
         return None
-    if not isinstance(raw, bool):
+    if type(raw) is not bool:
         raise BrokerDataError(f"{where}: {name!r} must be a boolean, got {type(raw).__name__}")
     return raw
 
 
-def _utc_datetime(obj: object, name: str, where: str) -> datetime:
+def _utc_datetime(obj: dict[str, object], name: str, where: str) -> datetime:
     raw = _field(obj, name, where)
-    if not isinstance(raw, datetime):
-        raise BrokerDataError(f"{where}: {name!r} must be a datetime, got {type(raw).__name__}")
-    if raw.utcoffset() is None:
-        raise BrokerDataError(f"{where}: {name!r} is timezone-naive")
+    if type(raw) is not str:  # a JSON number must not become an epoch timestamp
+        raise BrokerDataError(
+            f"{where}: {name!r} must be an RFC 3339 timestamp string, got {type(raw).__name__}"
+        )
+    match = _TIMESTAMP.fullmatch(raw)
+    if match is None:
+        raise BrokerDataError(f"{where}: {name!r} is not an RFC 3339 timestamp with an offset")
+    seconds, fraction, offset = match.groups()
+    micros = (fraction or "").ljust(6, "0")[:6]
     try:
-        converted: datetime | None = raw.astimezone(UTC)
+        parsed: datetime | None = datetime.fromisoformat(
+            f"{seconds}.{micros}{'+00:00' if offset == 'Z' else offset}"
+        )
+    except ValueError:  # e.g. month 13, hour 25, an offset of 24 h or more
+        parsed = None
+    if parsed is None:
+        raise BrokerDataError(f"{where}: {name!r} is not a valid RFC 3339 timestamp")
+    try:
+        converted: datetime | None = parsed.astimezone(UTC)
     except OverflowError:
         converted = None
     if converted is None:
