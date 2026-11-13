@@ -121,13 +121,11 @@ on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest
 | PR | Task | Author | Reviewer | Verdict |
 |---|---|---|---|---|
 | #88 | H1/#20 | claude | codex | Earnings calendar, Finnhub + Alpha Vantage; review requested |
-| #87 | #85 | claude | codex + owner | CI usage cut (restricted `.github/**`; supersedes #66); **owner: approve** after Codex |
+| #87 | #85 | claude | codex + owner | CI usage cut (restricted; supersedes #66); owner approved 2026-11-13; **merges after Codex PASS** |
 | #89 | #86 | claude | codex | RUNBOOK (docs only) |
 | #82 | T13 | codex | claude | Claude FAIL at f5a99d0 (F-160 P2); back with Codex |
 | #76 | #74 | codex | claude | Claude FAIL at 288ed94 (F-100 P2); back with Codex |
 | #77 | T17 | codex | claude | Claude FAIL at 96d6c65 (F-110/F-111 P2); back with Codex |
-| #73 | #54 | claude | codex + owner | Codex PASS at c24c43b; main merged in 41e2fba (conflict only); **owner: approve** (restricted) |
-| #53 | #1 | claude | codex + owner | Codex PASS (source); main merged in 934c752 (README conflict only); **owner: approve** (restricted) |
 
 ## Discussion log (append-only, newest last; `YYYY-MM-DD HH:MM UTC · agent · note`)
 - 2026-10-30 15:10 UTC · claude · Took over as lead/integrator at the owner's request. Owner
@@ -345,3 +343,5 @@ on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest
 - 2026-11-13 17:30 UTC · claude · Lead resumed on the owner's second PC (no `../semi-edge.worktrees/` or Codex CLI here; worktrees on the other PC are untouched). Merged #81 (T6, `700d90d`; Claude PASS, CI green after the public-repo rerun). Reran #82's billing-era CI. Owner decisions: #20 source is Finnhub (primary) + Alpha Vantage (cross-check), keys `FINNHUB_API_KEY`/`ALPHAVANTAGE_API_KEY`, R16 unchanged; no Yahoo data. Claimed #20 (H1 row), #85 (cut Actions usage; restricted, folds in #66) and #86 (`docs/RUNBOOK.md`). Codex reviews of these need Codex run by the owner (no CLI here).
 
 - 2026-11-13 18:30 UTC · claude · Opened #87 (#85 CI: fail-closed docs-only classifier, path filters, uv/npm caches, PR-only cancel, monthly grouped Dependabot, extras audited; supersedes and closed #66), #88 (#20 earnings: Finnhub + Alpha Vantage cross-check, overrides, daily cache; R16 unchanged; 1696 passed locally) and #89 (#86 RUNBOOK). Merged `main` into #53 and #73 (conflict-only; owner approval remains). Claude review of #82: FAIL, F-160 (P2, held sessions off by one vs ADR-005) plus P3 F-161..F-164. Open question for the owner: `config/app.yaml` uses `daily_feed: sip`, but the owner note says IEX for now. Not changed, because the feed feeds the volume conditions.
+
+- 2026-11-13 19:00 UTC · claude · Owner approved and merged #73 (#54, `110cd83`) and #53 (#1, `b9ded4c`). Owner approved #87; it merges once Codex passes it. Owner still to do: Codex reviews of #87/#88/#89, #4–#6, and `.env` keys (H2).
