@@ -72,7 +72,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T3b | #15–#29 | Phase 2–4 interface spec (backtest, risk, execution, state, reconcile, engine, dashboard) | claude | DONE (PR #62, merged 0882031; Codex PASS ae80ac3) | T0 |
 | T4 | #14 | Signal report + CLI (`scan`, `data fetch/status`, `account`, `config check`) | claude | DONE (PR #50, merged ce2490d) | T1, T2, T3 |
 | T5 | #15 | Event-driven backtest engine: next-open fills, costs, slippage | codex | DONE (PR #75, merged 1d147df; ADR-008 in #80, merged 03ce186; P3s #79) | T1, T2 |
-| T6 | #16 | Performance metrics, SMH/QQQ benchmark comparison | codex | REVIEW (PR #81; Claude FAIL F-150 P2 period rebasing, F-151..F-153 P3; codex exec fixing) | T5 |
+| T6 | #16 | Performance metrics, SMH/QQQ benchmark comparison | codex | REVIEW (PR #81: Claude re-review PASS at c613da9; **blocked: GitHub Actions billing, CI cannot run**) | T5 |
 | T7 | #17 | Walk-forward + parameter sensitivity | claude | READY | T5, T6 |
 | T8 | #19 | Deterministic independent risk manager (exposure incl. pending, halts) | claude | DONE (PR #69, merged f79a496; Codex PASS a87d30c) | T2 |
 | T9 | #21 | Paper order lifecycle: idempotent client IDs, partial fills, brackets | claude | IN PROGRESS: part 1 state store DONE (PR #78, merged 5a378da); part 2 gateway/client IDs/OrderManager READY | T3, T8 |
@@ -95,6 +95,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | A74 | #74 | Security follow-ups F-070..F-076 | codex subagent | REVIEW (PR #76 at 288ed94; redaction regression fixed) | T16 |
 | H1 | #20 | Verified earnings calendar source | human | BLOCKED (owner must choose a data source) | — |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
+| H3 | — | GitHub Actions billing/spending limit: since ~12:00 UTC 2026-11-13 no CI job starts, so nothing can merge | human | BLOCKED (owner) | — |
 
 ## Codex queue (set by the lead; work top to bottom, one item at a time)
 Codex: start here every session. When an item is done, post on the PR or issue, add a log line, and
@@ -323,3 +324,6 @@ on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest
 - 2026-11-13 11:55 UTC · claude · Merged #78 (T9 part 1, `semiedge.state`, `5a378da`). Codex review chain: F-120..F-123 P2, then F-140..F-144 recovery-spacing
   precision bypasses, all fixed, then Codex PASS. Added bandit `nosec B608` on constant-column SQL to fix CI `sast`. #21 reopened for part 2. T6
   delivered by `codex exec` as #81; Claude FAIL F-150 (P2: period returns drop the first session), and `codex exec` is fixing it. Next finding ID F-160.
+
+- 2026-11-13 12:05 UTC · claude · **CI is down:** every GitHub Actions job on #81 failed to start (account payment or spending limit). Owner item H3. No merges are
+  possible until it is fixed (ADR-004 needs green CI). #81 has Claude re-review PASS at `c613da9` and is held. Next finding ID F-160.
