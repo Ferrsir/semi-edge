@@ -174,6 +174,37 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
   (all three fail on `b2c43f0`); same-basis out-of-order and full newer replacement stay accepted
   (`test_same_basis_out_of_order_refetch_is_accepted`, `test_newer_rebased_refetch_replacing_everything_is_accepted`).
 
+### F-026 · P2 · Validated finite target multiple produced an eligible signal with an infinite target (Codex review, PR #48)
+- **Where:** `semiedge.strategy.momentum_v1._evaluate_symbol` (head `38b7865`).
+- **Reproduce:** `target_atr_multiple=1.7e308` (accepted by `MomentumV1Params`) on the standard eligible
+  fixture gave `eligible=True`, `proposed_target=inf`.
+- **Fix:** `_trade_levels` computes stop and target before eligibility; a stop that is not positive
+  or a target that is not finite and above the close makes the symbol ineligible with an explicit
+  reason. Default formulas and thresholds are unchanged (no strategy change).
+- **Re-review (Codex, `92e9b48`): not fully closed.** Finite highs of 1e308 overflow the ATR seed to
+  inf, `_opt` maps it to `None`, and `_trade_levels` was only called when ATR was defined, so the
+  symbol was eligible with no stop or target. Fixed: once every condition passes, `_trade_levels`
+  always runs and rejects an undefined close or a non-finite or non-positive ATR.
+- **Regression:** `tests/unit/strategy/test_momentum_v1_evaluate.py::test_non_finite_proposed_target_makes_symbol_ineligible`,
+  `test_overflowing_atr_makes_symbol_ineligible` (fails on `92e9b48`).
+
+### F-027 · P3 · Oversized integer sizing input raised OverflowError (Codex review, PR #48)
+- **Where:** `semiedge.risk.sizing._positive_finite`.
+- **Reproduce:** `propose_position_size(10**1000, 100, 95, ...)` raised instead of returning the
+  documented invalid result.
+- **Fix:** float conversion failures return `shares=0`, `binding_constraint="invalid"` with a reason.
+- **Regression:** `tests/safety/test_position_sizing.py::test_integer_too_large_for_float_is_invalid_not_an_exception`.
+
+### F-030 · P2 · `semiedge account` let paper-client construction errors escape unsanitised (Codex review, PR #50)
+- **Where:** `semiedge.cli._cmd_account` (head `c1f8cf8`).
+- **Reproduce:** patch `cli.paper_account_client` to raise `ValueError("FAKE_SECRET_SENTINEL")`;
+  `cli.main(["account"])` raised uncaught, so the traceback printed the sentinel.
+- **Fix:** construction is inside the sanitised boundary. `MissingCredentialsError` (exit 3) and
+  `SafetyViolation` (exit 2) are re-raised unchanged; any other exception exits 4 naming only
+  the exception type.
+- **Regression:** `tests/integration/broker/test_cli_account.py::test_account_client_construction_errors_are_sanitised`
+  (3 exception types; fails on `c1f8cf8`).
+
 ---
 
 ## Speculative concerns (not demonstrated; tracked for the relevant phase)

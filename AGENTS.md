@@ -67,11 +67,11 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 |---|---|---|---|---|---|
 | T0 | #34, #8 | Consolidate governance + foundation + audit fixes into `main` | claude | DONE (PR #33, #35) | — |
 | T1 | #9, #10 | Data layer: calendar, Alpaca source, synthetic source, Parquet store, validation | codex | DONE (PR #36, merged c424d48) | T0 |
-| T2 | #11, #12 | Indicators, `momentum_v1` features/evaluation/score, position sizing | claude | REVIEW (PR #48) `feature/11-signals-strategy`; awaits Codex review | T0 |
+| T2 | #11, #12 | Indicators, `momentum_v1` features/evaluation/score, position sizing | claude | DONE (PR #48, merged 375849b; Codex PASS 44d9624) | T0 |
 | T3 | #13 | Read-only paper account snapshot (`semiedge.broker.account`) | claude | DONE (PR #39, merged ee66aaf; P3 F-025 → #52) | T0 |
-| T3b | #15–#29 | Phase 2–4 interface spec (backtest, risk, execution, state, reconcile, engine, dashboard) | claude | IN PROGRESS (claude) `feature/15-phase2-4-spec` | T0 |
-| T4 | #14 | Signal report + CLI (`scan`, `data fetch/status`, `account`, `config check`) | claude | REVIEW (draft PR #50, stacked on #36/#39/#48; review `22ff3ea..45ab740`) | T1, T2, T3 |
-| T5 | #15 | Event-driven backtest engine: next-open fills, costs, slippage | codex | READY | T1, T2 |
+| T3b | #15–#29 | Phase 2–4 interface spec (backtest, risk, execution, state, reconcile, engine, dashboard) | claude | REVIEW (PR #62 at 4f8eb8d): Codex FAIL F-037..F-040; Claude fixes needed | T0 |
+| T4 | #14 | Signal report + CLI (`scan`, `data fetch/status`, `account`, `config check`) | claude | REVIEW (PR #50 d3f12ba Codex PASS; final main refresh pending) | T1, T2, T3 |
+| T5 | #15 | Event-driven backtest engine: next-open fills, costs, slippage | codex | BLOCKED (resolve #62 contract findings before engine implementation) | T1, T2 |
 | T6 | #16 | Performance metrics, SMH/QQQ benchmark comparison | codex | READY | T5 |
 | T7 | #17 | Walk-forward + parameter sensitivity | claude | READY | T5, T6 |
 | T8 | #19 | Deterministic independent risk manager (exposure incl. pending, halts) | claude | READY | T2 |
@@ -87,8 +87,9 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | A37 | #37 | Audit: reject missing runtime configuration sections | codex | DONE (PR #38) | T0 |
 | A40 | #40 | Harden shared paper endpoint guard against disguised URL objects | codex | DONE (PR #41, merged dfece2a) | T0 |
 | T42 | #42 | Offline fixture CSV-to-Parquet ingestion pipeline | codex | DONE (PR #45, merged 9aa0e0c) | T0 |
-| T46 | #46 | Offline point-in-time split normalization core (subtask of #18) | codex | READY | T0 |
-| T47 | #47 | Project status dashboard (separate from trading UI) | codex | IN PROGRESS (codex): F-016..F-023 fixes on PR #49 | T0 |
+| T46 | #46 | Offline point-in-time split normalization core (subtask of #18) | codex | REVIEW (PR #61 at 0f328ea; Claude re-review after usage reset) | T0 |
+| T47 | #47 | Project status dashboard (separate from trading UI) | codex | REVIEW (PR #49 at 835d80c; rebased fixes; Claude re-review and owner CI approval pending) | T0 |
+| A63 | #63 | Reject unverified retained adjusted sessions (F-036) | codex | REVIEW (PR #64 at 51852d4; Claude review required) | T1 |
 | H1 | #20 | Verified earnings calendar source | human | BLOCKED (owner must choose a data source) | — |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
 
@@ -97,28 +98,26 @@ Codex: start here every session. When an item is done, post on the PR or issue, 
 delete the item from this list in the same `AGENTS.md` commit. If an item is blocked, say why in the
 log and move to the next one. Work in your own worktree under `../semi-edge.worktrees/`, not in the
 `.t3` checkout and not in a Claude worktree. Never push to a Claude branch. Report findings on the
-PR instead. The next finding ID is **F-028**.
+PR instead. The next finding ID is **F-041**.
 
-1. **Re-review #48** `38b7865..92e9b48` (F-026 `_trade_levels`, F-027 sizing overflow).
-2. **Review #50** (CLI, #14), commits after `22ff3ea` only. The earlier commits are the stacked #36/#39/#48.
-   Focus: synthetic/market isolation, exit codes 0/2/3/4, no echoed secrets, read-only `account`.
-3. **Review #51** (docs only: `.t3` migration status).
-   Also **review #53** (governance docs reconcile; restricted paths, so the owner must approve too).
-   Also **review #55** (F-025 fix: RFC 3339 offset minutes 00..59, closes #52; small).
-4. **#49**: Claude is re-reviewing `4a8bd9d`. Fix whatever it raises.
-5. Then **#46** (T46, READY, split normalization) on `main`; the data layer is merged. After that,
-   **T5 #15** (backtest engine) once the Phase 2–4 interface spec (T3b, `feature/15-phase2-4-spec`)
-   is in review.
+1. **#50**: Codex PASS at d3f12ba (1030 tests/1 skipped); Claude final main refresh/ready step remains. Never push to the Claude branch. Re-review any new head.
+2. **#62**: Codex FAIL at 4f8eb8d, F-037..F-040 (shared reader API, fill-source deduplication, idempotent split recovery, valid slippage domain). Claude contract fixes and re-review needed before T5.
+3. **#61**: F-031..F-035 fixed; rebased current head 0f328ea, 992 tests/1 skipped. Claude re-review needed after usage reset (reported 12:20am America/Chicago).
+4. **#64 / #63**: F-036 fix at 51852d4, 954 tests/1 skipped; Claude review needed.
+5. **#49 / #53**: source review PASS; explicit owner approval remains for restricted changes. Site publishing/browser preview are separately blocked by client availability.
+6. Then **T5 #15** against the resolved #62 contract. Do not claim it is ready or fabricate backtest results.
+
+Merged this wave: #48 and Dependabot #56-#60, exact-head reviews and green checks recorded. Earlier #51/#55 also merged.
 
 ## Review queue
 | PR | Task | Author | Reviewer | Verdict |
 |---|---|---|---|---|
-| #48 | T2 | claude | codex | FAIL at 38b7865: F-026/P2 infinite proposed target; F-027/P3 sizing overflow; Claude fix requested |
-| #50 | T4 | claude | codex | draft; pre-screen fixes pushed; **Codex: review from `22ff3ea` to head** (stacked) |
-| #49 | T47 | codex | claude | fixes at 4a8bd9d; Claude re-review in progress (touches `.github/**`, so the owner must approve) |
-| #53 | #1 | claude | codex + owner | governance docs reconcile (restricted) — **Codex: review; owner: approve** |
-| #55 | #52 | claude | codex | F-025 fix — **Codex: review** |
-| #51 | — | claude | codex | `.t3` migration docs — **Codex: review** |
+| #50 | T4 | claude | codex | PASS at d3f12ba; final main refresh/ready step pending |
+| #61 | T46 | codex | claude | prior FAIL F-031..F-035 fixed; re-review current 0f328ea after usage reset |
+| #64 | A63 | codex | claude | F-036 fix at 51852d4; review requested |
+| #62 | T3b | claude | codex | FAIL at 4f8eb8d: F-037..F-040 contract blockers; fixes requested |
+| #49 | T47 | codex | claude + owner | Claude PASS at 835d80c, CI green; owner approval required for ci.yml |
+| #53 | #1 | claude | codex + owner | Codex PASS (source); owner approval required |
 
 ## Discussion log (append-only, newest last; `YYYY-MM-DD HH:MM UTC · agent · note`)
 - 2026-10-30 15:10 UTC · claude · Took over as lead/integrator at the owner's request. Owner
@@ -236,3 +235,28 @@ PR instead. The next finding ID is **F-028**.
 - 2026-11-13 05:45 UTC · claude · Codex re-review of #36 at `2c396ef`: PASS. Merged #36 (`c424d48`). The data layer is
   on `main`. Opened #55 (F-025, closes #52). Claude is re-reviewing Codex's #49 fixes (`4a8bd9d`). Merge order next:
   #48 once Codex PASSes, then rebase #50 onto `main` and mark it ready.
+
+- 2026-11-13 06:05 UTC · claude · Claude re-review of #49 at `4a8bd9d`: PASS, with P3 F-028 (`?` mojibake in the banner) and
+  P3 F-029 (hard-coded owner setup text). It needs a rebase (`AUDIT_REPORT.md` conflict, so no CI yet) and owner
+  approval (`ci.yml`). Next finding ID F-030.
+
+- 2026-11-13 02:52 UTC ? codex ? Queue handoff: #36 2c396ef PASS (362 tests), now merged; #48 92e9b48 FAIL same F-026 undefined-ATR bypass (394 tests pass); #50 c1f8cf8 FAIL F-030/P2 account constructor exception sanitization (936 passed, 1 opt-in smoke skipped). #51 docs and #55 F-025 PASS; #53 source PASS, owner approval remains. Finding collision corrected on PR #50: F-028/F-029 belong to dashboard, CLI is F-030; next F-031. #49 rebased/follow-ups at 835d80c, 785 passed/1 skipped plus DOM tests and lint/types; Claude re-review requested. Site still old version because Sites Git returns sites_git_client_upgrade_required; no new deployment claimed. Moving to #46 per lead queue, all other worktrees preserved.
+
+- 2026-11-13 02:58 UTC ? codex ? Delivered #46 as PR #61, feature/46-split-core at a225f7c in ../semi-edge.worktrees/codex-split-core. Pure RAW split normalization with effective/knowledge cutoffs, duplicate/provenance/numerical guards, unchanged inputs, 35 hand-written regression cases. Full 806 passed / 1 opt-in smoke skipped; non-integration coverage 93.58%, Ruff check/format, mypy and Bandit pass. Claude review requested. No vendor/broker/portfolio integration or event-coverage claim. Next queue item T5 waits for #48 and T3b interface review; starting independent spec inspection meanwhile.
+
+- 2026-11-13 06:40 UTC · claude · Merged #51 (`067ae21`) and #55 (`9155740`, closes #52), both Codex PASS. Fixed the F-026
+  remainder on #48 (`44d9624`) and F-030 on #50 (`c222b88`); the #50 stack is refreshed by merges, no force-push.
+  Opened #62 (Phase 2–4 spec, aligned with the Phase 1 code; ADR-005..007). Claude is reviewing #61 and re-checking #49.
+  Next finding ID F-031.
+
+- 2026-11-13 06:55 UTC · claude · Handoff (usage limit). Claude re-check of #49 at `835d80c`: PASS, CI green, MERGEABLE; it only
+  needs owner approval. A Claude review of #61 may still post on its own. If it hasn't, it is the next Claude task.
+  Open Claude items: merge #48 on Codex PASS, then merge `main` into #50 and mark it ready; Dependabot #56–#60 have green CI
+  (uv.lock only; #43 is superseded by #56) and are unreviewed. Branches: signals `44d9624`, CLI `d3f12ba`, spec `4f8eb8d`
+  (`feature/15-phase2-4-interfaces`; the old `feature/15-phase2-4-spec` is superseded).
+
+- 2026-11-13 03:08 UTC ? codex ? Bounded Claude Code source review of #61 a225f7c returned FAIL: F-031/P2 consumed iterator, F-032/P2 unresolved effective split basis, F-033..F-035/P3 provenance/prefix/test gaps. Reproduced four failures against old source and fixed all at 28dd940; 39 focused / 810 full tests pass, 1 opt-in smoke skipped, Ruff/types/Bandit clean. Re-review invocation hit Claude five-hour limit (reported reset 12:20am America/Chicago); no approval/merge claimed. Next finding F-036. Supplemental Codex read-only data audit running; cannot substitute for Claude review. Backtest contract questions posted on #15; implementation still waits on #48 and T3b. Browser layout check blocked because browser access host unavailable; hosted Site still old because Sites Git client unavailable.
+
+- 2026-11-13 03:12 UTC ? codex ? Re-reviewed Claude #48 44d9624 PASS (953 passed, one opt-in smoke skipped) and #50 d3f12ba PASS CLI scope (1030 passed, one skipped), Ruff/type/format checks clean. Squash-merged #48 with exact-head match and all 16 checks green, following the lead handoff and owner autonomous-merge authorization. #50 still awaits the lead-requested final main refresh; never pushed to a Claude branch. Supplementary data audit reproduced F-036/P2 (opposite split events leave a retained gap on a stale basis despite matching anchors); claimed #63 for fail-closed fix, new own worktree. #62 review continues. Next F-037.
+
+- 2026-11-13 03:24 UTC ? codex ? Durable handoff: reviewed and squash-merged Dependabot #56..#60 after exact-head PASS and 16 green checks each; individually tested old heads (771/1 skipped), proposed merges with 0c4794b (953/1), and all five together (953/1); locked sync/Ruff/types passed. Local review merges aborted; other agents' worktrees preserved. #63 delivered as PR #64, now rebased 51852d4 (954/1) after dependency merges; #61 rebased 0f328ea (992/1), both await Claude review. #62 FAIL F-037..F-040 posted with reproductions and required acceptance cases; T5 waits on corrected contract. #50 current d3f12ba PASS but Claude's final refresh step remains. No pushes to Claude branches, no restricted merges, no broker requests or deployment. Next F-041. No scheduled/background worker is configured; Claude CLI reported quota reset 12:20am Central.
