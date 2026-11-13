@@ -228,3 +228,49 @@ def summary_rows(
         {"Field": "Last run", "Value": last_run[0]},
         {"Field": "Last run started", "Value": last_run[1]},
     ]
+
+
+def equity_chart_spec(
+    equity: list[dict[str, Any]], *, color: str, min_points: int
+) -> dict[str, Any] | None:
+    """Vega-Lite spec for the equity line, or ``None`` when there are too few points.
+
+    A plain dict, so building and testing it needs neither Streamlit nor Altair (F-176). The x
+    field is the full ISO session date, so two sessions never merge under one label (F-175);
+    the axis only formats it as ``Mon DD``. The y axis is zoomed to the data, not pinned at 0.
+    """
+    values = [
+        {"session": str(row["session"]), "equity": float(row["equity"])}
+        for row in equity
+        if isinstance(row.get("equity"), int | float) and not isinstance(row.get("equity"), bool)
+    ]
+    if len(values) < min_points:
+        return None
+    return {
+        "data": {"values": values},
+        "height": 230,
+        "mark": {"type": "line", "color": color, "strokeWidth": 2, "point": {"size": 40}},
+        "encoding": {
+            "x": {
+                "field": "session",
+                "type": "ordinal",
+                "sort": None,
+                "title": None,
+                "axis": {
+                    "labelAngle": 0,
+                    "labelExpr": "timeFormat(timeParse(datum.value, '%Y-%m-%d'), '%b %d')",
+                },
+            },
+            "y": {
+                "field": "equity",
+                "type": "quantitative",
+                "title": None,
+                "scale": {"zero": False},
+                "axis": {"format": ",.0f"},
+            },
+            "tooltip": [
+                {"field": "session", "type": "ordinal", "title": "Session"},
+                {"field": "equity", "type": "quantitative", "title": "Equity", "format": ",.2f"},
+            ],
+        },
+    }

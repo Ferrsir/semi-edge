@@ -20,6 +20,7 @@ import pandas as pd
 
 from semiedge.dashboard.format import (
     SECTION_LABELS,
+    equity_chart_spec,
     stale_message,
     summary_rows,
     table_rows,
@@ -65,35 +66,11 @@ def _section(st: Any, value: object, *, label: str | None = None) -> None:
 
 
 def _equity_chart(st: Any, equity: list[dict[str, Any]]) -> None:
-    points = [
-        (str(row["session"]), float(row["equity"]))
-        for row in equity
-        if isinstance(row.get("equity"), int | float)
-    ]
-    if len(points) < MIN_CHART_POINTS:
+    spec = equity_chart_spec(equity, color=EQUITY_LINE_COLOR, min_points=MIN_CHART_POINTS)
+    if spec is None:
         return
-    import altair as alt  # noqa: PLC0415 - streamlit dependency, only with the dashboard extra
-
-    frame = pd.DataFrame(points, columns=["Session", "Equity"])
-    frame["Session"] = pd.to_datetime(frame["Session"])
-    frame["Day"] = frame["Session"].dt.strftime("%b %d")  # one label per session, no 12 h ticks
-    line = (
-        alt.Chart(frame)
-        .mark_line(color=EQUITY_LINE_COLOR, strokeWidth=2, point=alt.OverlayMarkDef(size=40))
-        .encode(
-            x=alt.X("Day:O", title=None, sort=None, axis=alt.Axis(labelAngle=0)),
-            y=alt.Y(
-                "Equity:Q", title=None, scale=alt.Scale(zero=False), axis=alt.Axis(format=",.0f")
-            ),
-            tooltip=[
-                alt.Tooltip("Session:T", format="%Y-%m-%d"),
-                alt.Tooltip("Equity:Q", format=",.2f"),
-            ],
-        )
-        .properties(height=230)
-    )
     st.subheader("Equity")
-    st.altair_chart(line, width="stretch")
+    st.vega_lite_chart(spec, width="stretch")
 
 
 def _overview(st: Any, view: Any, root: Path, source: Any) -> None:

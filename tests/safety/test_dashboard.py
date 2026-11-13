@@ -56,8 +56,8 @@ class FakeUI:
     def columns(self, spec, **kwargs):
         return [self for _ in spec]
 
-    def altair_chart(self, chart, **kwargs):
-        sessions = chart.data["Session"].dt.strftime("%Y-%m-%d")
+    def vega_lite_chart(self, spec, **kwargs):
+        sessions = [row["session"] for row in spec["data"]["values"]]
         self.output.append("chart:" + ",".join(sessions))
 
     def radio(self, label, options):
@@ -375,3 +375,18 @@ def test_streamlit_toolbar_is_viewer_only():
         Path(semiedge.dashboard.__file__).parents[3] / ".streamlit" / "config.toml"
     ).read_text()
     assert 'toolbarMode = "viewer"' in config
+
+
+def test_equity_chart_spec_keeps_distinct_sessions_and_needs_no_extra():
+    """F-175/F-176: sessions with the same month/day stay separate; the spec is a plain dict."""
+    from semiedge.dashboard.format import equity_chart_spec
+
+    rows = [
+        {"session": day, "equity": 100_000.0 + i}
+        for i, day in enumerate(["2025-11-13", "2025-11-14", "2026-11-13", "2026-11-16"])
+    ]
+    spec = equity_chart_spec(rows, color="#3987e5", min_points=4)
+    assert [v["session"] for v in spec["data"]["values"]] == [r["session"] for r in rows]
+    assert spec["encoding"]["x"]["field"] == "session"
+    assert spec["encoding"]["y"]["scale"] == {"zero": False}
+    assert equity_chart_spec(rows[:3], color="#3987e5", min_points=4) is None
