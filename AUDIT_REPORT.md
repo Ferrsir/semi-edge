@@ -1,5 +1,12 @@
 # SEMI-EDGE independent audit report
 
+## Dashboard review of #100 and F-175 follow-up (#103)
+
+- **F-175/P3:** chart x used month/day-only ordinal labels. Four hand-built sessions spanning Jan2/Jan3 in2024 and2025 produced only two x positions. Full session identity now drives x; labels are formatted separately in UTC. One latest persisted timestamp per session is selected explicitly and sorted, never relabelled as an invented close. The four-point minimum counts distinct sessions. Invalid or conflicting same-timestamp observations produce an explicit chart-unavailable message.
+- Three chart regressions fail on reviewed4dcc8bd and pass after the fix: cross-year identity/chronology, timestamp-based duplicate selection, and minimum distinct sessions. Existing chart/table/fake-UI and real AppTests remain part of validation.
+- **F-176/P2, author-owned #100:** default locked install omits Altair; two new rich-Overview fake-UI tests and mypy fail. Reproduced locally (two failed/36 passed/ten extra-specific skips, plus import-not-found) and independently in CI jobs132202436371/132202436696. Extra-enabled full2027/two suite and mypy75 passed, so that earlier PASS was superseded by FAIL for base-install isolation. Author repair/re-review is separate from F-175; no changes were pushed to Claude's branch.
+- Markdown/untrusted-text and typed manual-halt boundaries remain unchanged. No trading controls, strategy/risk changes, credentials or broker access. Source/AppTest verification does not assert independent browser screenshot review. Next finding F-177.
+
 Running record of independently verified findings. Each entry names the severity, location,
 reproduction, impact, fix and test evidence. **Confirmed** findings were reproduced; **Speculative**
 concerns are risks that have not been demonstrated and must not be read as bugs.
