@@ -50,12 +50,15 @@ class MarketDataSource(Protocol):
 
 ```python
 class AlpacaMarketDataSource:  # implements MarketDataSource
-    def __init__(self, client: StockHistoricalDataClient, feed: DataFeed, adjustment: Adjustment) -> None: ...
+    def __init__(self, client: StockHistoricalDataClient, feed: DataFeed, adjustment: Adjustment,
+                 *, calendar: TradingCalendar | None = None) -> None: ...      # default TradingCalendar("XNYS")
     @classmethod
     def from_credentials(cls, api_key: str, secret_key: str, feed: DataFeed, adjustment: Adjustment) -> AlpacaMarketDataSource: ...
 ```
 - Uses `StockBarsRequest(timeframe=TimeFrame.Day, feed=..., adjustment=...)`. Maps our enums to alpaca enums.
 - Converts Alpaca daily bar timestamps to the America/New_York calendar date → `session` index.
+- Never returns a bar for a session that has not closed yet (`session_close > now`, early closes
+  respected): an in-progress daily bar is partial and would otherwise be cached as complete.
 - Raises `MarketDataError` (defined in this module) on API errors — never returns partial data silently.
 - Never requests bars that end after "now − 16 minutes" when `feed=sip` (free-plan SIP restriction);
   the caller passes `end`; the adapter clamps and records the clamp in a log line.
@@ -94,6 +97,14 @@ class ParquetBarStore:
 - Raw rows persisted with provenance columns `feed, adjustment, source, fetched_at` (UTC).
 - `write` merges with existing rows: on duplicate `session`, the newer `fetched_at` wins
   (vendor corrections), and a WARNING is logged when OHLCV values change for an existing session.
+- Adjusted series (`adjustment != raw`) are restated retroactively by the vendor (splits,
+  dividends), so a merge must prove that retained stored rows share the incoming basis: the
+  incoming frame must overlap at least one stored session, and every retained stored row (one the
+  incoming frame does not replace, including stored sessions missing *inside* the incoming range)
+  is anchored by its nearest shared session on each side that exists (the following one for rows
+  before all shared ones, the preceding one for rows after them, both for rows in between); the
+  close on each anchor must match. Otherwise `write` raises `ValueError` and the
+  caller refetches the full stored range. Raw series may be appended without overlap.
 - Writes are atomic (write temp file in the same dir, then `os.replace`).
 - Synthetic data may only be written under a root whose path contains a `synthetic` component
   (raise otherwise) so it can never pollute the real cache.
