@@ -48,7 +48,10 @@ def _invalid(reason: str) -> SizingResult:
 def _positive_finite(name: str, value: object) -> str | None:
     if isinstance(value, bool) or not isinstance(value, Real):
         return f"{name} must be a real number, got {type(value).__name__}"
-    number = float(value)
+    try:
+        number = float(value)
+    except (OverflowError, ValueError):  # e.g. an int beyond the float range (F-027)
+        return f"{name} is not representable as a finite float"
     if not math.isfinite(number):
         return f"{name} must be finite, got {number}"
     if number <= 0:

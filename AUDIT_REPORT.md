@@ -86,6 +86,22 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Regression:** `test_missing_app_sections_fail_closed` covers each missing-section combination;
   existing repository-config loading covers the valid configuration.
 
+### F-026 · P2 · Validated finite target multiple produced an eligible signal with an infinite target (Codex review, PR #48)
+- **Where:** `semiedge.strategy.momentum_v1._evaluate_symbol` (head `38b7865`).
+- **Reproduce:** `target_atr_multiple=1.7e308` (accepted by `MomentumV1Params`) on the standard eligible
+  fixture gave `eligible=True`, `proposed_target=inf`.
+- **Fix:** `_trade_levels` computes stop and target before eligibility; a stop that is not positive
+  or a target that is not finite and above the close makes the symbol ineligible with an explicit
+  reason. Default formulas and thresholds are unchanged (no strategy change).
+- **Regression:** `tests/unit/strategy/test_momentum_v1_evaluate.py::test_non_finite_proposed_target_makes_symbol_ineligible`.
+
+### F-027 · P3 · Oversized integer sizing input raised OverflowError (Codex review, PR #48)
+- **Where:** `semiedge.risk.sizing._positive_finite`.
+- **Reproduce:** `propose_position_size(10**1000, 100, 95, ...)` raised instead of returning the
+  documented invalid result.
+- **Fix:** float conversion failures return `shares=0`, `binding_constraint="invalid"` with a reason.
+- **Regression:** `tests/safety/test_position_sizing.py::test_integer_too_large_for_float_is_invalid_not_an_exception`.
+
 ---
 
 ## Speculative concerns (not demonstrated; tracked for the relevant phase)

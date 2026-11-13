@@ -514,6 +514,31 @@ def evaluate_universe(
     return ranked + [e for e in evaluations if not e.eligible]
 
 
+def _trade_levels(
+    close: float, atr_value: float, params: MomentumV1Params
+) -> tuple[float | None, float | None, list[str]]:
+    """Proposed stop and target, or ``(None, None, reasons)`` when either is invalid.
+
+    Validated finite parameters can still overflow (F-026), so the computed values are checked.
+    """
+    stop = close - params.stop_atr_multiple * atr_value
+    target = close + params.target_atr_multiple * atr_value
+    reasons: list[str] = []
+    if not stop > 0:  # also false for nan
+        reasons.append(
+            f"proposed stop {stop:.6g} = close {close:.6g} - "
+            f"{params.stop_atr_multiple:g} x ATR {atr_value:.6g} is not positive"
+        )
+    if not (math.isfinite(target) and target > close):
+        reasons.append(
+            f"proposed target {target:.6g} = close {close:.6g} + "
+            f"{params.target_atr_multiple:g} x ATR {atr_value:.6g} is not finite above close"
+        )
+    if reasons:
+        return None, None, reasons
+    return stop, target, reasons
+
+
 def _evaluate_symbol(
     symbol: str,
     raw_frame: pd.DataFrame | None,
@@ -569,18 +594,11 @@ def _evaluate_symbol(
     close = values.get("close")
     atr_value = values.get("atr")
 
-    if not reasons and close is not None and atr_value is not None:
-        candidate_stop = close - params.stop_atr_multiple * atr_value
-        if not candidate_stop > 0:
-            reasons.append(
-                f"proposed stop {candidate_stop:.6g} = close {close:.6g} - "
-                f"{params.stop_atr_multiple:g} x ATR {atr_value:.6g} is not positive"
-            )
-    eligible = not reasons
     stop = target = None
-    if eligible and close is not None and atr_value is not None:
-        stop = close - params.stop_atr_multiple * atr_value
-        target = close + params.target_atr_multiple * atr_value
+    if not reasons and close is not None and atr_value is not None:
+        stop, target, level_reasons = _trade_levels(close, atr_value, params)
+        reasons.extend(level_reasons)
+    eligible = not reasons
     return SignalEvaluation(
         symbol=symbol,
         session=session,

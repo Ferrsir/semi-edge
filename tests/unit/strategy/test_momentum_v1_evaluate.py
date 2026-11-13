@@ -18,6 +18,7 @@ from momentum_fixtures import (
     sessions,
 )
 
+from semiedge.config.models import MomentumV1Params
 from semiedge.data.schema import DataFeed
 from semiedge.strategy import SignalEvaluation, evaluate_universe
 from semiedge.strategy.momentum_v1 import CONDITION_NAMES
@@ -365,3 +366,22 @@ def test_non_positive_proposed_stop_is_ineligible() -> None:
     assert e.proposed_stop is None
     assert e.proposed_target is None
     assert e.rank is None
+
+
+def test_non_finite_proposed_target_makes_symbol_ineligible() -> None:
+    """F-026: a validated finite multiple whose target overflows to inf is rejected, not emitted."""
+    params = MomentumV1Params.model_validate(
+        {**SMALL_PARAMS.model_dump(), "target_atr_multiple": 1.7e308}
+    )
+    [e] = evaluate_universe(
+        _base(),
+        "SMH",
+        params,
+        AS_OF,
+        tradable=["AAA"],
+        quality=quality_for(AS_OF, "SMH", "AAA"),
+        expected_sessions=CALENDAR,
+    )
+    assert not e.eligible
+    assert (e.proposed_stop, e.proposed_target, e.rank) == (None, None, None)
+    assert any("proposed target" in r and "not finite" in r for r in e.rejection_reasons)
