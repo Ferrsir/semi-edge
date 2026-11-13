@@ -126,8 +126,17 @@ def test_store_merges_overlapping_appends_and_equal_timestamps(tmp_path, bars):
     write(store, bars.iloc[:3])
     write(store, bars.iloc[2:])
     pd.testing.assert_frame_equal(read(store).frame, bars)
-    write(store, bars * 2)
+    write(store, bars.assign(volume=bars["volume"] * 2))
     # Equal fetch timestamps do not supersede the existing observations.
+    pd.testing.assert_frame_equal(read(store).frame, bars)
+
+
+def test_equal_timestamp_rebased_write_is_rejected_not_ignored(tmp_path, bars):
+    """F-024: a basis change at an equal fetch time is a conflict, not a silent no-op."""
+    store = ParquetBarStore(tmp_path)
+    write(store, bars)
+    with pytest.raises(ValueError, match="adjustment basis changed"):
+        write(store, bars * 2)
     pd.testing.assert_frame_equal(read(store).frame, bars)
 
 

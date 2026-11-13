@@ -103,8 +103,9 @@ class ParquetBarStore:
   incoming frame does not replace, including stored sessions missing *inside* the incoming range)
   is anchored by its nearest shared session on each side that exists (the following one for rows
   before all shared ones, the preceding one for rows after them, both for rows in between); the
-  close on each anchor must match. Otherwise `write` raises `ValueError` and the
-  caller refetches the full stored range. Raw series may be appended without overlap.
+  close on each anchor must match. "Retained" means rows that survive the fetch-time tie-break
+  from the store, so a shared session whose stored fetch is newer is retained and anchors itself.
+  Otherwise `write` raises `ValueError` and the caller refetches the full stored range. Raw series may be appended without overlap.
 - Writes are atomic (write temp file in the same dir, then `os.replace`).
 - Synthetic data may only be written under a root whose path contains a `synthetic` component
   (raise otherwise) so it can never pollute the real cache.

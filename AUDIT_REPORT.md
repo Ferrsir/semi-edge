@@ -156,6 +156,24 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
   `tests/integration/data/test_store_adjustment_basis.py::test_rebased_refetch_with_interior_gap_is_rejected`,
   `test_same_basis_refetch_with_interior_gap_keeps_stored_session`.
 
+
+### F-024 · P1 · Fetch-time tie-breaking kept stored rows that the basis check never anchored (Codex review, PR #36)
+- **Where:** `semiedge.data.store.ParquetBarStore.write` / `_check_adjustment_basis` (head `b2c43f0`).
+- **Reproduce:** write split-adjusted 2024-01-02..03 (closes 100) at fetched_at Jan 4, refetch Jan 3
+  unchanged at Jan 6, then write both sessions rebased /10 at Jan 5. The check only anchored stored
+  sessions missing from the refetch (none), but tie-breaking kept the newer stored Jan 3: the
+  persisted closes were [10, 100], a fictitious +900% one-session return.
+- **Fix:** the merge runs the fetch-time tie-break first. The basis check then anchors every row that
+  survives *from the store*, including shared sessions where the stored fetch is newer; such a row
+  is its own anchor. A rebased write whose rows are all superseded by newer stored rows, or one at an
+  equal fetch time, is now rejected instead of silently ignored. Equal-timestamp keep-existing still
+  holds for same-basis corrections.
+- **Regression:** `tests/unit/data/test_store.py::test_newer_stored_row_cannot_splice_bases_with_older_refetch`,
+  `test_fully_newer_store_ignores_older_rebased_refetch_rows`,
+  `tests/integration/data/test_adapters_store.py::test_equal_timestamp_rebased_write_is_rejected_not_ignored`
+  (all three fail on `b2c43f0`); same-basis out-of-order and full newer replacement stay accepted
+  (`test_same_basis_out_of_order_refetch_is_accepted`, `test_newer_rebased_refetch_replacing_everything_is_accepted`).
+
 ---
 
 ## Speculative concerns (not demonstrated; tracked for the relevant phase)
