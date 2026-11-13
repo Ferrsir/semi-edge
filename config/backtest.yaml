@@ -1,0 +1,9 @@
+# Research assumptions declared before any backtest results (issue #71).
+# These are modeling assumptions, not a verified broker commission/regulatory schedule.
+initial_equity: 100000.0  # Explicit research starting capital, not an account balance.
+costs:
+  slippage_bps: 10.0  # Predeclared adverse market-fill assumption; sensitivity follows #17.
+  commission_per_share: 0.0  # Research assumption only; no actual fee schedule verified.
+  commission_per_order: 0.0  # Research assumption only; no actual fee schedule verified.
+  sell_fee_rate: 0.0  # Research assumption only; actual regulatory fees are not modeled.
+earnings_policy: waive_unavailable  # BACKTEST only: label the unavailable earnings blackout.

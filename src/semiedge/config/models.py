@@ -247,3 +247,25 @@ class AppConfig(_Frozen):
     risk: RiskLimits
     data: DataConfig = DataConfig()
     scanner: ScannerConfig = ScannerConfig()
+
+
+# ------------------------------------------------------------------ backtest research assumptions
+
+
+class CostSettings(_Frozen):
+    """Required research cost assumptions; never inferred from a brokerage account."""
+
+    model_config = ConfigDict(strict=True)
+
+    slippage_bps: float = Field(ge=0, lt=10_000)
+    commission_per_share: float = Field(ge=0)
+    commission_per_order: float = Field(ge=0)
+    sell_fee_rate: float = Field(ge=0)
+
+
+class BacktestSettings(_Frozen):
+    model_config = ConfigDict(strict=True)
+
+    initial_equity: float = Field(gt=0)
+    costs: CostSettings
+    earnings_policy: Literal["require_data", "waive_unavailable"]
