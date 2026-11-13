@@ -31,4 +31,6 @@ ADR-008 (2026-11-13): backtest entry invalidation also triggers when the raw ope
 stop (`open_d ≤ stop`), not only when the slipped fill is. Without it, an adverse slippage could lift
 the entry fill above the stop, and the position would later stop out at `stop · (1 − slip)`, which
 is better than the open, so results would be optimistic. Made before any backtest result exists
-(rule 3); found as F-096 in the review of #75. Strictly more conservative.
+(rule 3); found as F-096 in the review of #75. Strictly more conservative. Scope: backtest-only.
+The paper engine has no trustworthy opening price at fill time, so §6.3 documents a parity exception
+(F-130).

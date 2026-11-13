@@ -1361,9 +1361,14 @@ def parse_client_order_id(value: str) -> ParsedClientOrderId | None: ...  # None
   filled qty — `order_class="oco"`, `order_type="limit"`, `limit_price=target`,
   `stop_price=stop`, `time_in_force="gtc"` — persisted as **one** `orders` row of kind
   `protection` (the two broker legs live in `legs_json`; a leg fill is a fill of that row).
-- Gap rule (parity with §3.2 step 3): if the entry `filled_avg_price ≤ stop` or `≥ target`, the
-  engine does not place the OCO; it submits a `flatten` market sell (`time_in_force="day"`) for
-  the filled qty.
+- Gap rule (parity with §3.2 step 3's fill tests): if the entry `filled_avg_price ≤ stop` or
+  `≥ target`, the engine does not place the OCO; it submits a `flatten` market sell
+  (`time_in_force="day"`) for the filled qty.
+- **Parity exception (ADR-008, F-130):** the backtest's additional `open_d ≤ stop` test is a
+  backtest-only conservative modelling adjustment. The paper engine has no trustworthy auction
+  opening price at fill time; `filled_avg_price` already includes the real slippage. So paper does
+  not apply it, and when `open ≤ stop < filled_avg_price < target` it places the OCO as usual and the
+  broker stop handles the gap. The parity test (§10) excludes exactly this case.
 - Partial fills: protection is sized to the cumulative filled qty and is replaced
   (cancel-confirm-then-place, §9.2) when more fills arrive; once the opg order is terminal,
   protection qty must equal the position qty.
@@ -1864,7 +1869,8 @@ submissions; mode matrix rows (scanner builds no gateway — asserted by a fake 
 fails if called); decisions committed before intents (crash injected between them → no intent
 without a decision); end-to-end simulated week on synthetic data with fake gateway reproduces the
 backtest's trade list for the same bars (parity test: same entries/exits, sessions and reasons;
-prices may differ only by modelled slippage).
+prices may differ only by modelled slippage; the one documented exception is an entry whose open
+is at/below the stop while its fill is above it — ADR-008, §6.3 — which the fixture excludes or asserts separately).
 
 ---
 
@@ -2219,7 +2225,8 @@ constants added next to them by the owning task).
 3. Gap overshoot of exposure caps (§2.2): accepted residual for paper; owner may later choose
    limit-at-open entries, which is a strategy-execution spec change.
 4. Entry gap handling (§3.2 step 3, §6.3): an entry whose open fill is at/below the stop or
-   at/above the target is flattened immediately (both modes). Owner may prefer keeping the
+   at/above the target is flattened immediately (both modes). The backtest also flattens when the
+   raw open is at/below the stop (ADR-008, backtest-only, conservative; §6.3 parity exception). Owner may prefer keeping the
    above-target case open with protection; changing it is a spec change made before results.
 5. Drawdown peak reset (§8): no code path; owner decides if/when a reset is ever allowed.
 6. `semiedge flatten` (§8.1 level 3) is specified for T11; owner to confirm it is wanted as a
