@@ -312,6 +312,7 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Fix (spec):** ADR-008 is a backtest-only conservative adjustment. §6.3 documents the parity
   exception (paper has no trustworthy opening price at fill time), and the §10 parity test excludes
   exactly that case. §19 item 4 and ADR-008 are updated.
+- **F-131 (P2, Codex re-review):** the §18 checklist still claimed unconditional parity; it now carries the same exception.
 
 ---
 

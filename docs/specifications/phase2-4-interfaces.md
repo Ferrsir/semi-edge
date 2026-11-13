@@ -2205,8 +2205,9 @@ constants added next to them by the owning task).
 - [ ] No new configuration loosens `config/risk.yaml` or touches `semiedge/safety/limits.py`.
 - [ ] Every new YAML field is required (no silent model defaults) and validated strictly.
 - [ ] Every failure path produces a reason code; no bare `except: pass`; NaN/inf never persisted.
-- [ ] Backtest/paper parity: same fill timeline (§3.2 ↔ §6.3/§9.1), same exit levels
-      (`semiedge.strategy.exits`), same risk manager.
+- [ ] Backtest/paper parity: same fill timeline (§3.2 ↔ §6.3/§9.1) except the one documented
+      ADR-008 case (`open ≤ stop < fill < target`: backtest flattens, paper protects; §6.3), same
+      exit levels (`semiedge.strategy.exits`), same risk manager.
 - [ ] All reported numbers carry the reproducing command; labels from §3.6 rendered first.
 - [ ] Safety-marked tests added for every safety invariant; safety test count does not drop.
 - [ ] Order intents only via `StateStore.insert_order_intent`; status only via `transition_order`;
