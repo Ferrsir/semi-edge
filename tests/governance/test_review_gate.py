@@ -475,3 +475,42 @@ def test_missing_report_still_counts_as_a_cycle() -> None:
     d = run({"A": None, "B": report("B")})
     assert d.state == "failure"
     assert d.cycle_failed
+
+
+def test_repository_policy_separates_agent_and_human_identities() -> None:
+    humans = {h.lower() for h in POLICY["human_maintainers"]}
+    agents = {a.lower() for a in POLICY["agent_identities"]}
+    assert "ferrisfy" in agents
+    assert humans == {"ferrsir"}
+    assert not humans & agents
+
+
+@pytest.mark.parametrize(
+    ("humans", "agents", "match"),
+    [
+        (["Ferrsir"], ["ferrsir"], "both human maintainer and agent identity"),
+        (["Ferrsir"], [" FERRSIR "], "both human maintainer and agent identity"),
+        ([], ["Ferrisfy"], "at least one human"),
+        (["Ferrsir"], [""], "non-empty login strings"),
+        (["Ferrsir"], [7], "non-empty login strings"),
+        (["Ferrsir"], "Ferrisfy", "agent_identities missing or not list"),
+        (["Ferrsir"], None, "agent_identities missing or not list"),
+    ],
+)
+def test_policy_rejects_bad_identity_lists(
+    tmp_path: Path, humans: object, agents: object, match: str
+) -> None:
+    import json
+
+    from review_common import PolicyError
+
+    bad = copy.deepcopy(POLICY)
+    bad["human_maintainers"] = humans
+    if agents is None:
+        del bad["agent_identities"]
+    else:
+        bad["agent_identities"] = agents
+    path = tmp_path / "p.json"
+    path.write_text(json.dumps(bad))
+    with pytest.raises(PolicyError, match=match):
+        load_policy(path)
