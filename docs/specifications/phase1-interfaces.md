@@ -168,7 +168,7 @@ class SignalEvaluation:
     eligible: bool
     conditions: tuple[ConditionResult, ...]
     score: float | None       # 0..100 when inputs defined
-    score_components: Mapping[str, float]   # s_RS, s_BO, s_RV, s_TP
+    score_components: Mapping[str, float]   # keys s_rs, s_bo, s_rv, s_tp (defined ones only)
     close: float | None
     atr: float | None
     proposed_stop: float | None
@@ -177,17 +177,26 @@ class SignalEvaluation:
     rank: int | None          # 1-based among eligible, else None
 
 # semiedge/strategy/momentum_v1.py
-def compute_features(bars: pd.DataFrame, regime: pd.DataFrame, params: MomentumV1Params) -> pd.DataFrame:
+def compute_features(bars: pd.DataFrame, regime: pd.DataFrame, params: MomentumV1Params, *,
+                     expected_sessions: Iterable[date] | None = None) -> pd.DataFrame:
     """Vectorised per-session features & condition booleans for ONE symbol (reused by the backtester).
     Columns include: close, sma_fast, sma_slow, prior_high, atr, ret, regime_close, regime_sma, regime_ret,
     excess_ret, prior_volume, rel_volume, trend_persistence, cond_* booleans, s_rs, s_bo, s_rv, s_tp, score, all_conditions."""
 
 def evaluate_universe(bars: Mapping[str, pd.DataFrame], regime_symbol: str, params: MomentumV1Params,
                       as_of: date, *, tradable: Sequence[str],
-                      quality: Mapping[str, DataQualityReport] | None = None) -> list[SignalEvaluation]:
+                      quality: Mapping[str, DataQualityReport] | None = None,
+                      expected_sessions: Iterable[date] | None = None) -> list[SignalEvaluation]:
     """Evaluate every tradable symbol at `as_of`; eligible first ranked by score desc then symbol."""
 ```
 Regime frame alignment: join on session; a session missing from either series makes that row undefined.
+`expected_sessions` is the exchange session calendar (e.g. `TradingCalendar.sessions_in_range`) covering
+the bars. With it, a session missing from BOTH series is also an undefined row, and a bar on a
+non-session is a `DataSchemaError`. The backtester must pass it to `compute_features`.
+`evaluate_universe` makes every symbol ineligible when it is `None` or does not contain `as_of`, and
+makes an otherwise eligible symbol ineligible when its proposed stop `C_t - k·ATR_t` is `<= 0`.
+Threshold comparisons use IEEE-754 doubles without tolerance (a value that rounds just below an
+inclusive threshold fails — the conservative reading).
 
 ## `semiedge.risk.sizing` (#12)
 
@@ -278,3 +287,28 @@ prominent `SYNTHETIC DATA — NOT MARKET DATA` banner and are written under
 
 Exit codes: 0 success (including "no candidates"), 2 configuration/safety error,
 3 missing credentials, 4 data unavailable/stale for the regime benchmark (fail closed).
+
+Implementation rules (#14):
+- Dates are `YYYY-MM-DD` only. `scan --as-of` and `data fetch --end` must be XNYS sessions no later
+  than the last completed session (`TradingCalendar.last_completed_session` with
+  `data.bar_settle_minutes`); a future or in-progress session exits 2. Defaults use that session.
+- Every command except `version` loads and validates env + YAML first. Validation failures exit 2
+  with a fixed message that never echoes input. `scan --as-of` also needs the strategy's required
+  history of calendar sessions before it (exit 2). `diagnostics` (offline dashboard) is retained.
+- `scan --source synthetic` generates bars in memory and never writes them to any bar cache.
+  `scan --source cache` reads the configured feed/adjustment from `{data_dir}`. It exits 4 if a
+  series is synthetic, unreadable or tampered, or if the series come from more than one
+  `DataSource` (e.g. `alpaca` and `fixture`). In those cases no report is written.
+- A report whose regime benchmark is not actionable is still rendered and persisted (so the reasons
+  are visible) and the command exits 4. `--output` and the persisted JSON use exclusive creation and
+  never overwrite.
+- `data fetch` accepts only configured universe symbols and validates arguments before creating any
+  source. It checks every returned frame before writing any: bars after `--end` mean exit 4 with
+  nothing stored. It exits 4 if any symbol returned no bars. `data status` timestamps are UTC.
+- `--output` is created (exclusively) before the report is persisted, so a taken path leaves no
+  persisted report.
+- `account` uses only `create_paper_trading_client` and `fetch_account_snapshot`. Broker failures
+  exit 4 with the sanitised `BrokerError` text. Output shows the masked account number only.
+- Entry reference for proposed sizes is the signal-session close (`docs/specifications/momentum_v1.md`);
+  `equity_source` is `reference` (`scanner.reference_equity`) or `cli` (`--equity`). `account` as an
+  equity source is reserved and not yet wired.
