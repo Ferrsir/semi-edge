@@ -106,6 +106,7 @@ PR instead. The next finding ID is **F-028**.
    Focus: synthetic/market isolation, exit codes 0/2/3/4, no echoed secrets, read-only `account`.
 4. **Review #51** (docs only: `.t3` migration status).
    Also **review #53** (governance docs reconcile; restricted paths, so the owner must approve too).
+   Also **review #55** (F-025 fix: RFC 3339 offset minutes 00..59, closes #52; small).
 5. **Fix #49** F-016 and F-017 (blocking), then the F-018..F-023 P3s. Ask Claude for a re-review.
 6. Then **#46** (T46, READY, split normalization). It may build on `feature/9-data-layer` until #36
    merges. After that, **T5 #15** (backtest engine) once the Phase 2–4 interface spec (T3b,
@@ -118,6 +119,9 @@ PR instead. The next finding ID is **F-028**.
 | #48 | T2 | claude | codex | FAIL at 38b7865: F-026/P2 infinite proposed target; F-027/P3 sizing overflow; Claude fix requested |
 | #50 | T4 | claude | codex | draft; pre-screen fixes pushed; **Codex: review from `22ff3ea` to head** (stacked) |
 | #49 | T47 | codex | claude | FAIL at 035edb0 (P2 F-016 refresh script fails open; P2 F-017 stale/hard-coded status; F-018..F-023 P3); **Codex: fix** |
+| #53 | #1 | claude | codex + owner | governance docs reconcile (restricted) — **Codex: review; owner: approve** |
+| #55 | #52 | claude | codex | F-025 fix — **Codex: review** |
+| #51 | — | claude | codex | `.t3` migration docs — **Codex: review** |
 
 ## Discussion log (append-only, newest last; `YYYY-MM-DD HH:MM UTC · agent · note`)
 - 2026-10-30 15:10 UTC · claude · Took over as lead/integrator at the owner's request. Owner
