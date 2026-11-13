@@ -377,3 +377,101 @@ def test_github_rejects_unexpected_origin(url: str) -> None:
 def test_github_rejects_redirects() -> None:
     with pytest.raises(ValueError, match="redirects"):
         NoRedirect().redirect_request(None, None, 302, "", None, "https://attacker.test")
+
+
+# ------------------------------------------------- infrastructure errors vs review cycles (#54)
+
+
+def infra_report(role: str, *, head: str = HEAD) -> dict[str, Any]:
+    rep = report(role, head=head)
+    rep["model_output"] = None
+    rep["error"] = "reviewer not configured: repository secret OPENAI_API_KEY is missing"
+    rep["error_kind"] = "infrastructure"
+    return rep
+
+
+def _simulate_runs(make_reports: Any, runs: int = 3) -> list[Any]:
+    """Run the gate on ``runs`` successive head commits, feeding back its own comments."""
+    comments: list[Comment] = []
+    decisions = []
+    for i in range(runs):
+        head = str(i + 1) * 40
+        failed = count_failed_cycles(
+            comments,
+            current_head=head,
+            humans=POLICY["human_maintainers"],
+            reset_command="/semi-edge reset-review-cycles",
+        )
+        reports = make_reports(head)
+        d = decide(
+            POLICY,
+            head_sha=head,
+            repository="o/r",
+            pr_number=33,
+            base_sha=OLD,
+            reports=reports,
+            changed_files=["src/semiedge/cli.py"],
+            approvals=[],
+            failed_cycles=failed,
+        )
+        body = render_comment(
+            d, head_sha=head, reports=reports, run_url=None, render_report=lambda r: "R"
+        )
+        comments.append(Comment(BOT_LOGIN, body, f"2026-01-0{i + 1}T00:00:00Z"))
+        decisions.append(d)
+    return decisions
+
+
+def test_three_runs_without_secrets_fail_but_do_not_escalate() -> None:
+    decisions = _simulate_runs(
+        lambda h: {"A": infra_report("A", head=h), "B": infra_report("B", head=h)}
+    )
+    for d in decisions:
+        assert d.state == "failure"  # still fail closed
+        assert not d.cycle_failed
+        assert not d.escalate
+        assert d.failed_cycles == 0
+        assert d.infrastructure_roles == ["A", "B"]
+        assert any("infrastructure error" in r for r in d.reasons)
+
+
+def test_three_real_fail_reviews_still_escalate() -> None:
+    def failing(h: str) -> dict[str, Any]:
+        return {"A": report("A", head=h, findings=[finding("P1")]), "B": report("B", head=h)}
+
+    decisions = _simulate_runs(failing)
+    assert [d.failed_cycles for d in decisions] == [1, 2, 3]
+    assert [d.escalate for d in decisions] == [False, False, True]
+    assert all(d.cycle_failed for d in decisions)
+
+
+def test_real_failure_alongside_infrastructure_error_counts() -> None:
+    d = run({"A": report("A", verdict="FAIL"), "B": infra_report("B")})
+    assert d.state == "failure"
+    assert d.cycle_failed
+    assert d.infrastructure_roles == ["B"]
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda r: r.update(error_kind="review"),  # a real reviewer error
+        lambda r: r.pop("error_kind"),  # unmarked error (legacy report)
+        lambda r: r.update(model_output={"verdict": "FAIL"}),  # reviewer ran
+        lambda r: r.update(error=""),  # marker without an error
+        lambda r: r.update(head_sha=OLD),  # stale report
+    ],
+)
+def test_only_well_formed_infrastructure_reports_skip_cycles(mutate: Any) -> None:
+    rep = infra_report("A")
+    mutate(rep)
+    d = run({"A": rep, "B": report("B")})
+    assert d.state == "failure"
+    assert d.cycle_failed
+    assert d.infrastructure_roles == []
+
+
+def test_missing_report_still_counts_as_a_cycle() -> None:
+    d = run({"A": None, "B": report("B")})
+    assert d.state == "failure"
+    assert d.cycle_failed

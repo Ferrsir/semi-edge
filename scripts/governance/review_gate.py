@@ -14,6 +14,11 @@ The pure evaluator passes only when:
 4. the PR has not exhausted ``max_review_cycles`` failed review cycles since the last
    human reset (otherwise it is escalated with the ``needs-human`` label).
 
+An infrastructure error (a reviewer that could not run at all, e.g. a missing model secret,
+reported with ``error_kind: infrastructure`` by the trusted runner) still fails the gate, but
+does not consume a repair cycle: the PR author cannot fix it. Missing, stale or malformed
+reports and every real review failure still count.
+
 Usage (CI):
   python scripts/governance/review_gate.py github --reports-dir reports --repository OWNER/REPO \
       --pr 33 --head <sha> [--run-url URL] [--dry-run]
@@ -80,6 +85,18 @@ class GateDecision:
     failed_cycles: int = 0
     cycle_failed: bool = (
         False  # True when the AI reviews themselves failed (consumes a repair cycle)
+    )
+    infrastructure_roles: list[str] = field(default_factory=list)
+
+
+def is_infrastructure_error(report: Mapping[str, Any]) -> bool:
+    """A report from a reviewer that never ran: explicit marker, an error, and no output."""
+    error = report.get("error")
+    return (
+        report.get("error_kind") == "infrastructure"
+        and isinstance(error, str)
+        and bool(error.strip())
+        and report.get("model_output") is None
     )
 
 
@@ -186,14 +203,17 @@ def decide(
         )
 
     seen_executions: set[str] = set()
+    cycle_failed = False
+    infrastructure_roles: list[str] = []
     for spec in policy["required_reviews"]:
         role = spec["role"]
         report = reports.get(role)
         if report is None:
             reasons.append(f"Review {role} missing")
             role_results[role] = {"verdict": "MISSING", "reasons": ["no report"]}
+            cycle_failed = True
             continue
-        problems = report_metadata_errors(
+        metadata_problems = report_metadata_errors(
             report,
             spec,
             head_sha=head_sha,
@@ -202,6 +222,7 @@ def decide(
             base_sha=base_sha,
             seen_executions=seen_executions,
         )
+        problems = list(metadata_problems)
         verdict = effective_verdict(
             report.get("model_output"),
             policy,
@@ -211,10 +232,18 @@ def decide(
         problems.extend(verdict.reasons)
         ok = not problems and verdict.verdict == "PASS"
         role_results[role] = {"verdict": "PASS" if ok else "FAIL", "reasons": problems}
-        if not ok:
+        if ok:
+            continue
+        # Only a well-formed report for this exact head whose sole problem is that the reviewer
+        # could not run is an infrastructure error; anything else is a failed review cycle.
+        if not metadata_problems and is_infrastructure_error(report):
+            infrastructure_roles.append(role)
+            reasons.extend(
+                f"Review {role} (infrastructure error, not a review cycle): {p}" for p in problems
+            )
+        else:
+            cycle_failed = True
             reasons.extend(f"Review {role}: {p}" for p in problems)
-
-    cycle_failed = bool(reasons)
     restricted = restricted_matches(changed_files, policy["restricted_paths"])
     humans = {h.lower() for h in policy["human_maintainers"]}
     if restricted:
@@ -249,6 +278,7 @@ def decide(
         reasons=reasons,
         failed_cycles=total_failed,
         cycle_failed=cycle_failed,
+        infrastructure_roles=infrastructure_roles,
     )
 
 
@@ -273,6 +303,11 @@ def render_comment(
         lines.append(f"- Workflow run: {run_url}")
     if decision.restricted_files:
         lines.append(f"- Restricted paths touched: {', '.join(decision.restricted_files)}")
+    if decision.infrastructure_roles:
+        lines.append(
+            "- Reviewer infrastructure errors (not counted as review cycles): "
+            + ", ".join(decision.infrastructure_roles)
+        )
     if decision.escalate:
         lines.append("- **Escalated to a human maintainer (`needs-human`).**")
     if decision.reasons:
@@ -446,7 +481,10 @@ def run_github(args: argparse.Namespace) -> int:  # noqa: PLR0912 - linear CLI f
         if role not in reports:
             continue
         if report is not None and (
-            validate_model_output(report.get("model_output"))
+            (
+                validate_model_output(report.get("model_output"))
+                and not is_infrastructure_error(report)
+            )
             or not isinstance(report.get("reviewer"), dict)
         ):
             reports[role] = None  # Invalid artifacts never reach extraction or rendering.

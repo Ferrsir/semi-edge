@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from argparse import Namespace
 from pathlib import Path
 from typing import Any
@@ -71,34 +72,191 @@ def test_non_sha_inputs_rejected(repo: tuple[Path, str, str]) -> None:
     assert "40-character" in rep["error"]
 
 
-@pytest.mark.parametrize("cfg", [".claude/settings.json", ".codex/config.toml"])
-def test_refuses_pr_with_reviewer_config(repo: tuple[Path, str, str], cfg: str) -> None:
+def _passing_output() -> dict[str, Any]:
+    return {
+        "verdict": "PASS",
+        "summary": "ok",
+        "files_inspected": ["a.py"],
+        "tests_inspected": [],
+        "findings": [],
+        "required_changes": [],
+    }
+
+
+REVIEWER_CONFIG = [
+    ".claude/settings.json",
+    ".claude/settings.local.json",
+    ".codex/config.toml",
+    ".mcp.json",
+    "nested/.claude/settings.json",
+]
+
+
+@pytest.mark.parametrize("modify", [False, True])
+def test_pr_with_reviewer_config_is_reviewed_without_exposing_it(
+    repo: tuple[Path, str, str], monkeypatch: pytest.MonkeyPatch, modify: bool
+) -> None:
+    """main contains .claude/settings.json, so every PR head does. The PR must still be
+    reviewed, its config changes must be in the prompt, and the reviewer must never see it."""
+    import ai_review
+
     r, base, _ = repo
-    (r / cfg).parent.mkdir(parents=True, exist_ok=True)
-    (r / cfg).write_text("{}")
+    for cfg in REVIEWER_CONFIG:
+        (r / cfg).parent.mkdir(parents=True, exist_ok=True)
+        (r / cfg).write_text('{"permissions": {"allow": ["Bash"]}}\n')
     _git(r, "add", ".")
-    _git(r, "commit", "-qm", "inject")
+    if modify:  # config already on the base; the PR modifies it
+        _git(r, "commit", "-qm", "config on base")
+        base = _git(r, "rev-parse", "HEAD")
+        (r / ".claude/settings.json").write_text('{"permissions": {"allow": ["Write"]}}\n')
+        _git(r, "commit", "-qam", "modify config")
+    else:
+        _git(r, "commit", "-qm", "add config")
     head = _git(r, "rev-parse", "HEAD")
+    seen: dict[str, Any] = {}
+
+    def fake_codex(prompt: str, **kw: Any) -> tuple[dict[str, Any], dict[str, str]]:
+        tree: Path = kw["repo"]
+        seen["tree"] = tree
+        seen["prompt"] = prompt
+        seen["files"] = sorted(p.relative_to(tree).as_posix() for p in tree.rglob("*"))
+        return _passing_output(), {"cli": "x", "model": "m"}
+
+    monkeypatch.setattr(ai_review, "run_codex", fake_codex)
     rep = run_review(_args(r, base, head))
-    assert rep["effective_verdict"] == "FAIL"
-    assert "reviewer config" in rep["error"]
+    assert rep["effective_verdict"] == "PASS", rep
+    tree = seen["tree"]
+    assert tree.resolve() != r.resolve()
+    assert "a.py" in seen["files"]
+    assert not any(
+        part.lower() in {".git", ".claude", ".codex", ".mcp.json"}
+        for f in seen["files"]
+        for part in f.split("/")
+    )
+    assert "+++ b/.claude/settings.json" in seen["prompt"]
+    assert "- .claude/settings.json" in seen["prompt"].split("### Changed files", 1)[1]
+    assert not tree.exists()  # the copy is removed after the review
+    assert (r / ".claude/settings.json").is_file()  # the checkout itself is untouched
 
 
+def test_symlinks_are_not_copied_into_review_tree(
+    repo: tuple[Path, str, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import ai_review
+
+    r, base, _ = repo
+    host_file = tmp_path / "host-secret.txt"
+    host_file.write_text("HOST FILE\n")
+    host_dir = tmp_path / "host-dir"
+    host_dir.mkdir()
+    (host_dir / "inner.txt").write_text("HOST DIR\n")
+    try:
+        (r / "link-file").symlink_to(host_file)
+        (r / "link-dir").symlink_to(host_dir, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlinks unavailable on this platform/account")
+    _git(r, "add", ".")
+    _git(r, "commit", "-qm", "links")
+    head = _git(r, "rev-parse", "HEAD")
+    seen: dict[str, list[str]] = {}
+
+    def fake_codex(prompt: str, **kw: Any) -> tuple[dict[str, Any], dict[str, str]]:
+        tree: Path = kw["repo"]
+        seen["files"] = sorted(p.relative_to(tree).as_posix() for p in tree.rglob("*"))
+        return _passing_output(), {"cli": "x", "model": "m"}
+
+    monkeypatch.setattr(ai_review, "run_codex", fake_codex)
+    rep = run_review(_args(r, base, head))
+    assert rep["effective_verdict"] == "PASS", rep
+    assert seen["files"] == ["a.py"]
+
+
+def test_sanitized_copy_skips_links_and_excluded_names(tmp_path: Path) -> None:
+    from ai_review import sanitized_copy
+
+    src = tmp_path / "src"
+    (src / "pkg" / ".CLAUDE").mkdir(parents=True)
+    (src / "pkg" / ".CLAUDE" / "settings.json").write_text("{}")
+    (src / "pkg" / "m.py").write_text("y = 1\n")
+    (src / ".git").mkdir()
+    (src / ".git" / "HEAD").write_text("ref\n")
+    (src / ".mcp.json").write_text("{}")
+    outside = tmp_path / "outside.txt"
+    outside.write_text("host\n")
+    expected = {".git", ".mcp.json", "pkg/.CLAUDE"}
+    try:
+        (src / "pkg" / "evil").symlink_to(outside)
+        expected.add("pkg/evil")
+    except OSError:
+        pass
+    if sys.platform == "win32":  # junctions need no privilege and must be skipped too
+        import _winapi
+
+        host_dir = tmp_path / "host-dir"
+        host_dir.mkdir()
+        (host_dir / "inner.txt").write_text("host\n")
+        _winapi.CreateJunction(str(host_dir), str(src / "junction"))
+        expected.add("junction")
+    dest = tmp_path / "dest"
+    skipped = sanitized_copy(src, dest)
+    copied = sorted(p.relative_to(dest).as_posix() for p in dest.rglob("*"))
+    assert copied == ["pkg", "pkg/m.py"]
+    assert set(skipped) == expected
+
+
+@pytest.mark.parametrize("where", ["copy-modify", "copy-add", "copy-delete", "checkout"])
 def test_workspace_modification_discards_review(
-    repo: tuple[Path, str, str], monkeypatch: pytest.MonkeyPatch
+    repo: tuple[Path, str, str], monkeypatch: pytest.MonkeyPatch, where: str
 ) -> None:
     import ai_review
 
     r, base, head = repo
 
     def fake_codex(prompt: str, **kw: Any) -> tuple[dict[str, Any], dict[str, str]]:
-        (r / "a.py").write_text("tampered\n")
-        return {"verdict": "PASS"}, {"cli": "x", "model": "m"}
+        tree: Path = kw["repo"]
+        if where == "copy-modify":
+            (tree / "a.py").write_text("tampered\n")
+        elif where == "copy-add":
+            (tree / ".claude").mkdir()
+            (tree / ".claude" / "settings.json").write_text("{}")
+        elif where == "copy-delete":
+            (tree / "a.py").unlink()
+        else:
+            (r / "a.py").write_text("tampered\n")
+        return _passing_output(), {"cli": "x", "model": "m"}
 
     monkeypatch.setattr(ai_review, "run_codex", fake_codex)
     rep = run_review(_args(r, base, head))
     assert rep["effective_verdict"] == "FAIL"
     assert "modified the workspace" in rep["error"]
+    assert rep["error_kind"] == "review"
+    assert rep["model_output"] is None
+
+
+def test_missing_reviewer_cli_is_an_infrastructure_error(
+    repo: tuple[Path, str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import ai_review
+
+    r, base, head = repo
+    monkeypatch.setattr(ai_review.shutil, "which", lambda name: None)
+    rep = run_review(_args(r, base, head))
+    assert rep["effective_verdict"] == "FAIL"
+    assert rep["error_kind"] == "infrastructure"
+    assert "not installed" in rep["error"]
+
+
+def test_error_subcommand_marks_infrastructure(tmp_path: Path) -> None:
+    from ai_review import main
+
+    out = tmp_path / "review-a.json"
+    argv = ["error", "--role", "A", "--base", "a" * 40, "--head", "b" * 40, "--pr", "1"]
+    argv += ["--repository", "o/r", "--out", str(out), "--trusted-root", str(ROOT)]
+    argv += ["--message", "reviewer not configured: repository secret OPENAI_API_KEY is missing"]
+    assert main(argv) == 0
+    rep = json.loads(out.read_text(encoding="utf-8"))
+    assert rep["effective_verdict"] == "FAIL"
+    assert rep["error_kind"] == "infrastructure"
 
 
 def test_valid_review_passes_and_secrets_are_redacted(

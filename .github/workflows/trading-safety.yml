@@ -34,14 +34,32 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        # Fails closed: a base sync failure, a collection error or 0 base safety tests fail the
+        # step instead of letting the comparison pass vacuously.
         run: |
-          count() { uv run --directory "$1" pytest --collect-only -q -m safety -p no:cacheprovider 2>/dev/null | grep -c '::' || true; }
+          set -euo pipefail
+          count() {
+            local out rc=0
+            out=$(uv run --locked --directory "$1" pytest --collect-only -q -m safety -p no:cacheprovider) || rc=$?
+            if [ "$rc" -ne 0 ]; then
+              echo "::error::Safety test collection failed in $1 (pytest exit $rc; 5 means no safety tests)." >&2
+              return 1
+            fi
+            printf '%s\n' "$out" | grep -c '::' || true
+          }
           head_count=$(count .)
           git worktree add --detach ../base "$BASE_SHA"
-          (cd ../base && uv sync --locked >/dev/null 2>&1) || true
+          if ! (cd ../base && uv sync --locked); then
+            echo "::error::uv sync failed for the base worktree ($BASE_SHA); cannot verify the safety test count."
+            exit 1
+          fi
           base_count=$(count ../base)
-          echo "safety tests: base=${base_count:-0} head=${head_count}"
-          if [ "${head_count}" -lt "${base_count:-0}" ]; then
+          echo "safety tests: base=${base_count} head=${head_count}"
+          if ! [ "${base_count}" -gt 0 ]; then
+            echo "::error::The base branch collected ${base_count} safety tests; the count comparison would be vacuous."
+            exit 1
+          fi
+          if [ "${head_count}" -lt "${base_count}" ]; then
             echo "::error::Safety test count decreased (${base_count} -> ${head_count}). Removing safety tests requires a human-approved change."
             exit 1
           fi
