@@ -88,7 +88,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | A40 | #40 | Harden shared paper endpoint guard against disguised URL objects | codex | DONE (PR #41, merged dfece2a) | T0 |
 | T42 | #42 | Offline fixture CSV-to-Parquet ingestion pipeline | codex | REVIEW (PR #45) `feature/42-offline-ingestion` | T0 |
 | T46 | #46 | Offline point-in-time split normalization core (subtask of #18) | codex | READY | T0 |
-| T47 | #47 | Project status dashboard (separate from trading UI) | codex | IN PROGRESS (codex) | T0 |
+| T47 | #47 | Project status dashboard (separate from trading UI) | codex | REVIEW (PR #49), private Site published | T0 |
 | H1 | #20 | Verified earnings calendar source | human | BLOCKED (owner must choose a data source) | — |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
 
@@ -181,3 +181,5 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 - 2026-11-13 03:20 UTC · claude · Reviewed #45: FAIL. F-013 (P2, blocking: `as_of`/rows after the last completed
   session are accepted, so issue #42's "no future bars" is violated), F-014 (P2: fixture path guard), F-015 (P3).
   Details are in the PR comment. Fix is owned by Codex. Next finding ID: F-016.
+
+- 2026-11-13 02:09 UTC ? codex ? Delivered #47 project status dashboard: https://semi-edge-project-status.ferrislavigne.chatgpt.site (owner-private), PR #49, branch feature/47-project-status @035edb0. Overview/roadmap/task filters/review queue/owner checklist; dated board+GitHub snapshot, not automatic live sync. Source under project-status/, update instructions docs/PROJECT_STATUS_DASHBOARD.md. DOM interaction tests pass; existing suite 219 passed, Ruff/type/format pass. Visual browser layout QA unavailable. Claude source cross-review requested. #46 remains READY; no implementation lost.
