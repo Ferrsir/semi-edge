@@ -43,6 +43,7 @@ __all__ = [
     "SeriesProvenance",
     "SignalReport",
     "build_signal_report",
+    "evaluation_to_dict",
     "persist_report",
     "render_json",
     "render_markdown",
@@ -292,6 +293,39 @@ def _size_dict(size: SizingResult | None) -> dict[str, Any] | None:
     }
 
 
+def evaluation_to_dict(evaluation: SignalEvaluation, size: SizingResult | None) -> dict[str, Any]:
+    """One evaluation in the stable report schema (also persisted by ``semiedge.state``, §5.1).
+
+    An explicit field-by-field conversion (never ``asdict``/``repr``); non-finite numbers become
+    ``None`` so the result always serialises with ``allow_nan=False``.
+    """
+    e = evaluation
+    return {
+        "rank": e.rank,
+        "symbol": e.symbol,
+        "session": _iso(e.session),
+        "eligible": e.eligible,
+        "score": _number(e.score),
+        "score_components": {k: _number(v) for k, v in sorted(e.score_components.items())},
+        "close": _number(e.close),
+        "atr": _number(e.atr),
+        "proposed_stop": _number(e.proposed_stop),
+        "proposed_target": _number(e.proposed_target),
+        "proposed_size": _size_dict(size),
+        "conditions": [
+            {
+                "name": c.name,
+                "passed": c.passed,
+                "value": _number(c.value),
+                "threshold": _number(c.threshold),
+                "description": c.description,
+            }
+            for c in e.conditions
+        ],
+        "rejection_reasons": list(e.rejection_reasons),
+    }
+
+
 def report_to_dict(report: SignalReport) -> dict[str, Any]:
     """The stable JSON schema (``schema_version`` 1) of a report."""
     return {
@@ -336,31 +370,7 @@ def report_to_dict(report: SignalReport) -> dict[str, Any]:
             "eligible": len(report.eligible),
         },
         "evaluations": [
-            {
-                "rank": e.rank,
-                "symbol": e.symbol,
-                "session": _iso(e.session),
-                "eligible": e.eligible,
-                "score": _number(e.score),
-                "score_components": {k: _number(v) for k, v in sorted(e.score_components.items())},
-                "close": _number(e.close),
-                "atr": _number(e.atr),
-                "proposed_stop": _number(e.proposed_stop),
-                "proposed_target": _number(e.proposed_target),
-                "proposed_size": _size_dict(report.sizes.get(e.symbol)),
-                "conditions": [
-                    {
-                        "name": c.name,
-                        "passed": c.passed,
-                        "value": _number(c.value),
-                        "threshold": _number(c.threshold),
-                        "description": c.description,
-                    }
-                    for c in e.conditions
-                ],
-                "rejection_reasons": list(e.rejection_reasons),
-            }
-            for e in report.evaluations
+            evaluation_to_dict(e, report.sizes.get(e.symbol)) for e in report.evaluations
         ],
         "data_quality": [
             {

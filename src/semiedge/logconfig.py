@@ -22,9 +22,10 @@ _ASSIGNMENT = re.compile(
     r"['\"]?\s*[:=]\s*)"
 )
 _ASSIGNED_VALUE = re.compile(
-    r"(?i)\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|"
-    r"(?:(?:Bearer|Basic|Token)\s+)?(?:\\(?:.|$)|[^\s,;'\"\\}&\]])+"
+    r"(?i)\"(?:\\[\s\S]|[^\"\\])*\"|'(?:\\[\s\S]|[^'\\])*'|"
+    r"(?:(?:Bearer|Basic|Token)\s+)?(?:\\(?:[\s\S]|$)|[^\s,;'\"\\}&\]])+"
 )
+_UNPARSED_VALUE = re.compile(r"[^\r\n,;&}\]]*")
 _PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?i)\bBearer\s+[^\s,'\"\\}&\]]+"),
     re.compile(r"https://(?:ptb\.|canary\.)?discord(?:app)?\.com/api/webhooks/[^\s'\"\\]+"),
@@ -57,6 +58,11 @@ class SecretRedactionFilter(logging.Filter):
                 continue
             value = _ASSIGNED_VALUE.match(text, match.end())
             if value is None:
+                # Truncated/malformed upstream text is still credential-bearing. Mask through
+                # the next delimiter or line ending instead of exposing the unparsable value.
+                fallback = _UNPARSED_VALUE.match(text, match.end())
+                parts.extend((text[cursor : match.end()], REDACTED))
+                cursor = fallback.end() if fallback is not None else len(text)
                 continue
             quote = value.group(0)[0] if value.group(0)[0] in "'\"" else ""
             parts.extend((text[cursor : match.end()], quote + REDACTED + quote))
@@ -96,9 +102,17 @@ class JsonFormatter(logging.Formatter):
             payload["exc"] = self.formatException(record.exc_info)
         try:
             clean = redact_structure(payload, self._redactor.redact, strict=False)
-        except ValueError:
-            clean = {"msg": "Log payload redaction failed", "level": record.levelname}
-        return json.dumps(clean, allow_nan=False)
+            return json.dumps(clean, allow_nan=False)
+        except (ValueError, TypeError, OverflowError):
+            return json.dumps(
+                {
+                    "ts": payload["ts"],
+                    "logger": self._redactor.redact(record.name),
+                    "level": record.levelname,
+                    "msg": "Log payload redaction failed",
+                },
+                allow_nan=False,
+            )
 
 
 class _RedactingFormatter(logging.Formatter):

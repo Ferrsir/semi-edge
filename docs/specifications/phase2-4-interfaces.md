@@ -481,8 +481,10 @@ from a frame index), in this exact order, symbols processed in ascending order w
    if cash after the entry's costs would be < 0 → cancelled `entry_insufficient_cash`;
    else fill `approved_shares` at `fill = open_d · (1 + slip)` (an `opg` market order cannot be
    withdrawn after the auction, so a gap does **not** cancel it);
-   then, if `fill ≤ stop` or `fill ≥ target` (the **slipped fill price**, the same quantity the
-   paper engine compares, `filled_avg_price` in §6.3), the entry is invalidated: the position is
+   then, if `fill ≤ stop`, `open_d ≤ stop` or `fill ≥ target` (`fill` is the **slipped fill
+   price**, the same quantity the paper engine compares, `filled_avg_price` in §6.3; the raw
+   `open_d ≤ stop` test, ADR-008, keeps slippage from hiding a gap through the stop), the entry
+   is invalidated: the position is
    immediately flattened at `open_d · (1 − slip)` with exit reason `entry_gap_flatten` (both
    legs' costs charged). Example: `open_d = 99`, `target = 100`, 200 bps → `fill = 100.98 ≥ 100`
    → invalidated, although `open_d < target`.
@@ -714,6 +716,8 @@ an existing file is never overwritten.
   missing fill-day bar → `entry_no_bar`; end-of-window close.
 - Slipped-fill invalidation: `open = 99`, `target = 100`, `slippage_bps = 200` → entry fill
   `100.98`, then `entry_gap_flatten` (and with `slippage_bps = 0` the same bar is not invalidated).
+- Open below stop (ADR-008): `stop = 9.5`, `open = 9.4`, 200 bps → entry fill `9.588 > stop`, still
+  `entry_gap_flatten` at `9.4 · 0.98`, never a later `stop` fill at `9.5 · 0.98`.
 - End of window: the last `EquityPoint` is the post-liquidation point (one point for `end`, not
   two), `positions == 0`, `gross_exposure == 0`, `equity == cash`, and equals the hand-computed
   value including the liquidation sell costs.
@@ -792,7 +796,7 @@ def regime_breakdown(result: BacktestResult, data: BacktestData,
 class PeriodMetrics:
     label: str                    # "2019", "2018Q4", "drawdown_1", ...
     start: date; end: date
-    metrics: PerformanceMetrics   # computed on the equity sub-series, re-based to 1.0 at start
+    metrics: PerformanceMetrics   # computed on the equity sub-series, based at equity immediately before start
     trade_count: int              # trades with entry_session in [start, end]
 
 def period_breakdown(result: BacktestResult, *,
@@ -810,6 +814,18 @@ is reported with `Metric(None, "no_sessions_in_period")`, never dropped.
   adjustment, session range and cost settings as the strategy; a missing benchmark bar inside the
   range → that comparison is `None` with reason, never forward-filled silently.
 - Regime classification for session `d` uses data `≤ d−1` (no look-ahead into the day scored).
+
+Period/window capital is the equity immediately before the first included session,
+or initial_equity for the first run session. This metrics-definition correction
+(F-150) retains the start-session return so yearly returns chain to the whole run;
+it changes no strategy decisions. All windows, including drawdowns, use one shared
+slice helper. Drawdown windows start after the peak, retaining peak capital.
+Benchmark windows slice the original buy-and-hold curve with this same convention,
+including its original entry costs only when the run's first session is included.
+No forced-zero return is inserted for correlation or beta.
+Sharpe requires two returns; Sortino requires one negative return (downside RMS).
+No-trade profit factor is undefined with reason no_trades. Standard deviations
+<= 1e-12 * max(1, mean(abs(returns))) count as zero volatility.
 
 ### 4.2 Acceptance tests
 - Hand-checked fixtures (equity series of ≤ 10 points, ≤ 6 trades) with every metric computed
@@ -933,9 +949,12 @@ class StateReader(Protocol):               # F-037: the ONE read surface used by
 class StateStoreError(RuntimeError): ...
 
 class StateStore:                          # the single WRITER (engine process; CLI when engine stopped); implements StateReader
-    def __init__(self, path: Path, *, data_source: Literal["real", "synthetic"]) -> None: ...
+    def __init__(self, path: Path, *, data_source: Literal["real", "synthetic"],
+                 now: datetime) -> None: ...
         # takes the writer lock (§5.3), creates/migrates, sets PRAGMAs;
-        # an existing DB whose meta.data_source differs -> StateStoreError
+        # an existing DB whose meta.data_source differs -> StateStoreError;
+        # `now` (tz-aware, the caller's Clock.now()) stamps meta.created_at and
+        # schema_version.applied_at, so semiedge.state never reads a clock itself (§18 AST test)
     @property
     def store_id(self) -> str: ...         # uuid4 hex created once at initialisation (meta table)
     def transaction(self) -> AbstractContextManager[None]: ...
@@ -1357,9 +1376,14 @@ def parse_client_order_id(value: str) -> ParsedClientOrderId | None: ...  # None
   filled qty — `order_class="oco"`, `order_type="limit"`, `limit_price=target`,
   `stop_price=stop`, `time_in_force="gtc"` — persisted as **one** `orders` row of kind
   `protection` (the two broker legs live in `legs_json`; a leg fill is a fill of that row).
-- Gap rule (parity with §3.2 step 3): if the entry `filled_avg_price ≤ stop` or `≥ target`, the
-  engine does not place the OCO; it submits a `flatten` market sell (`time_in_force="day"`) for
-  the filled qty.
+- Gap rule (parity with §3.2 step 3's fill tests): if the entry `filled_avg_price ≤ stop` or
+  `≥ target`, the engine does not place the OCO; it submits a `flatten` market sell
+  (`time_in_force="day"`) for the filled qty.
+- **Parity exception (ADR-008, F-130):** the backtest's additional `open_d ≤ stop` test is a
+  backtest-only conservative modelling adjustment. The paper engine has no trustworthy auction
+  opening price at fill time; `filled_avg_price` already includes the real slippage. So paper does
+  not apply it, and when `open ≤ stop < filled_avg_price < target` it places the OCO as usual and the
+  broker stop handles the gap. The parity test (§10) excludes exactly this case.
 - Partial fills: protection is sized to the cumulative filled qty and is replaced
   (cancel-confirm-then-place, §9.2) when more fills arrive; once the opg order is terminal,
   protection qty must equal the position qty.
@@ -1860,7 +1884,8 @@ submissions; mode matrix rows (scanner builds no gateway — asserted by a fake 
 fails if called); decisions committed before intents (crash injected between them → no intent
 without a decision); end-to-end simulated week on synthetic data with fake gateway reproduces the
 backtest's trade list for the same bars (parity test: same entries/exits, sessions and reasons;
-prices may differ only by modelled slippage).
+prices may differ only by modelled slippage; the one documented exception is an entry whose open
+is at/below the stop while its fill is above it — ADR-008, §6.3 — which the fixture excludes or asserts separately).
 
 ---
 
@@ -1958,6 +1983,19 @@ Rules:
 - Every persisted `detail_json`/`payload_json`, every notification and every log line passes
   through the redactor configured with `AppSettings.secret_values()`. Credential-bearing raw
   text must be redacted before wrapping/cleaning/truncation, using `from_raw(..., redactor=...)`.
+  `from_raw` redacts again after control removal/NFC normalization and before truncation, so
+  cleaning cannot reconstruct a registered secret or expose a prefix at the display cap.
+- Credential-labelled structured values are masked whole. The shared key predicate deliberately
+  matches substrings such as `key`, including benign `monkey`, `keyboard`, `idempotency_key`
+  and `cache_key`. Consumers must not depend on these keys retaining diagnostic values in
+  redacted JSON; use dedicated validated identifier fields/columns for reconciliation. There
+  is no non-secret-key allowlist (F-103).
+- Pattern matching for unregistered free-text credentials is defense in depth, not a complete
+  credential grammar. URL userinfo, percent-encoded assignments, textual credential lists,
+  repeated/malformed empty quote boundaries, PEM blocks and aliases outside the key-marker
+  set remain follow-up F-102 in #74/#29. Known secret values must be registered explicitly;
+  these limitations do not authorize persisting raw credentials. Unparseable credential
+  assignments are masked to the next delimiter or line ending (F-100).
 - External free text (broker rejection messages, future news/AI output) is wrapped in
   `UntrustedText` at the boundary and is never used to build: commands, SQL (always
   parameterised), file paths, configuration, order parameters, or prompts with instructions.
@@ -2199,8 +2237,9 @@ constants added next to them by the owning task).
 - [ ] No new configuration loosens `config/risk.yaml` or touches `semiedge/safety/limits.py`.
 - [ ] Every new YAML field is required (no silent model defaults) and validated strictly.
 - [ ] Every failure path produces a reason code; no bare `except: pass`; NaN/inf never persisted.
-- [ ] Backtest/paper parity: same fill timeline (§3.2 ↔ §6.3/§9.1), same exit levels
-      (`semiedge.strategy.exits`), same risk manager.
+- [ ] Backtest/paper parity: same fill timeline (§3.2 ↔ §6.3/§9.1) except the one documented
+      ADR-008 case (`open ≤ stop < fill < target`: backtest flattens, paper protects; §6.3), same
+      exit levels (`semiedge.strategy.exits`), same risk manager.
 - [ ] All reported numbers carry the reproducing command; labels from §3.6 rendered first.
 - [ ] Safety-marked tests added for every safety invariant; safety test count does not drop.
 - [ ] Order intents only via `StateStore.insert_order_intent`; status only via `transition_order`;
@@ -2219,7 +2258,8 @@ constants added next to them by the owning task).
 3. Gap overshoot of exposure caps (§2.2): accepted residual for paper; owner may later choose
    limit-at-open entries, which is a strategy-execution spec change.
 4. Entry gap handling (§3.2 step 3, §6.3): an entry whose open fill is at/below the stop or
-   at/above the target is flattened immediately (both modes). Owner may prefer keeping the
+   at/above the target is flattened immediately (both modes). The backtest also flattens when the
+   raw open is at/below the stop (ADR-008, backtest-only, conservative; §6.3 parity exception). Owner may prefer keeping the
    above-target case open with protection; changing it is a spec change made before results.
 5. Drawdown peak reset (§8): no code path; owner decides if/when a reset is ever allowed.
 6. `semiedge flatten` (§8.1 level 3) is specified for T11; owner to confirm it is wanted as a

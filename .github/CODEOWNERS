@@ -17,7 +17,7 @@
 /config/risk.yaml             @Ferrsir
 /src/semiedge/safety/         @Ferrsir
 
-# Financially sensitive code (human review requested; see ENGINEERING_POLICY.md §6)
+# Financially sensitive code (human review requested; see ENGINEERING_POLICY.md, Restricted actions)
 /src/semiedge/risk/           @Ferrsir
 /src/semiedge/execution/      @Ferrsir
 /src/semiedge/backtest/       @Ferrsir

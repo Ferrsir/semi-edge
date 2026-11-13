@@ -13,12 +13,13 @@ _SOURCES = frozenset({"broker", "discord", "news", "ai", "file"})
 MAX_TEXT_LENGTH = 2000
 
 
-def _clean(raw: str) -> str:
-    return "".join(
+def _clean(raw: str, *, truncate: bool = True) -> str:
+    cleaned = "".join(
         char
         for char in unicodedata.normalize("NFC", raw[: 4 * MAX_TEXT_LENGTH])
         if char == "\n" or unicodedata.category(char) not in {"Cc", "Cf", "Cs", "Zl", "Zp", "Co"}
-    )[:MAX_TEXT_LENGTH]
+    )
+    return cleaned[:MAX_TEXT_LENGTH] if truncate else cleaned
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,7 +54,12 @@ class UntrustedText:
             raise ValueError("max_len must be an integer from 1 through 2000")
         if redactor is not None:
             raw = redactor.redact(raw)
-        return cls(source, _clean(raw)[:max_len])
+        cleaned = _clean(raw, truncate=False)
+        if redactor is not None:
+            # Removing control characters can join fragments into a registered secret. Do
+            # this second pass before the display cap can cut that reconstructed value apart.
+            cleaned = redactor.redact(cleaned)
+        return cls(source, cleaned[:max_len])
 
     def for_html(self) -> str:
         """HTML text escaping only; never interpolate the result as executable code."""

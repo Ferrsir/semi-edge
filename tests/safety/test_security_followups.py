@@ -178,3 +178,54 @@ def test_cycles_in_log_extras_produce_a_safe_json_failure_record(logger, capsys)
     configure_logging().info("message", extra={"payload": cyclic})
     parsed = json.loads(capsys.readouterr().err)
     assert parsed["msg"] == "Log payload redaction failed"
+
+
+MALFORMED_CREDENTIALS = [
+    'api_key="FAKE_UNTERMINATED_100',
+    "password='FAKE_UNTERMINATED_100",
+    '{"client_secret": "FAKE_TRUNCATED_100',
+    'token="FAKE_START_100\\\nFAKE_TAIL_100"',
+    "token='FAKE_START_100\\\nFAKE_TAIL_100'",
+    "api_key=FAKE_START_100\\\nFAKE_TAIL_100",
+]
+
+
+@pytest.mark.parametrize("fmt", ["json", "text"])
+@pytest.mark.parametrize("message", MALFORMED_CREDENTIALS)
+def test_malformed_credential_values_fail_closed_in_logs(logger, capsys, fmt, message):
+    configure_logging(fmt=fmt).info("upstream body: %s", message)
+    line = capsys.readouterr().err
+    assert "FAKE_" not in line
+    assert REDACTED in line
+    if fmt == "json":
+        json.loads(line)
+
+
+@pytest.mark.parametrize("message", MALFORMED_CREDENTIALS)
+def test_malformed_credential_values_fail_closed_in_persisted_text(message):
+    result = redact_json({"note": message}, SecretRedactionFilter())
+    assert "FAKE_" not in json.dumps(result)
+    assert REDACTED in result["note"]
+
+
+@pytest.mark.parametrize("separator", ["\u200b", "\x00"])
+@pytest.mark.parametrize("prefix", ["echo ", "x" * 1990])
+def test_cleaning_cannot_reassemble_registered_secret(separator, prefix):
+    secret = "FAKESECRETVALUE101"
+    raw = prefix + "FAKE" + separator + "SECRETVALUE101"
+    value = UntrustedText.from_raw("broker", raw, redactor=SecretRedactionFilter([secret]))
+    assert "FAKE" not in value.text
+    assert len(value.text) <= MAX_TEXT_LENGTH
+
+
+def test_json_encoding_failure_keeps_safe_metadata(logger, capsys):
+    configure_logging(secrets=["FAKE_REGISTERED_104"]).info(
+        "m FAKE_REGISTERED_104", extra={"p": 10**5000}
+    )
+    line = capsys.readouterr().err
+    parsed = json.loads(line)
+    assert parsed["msg"] == "Log payload redaction failed"
+    assert parsed["logger"] == "semiedge"
+    assert parsed["level"] == "INFO"
+    assert parsed["ts"]
+    assert "FAKE_REGISTERED_104" not in line
