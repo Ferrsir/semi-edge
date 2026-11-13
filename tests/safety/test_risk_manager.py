@@ -514,3 +514,81 @@ def test_property_post_approval_exposure_and_count_within_limits() -> None:
         for d in decisions:
             assert 0 <= d.approved_shares <= max(d.proposal.proposed_shares, 0)
             assert d.approved or d.approved_shares == 0
+
+
+# ------------------------------------------------------------------ Codex review regressions
+
+
+@pytest.mark.parametrize("price", [math.nan, math.inf, -math.inf, 0.0, -5.0])
+def test_f061_position_entry_price_must_be_finite_positive(price: float) -> None:
+    portfolio = _portfolio(positions=(PositionView("ZZZ", 1, price, 100.0),))
+    decision = _one(_manager(), _proposal(), portfolio)
+    assert not decision.approved
+    assert decision.approved_shares == 0
+    assert "invalid_input" in decision.reasons
+    assert tuple(c.check_id for c in decision.checks) == CHECK_IDS
+
+
+@pytest.mark.parametrize("value", [3.5, True, 0, -1, 4.0])
+def test_f062_max_positions_must_be_a_positive_int(value: object) -> None:
+    with pytest.raises(SafetyViolation, match="max_positions"):
+        _manager(RiskLimits.model_construct(max_positions=value))
+
+
+def test_f063_earlier_batch_approvals_exhaust_gross_exposure() -> None:
+    # Cap 20,000; each proposal wants 50 shares x 100 = 5,000 (5%): four fit, then 0 room.
+    limits = RiskLimits(max_positions=4)
+    proposals = [_proposal(s, rank=1) for s in ("EEE", "AAA", "DDD", "BBB")]  # equal ranks
+    held = _portfolio(positions=(PositionView("FFF", 10, 100.0, 100.0),))  # 1,000 held
+    decisions = _manager(limits).evaluate_entries(proposals, held)
+    assert [d.proposal.symbol for d in decisions] == ["AAA", "BBB", "DDD", "EEE"]  # symbol ties
+    assert [d.approved_shares for d in decisions] == [50, 50, 50, 0]
+    assert decisions[2].approved
+    assert "max_positions" in decisions[3].reasons
+    # remaining exposure room after AAA, BBB, DDD: 20,000 - 1,000 - 15,000 = 4,000 -> 40 shares
+    assert _check(decisions[3], "R12_gross_exposure").observed == 40.0
+    shuffled = list(reversed(proposals))
+    assert _manager(limits).evaluate_entries(shuffled, held) == decisions
+
+
+def test_f063_earlier_batch_approvals_exhaust_cash() -> None:
+    proposals = [_proposal(s, rank=i + 1) for i, s in enumerate(("AAA", "BBB", "CCC"))]
+    decisions = _manager().evaluate_entries(proposals, _portfolio(cash=12_000.0))
+    assert [d.approved_shares for d in decisions] == [50, 50, 20]
+    assert "downsized:R13_cash" in decisions[2].reasons
+    assert _check(decisions[2], "R13_cash").observed == 20.0
+
+
+def test_f063_rejected_earlier_duplicate_still_blocks_later_proposal() -> None:
+    first = _proposal("AAA", rank=1, data_as_of=date(2024, 6, 27))  # rejected: stale_data
+    second = _proposal("AAA", rank=2)
+    a, b = _manager().evaluate_entries([second, first], _portfolio())
+    assert (a.proposal.rank, a.approved) == (1, False)
+    assert "duplicate_or_conflict" in b.reasons
+
+
+def test_f063_property_with_pending_orders() -> None:
+    limits = RiskLimits()
+    manager = _manager(limits)
+    for seed in range(300):
+        rng = random.Random(10_000 + seed)
+        proposals, portfolio = _random_case(rng)
+        pending = tuple(
+            PendingOrderView(f"P{i}", rng.choice([OrderSide.BUY, OrderSide.SELL]),
+                             rng.randint(1, 30), rng.uniform(10, 300), rng.random() < 0.5)
+            for i in range(rng.randint(0, 3))
+        )  # fmt: skip
+        portfolio = replace(portfolio, pending_orders=pending)
+        decisions = manager.evaluate_entries(proposals, portfolio)
+        approved = [d for d in decisions if d.approved]
+        held = sum(p.qty * p.mark_price for p in portfolio.positions)
+        buys = sum(o.remaining_qty * o.valuation_price for o in pending if o.side == OrderSide.BUY)
+        added = sum(d.approved_shares * d.proposal.entry_reference for d in approved)
+        cap = portfolio.equity * limits.max_gross_exposure_pct
+        if held + buys <= cap:
+            assert held + buys + added <= cap + 1e-6
+        if buys <= portfolio.cash:
+            assert buys + added <= portfolio.cash + 1e-6
+        entries = sum(1 for o in pending if o.is_entry)
+        if approved:
+            assert len(portfolio.positions) + entries + len(approved) <= limits.max_positions

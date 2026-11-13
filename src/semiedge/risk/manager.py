@@ -156,10 +156,11 @@ def _input_problems(proposal: EntryProposal, portfolio: PortfolioView) -> list[s
         if portfolio.cash < 0:
             problems.append("cash must be >= 0")
     for position in portfolio.positions:
-        if not _whole(position.qty, 1) or not (
-            _finite(position.mark_price) and position.mark_price > 0
-        ):
-            problems.append(f"position {position.symbol}: qty must be > 0 and mark finite > 0")
+        prices = (position.mark_price, position.avg_entry_price)  # F-061: both must be valid
+        if not _whole(position.qty, 1) or not all(_finite(v) and v > 0 for v in prices):
+            problems.append(
+                f"position {position.symbol}: qty must be > 0 and mark/entry prices finite > 0"
+            )
     for order in portfolio.pending_orders:
         if not _whole(order.remaining_qty, 1) or not (
             _finite(order.valuation_price) and order.valuation_price > 0
@@ -206,6 +207,8 @@ class RiskManager:
     ) -> None:
         if not isinstance(limits, RiskLimits):
             raise SafetyViolation("RiskManager requires a validated RiskLimits")
+        if not _whole(limits.max_positions, 1):  # F-062: model_construct can bypass the int type
+            raise SafetyViolation("risk limit max_positions must be a positive int")
         for name in _CEILING_FIELDS:
             value, ceiling = getattr(limits, name), getattr(RISK_LIMIT_CEILINGS, name)
             if not _finite(value) or not value > 0 or value > ceiling:
