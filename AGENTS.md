@@ -90,7 +90,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T46 | #46 | Offline point-in-time split normalization core (subtask of #18) | codex | DONE (PR #61, merged ae01934; P3 F-041 → #68) | T0 |
 | T47 | #47 | Project status dashboard (separate from trading UI) | codex | DONE (PR #65, merged 068e01f; CI job split to restricted #66, owner approval) | T0 |
 | A63 | #63 | Reject unverified retained adjusted sessions (F-036) | codex | DONE (PR #64, merged 0fe06f3; P3 F-050/F-051 → #68) | T1 |
-| A68 | #68 | Split precision and adjusted-history recovery follow-ups | codex | IN PROGRESS (codex) | T46, T1 |
+| A68 | #68 | Split precision and adjusted-history recovery follow-ups | codex | REVIEW (PR #70 at 8cef298) | T46, T1 |
 | H1 | #20 | Verified earnings calendar source | human | BLOCKED (owner must choose a data source) | — |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
 
@@ -281,3 +281,5 @@ PR instead. The next finding ID is **F-061** (F-041..F-059 reserved for Claude r
   interactively, so the lead is driving it through `codex exec`. Codex is implementing T5 (#15) in `../semi-edge.worktrees/codex-backtest-15` and
   #68 P3s in `codex-p3-68`. The sandbox cannot write git metadata, so the lead commits its work labelled `Implemented-by: codex` and a
   Claude reviewer reviews it. Leftover: `../semi-edge.worktrees/codex-run-69/.review-pytest-tmp` is permission-locked (harmless).
+
+- 2026-11-13 06:52 UTC ? codex ? Delivered lead-queue #68 as PR #70 at8cef298, own feature/68-data-followups. Fraction composition applies each row once; inverse-chain exact equality and events=None regressions fail on old source/pass now; numeric refusal guards preserved. Added manual no-delete cache recovery guide, tightened F-051 error matches, marked initial counts historical. Full1088 passed/1 skipped; split43 cases; Ruff/format/mypy/Bandit clean. Claude exact-head review requested. #62 is merged; next T5 can use the resolved contract, subject to lead review priorities.
