@@ -93,7 +93,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | A68 | #68 | Split precision and adjusted-history recovery follow-ups | codex | DONE (PR #70, merged 00be4fa) | T46, T1 |
 | T71 | #71 | Backtest cost/config and shared exit primitives (subtask #15) | codex subagent | IN PROGRESS (codex subagent, WIP): isolated primitives preserved for lead reuse; overlaps lead-owned T5 | T3b |
 | A74 | #74 | Security follow-ups F-070..F-076 | codex subagent | REVIEW (PR #76 at 288ed94; redaction regression fixed) | T16 |
-| H1 | #20 | Verified earnings calendar source (owner chose Finnhub primary + Alpha Vantage cross-check) | claude | IN PROGRESS (claude) `feature/20-earnings-calendar` | T8 |
+| H1 | #20 | Verified earnings calendar source (owner chose Finnhub primary + Alpha Vantage cross-check) | claude | REVIEW (PR #88) | T8 |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
 | H3 | — | GitHub Actions billing/spending limit: since ~12:00 UTC 2026-11-13 no CI job starts, so nothing can merge | human | DONE (repo made public 2026-11-13; #81 CI re-run green 16:45 UTC) | — |
 
@@ -102,10 +102,14 @@ Codex: start here every session. When an item is done, post on the PR or issue, 
 delete the item from this list in the same `AGENTS.md` commit. If an item is blocked, say why in the
 log and move to the next one. Work in your own worktree under `../semi-edge.worktrees/`, not in the
 `.t3` checkout and not in a Claude worktree. Never push to a Claude branch. Report findings on the
-PR instead. **Next finding ID: F-160** (F-060 is your #67 security fix; F-061..F-063 were used in your #69 review).
+PR instead. **Next finding ID: F-165** (F-160..F-164 used in the Claude review of #82; F-060 is your #67 security fix; F-061..F-063 were used in your #69 review).
 
 **T5 is delivered as PR #75** (written by a lead-run `codex exec`; Claude review in progress). Fix whatever that review raises
 on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest-15`, which is the lead's).
+00. **Review Claude PRs #88 (#20 earnings, Finnhub + Alpha Vantage), #87 (#85 CI usage, restricted) and #89 (#86 RUNBOOK).**
+   Exact-head PASS/FAIL comments; Codex CLI is not installed on the owner's second PC, so run it from the PC that has it.
+000. **Fix #82** (T13 dashboard): Claude review FAIL at `f5a99d0`: F-160 (P2) held sessions off by one against ADR-005 (use
+   `semiedge.strategy.exits.held_sessions`); P3 F-161..F-163. F-164 is handled in #87.
 0a. **Fix #76** (#74 security): Claude review FAIL at `288ed94`: F-100 (P2) is an unparseable credential value (unterminated quote, or a
    backslash-newline inside quotes) that leaks in text logs, JSON logs and `redact_json`; mask to the end of the line or the next delimiter. Also P3s F-101..F-104.
 0. **Fix #77** (T17): Claude review FAIL at `96d6c65`, two blocking P2s:
@@ -116,11 +120,14 @@ on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest
 ## Review queue
 | PR | Task | Author | Reviewer | Verdict |
 |---|---|---|---|---|
-| #76 | #74 | codex | claude | Updated 288ed94; cross-provider re-review requested |
-| #77 | T17 | codex | claude | Core 96d6c65; cross-provider review requested; #18 integration open |
-| #73 | #54 | claude | codex + owner | Codex PASS at c24c43b (F-077..F-079 fixed); **owner: approve** (restricted) |
-| #66 | #47 | claude (Codex job) | owner | restricted `ci.yml`, **owner: approve** |
-| #53 | #1 | claude | codex + owner | Codex PASS (source); owner approval required |
+| #88 | H1/#20 | claude | codex | Earnings calendar, Finnhub + Alpha Vantage; review requested |
+| #87 | #85 | claude | codex + owner | CI usage cut (restricted `.github/**`; supersedes #66); **owner: approve** after Codex |
+| #89 | #86 | claude | codex | RUNBOOK (docs only) |
+| #82 | T13 | codex | claude | Claude FAIL at f5a99d0 (F-160 P2); back with Codex |
+| #76 | #74 | codex | claude | Claude FAIL at 288ed94 (F-100 P2); back with Codex |
+| #77 | T17 | codex | claude | Claude FAIL at 96d6c65 (F-110/F-111 P2); back with Codex |
+| #73 | #54 | claude | codex + owner | Codex PASS at c24c43b; main merged in 41e2fba (conflict only); **owner: approve** (restricted) |
+| #53 | #1 | claude | codex + owner | Codex PASS (source); main merged in 934c752 (README conflict only); **owner: approve** (restricted) |
 
 ## Discussion log (append-only, newest last; `YYYY-MM-DD HH:MM UTC · agent · note`)
 - 2026-10-30 15:10 UTC · claude · Took over as lead/integrator at the owner's request. Owner
@@ -336,3 +343,5 @@ on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest
 - 2026-11-13 16:55 UTC · claude · H3 resolved: the owner made the repo public, and #81's failed CI re-ran green. Fixed board statuses for T16 and T71, which made `project-status/scripts/refresh-snapshot.py` refuse to refresh (status must start with READY, IN PROGRESS, REVIEW, DONE or BLOCKED followed by a space). Owner decision: AGENTS.md is canonical; #1's criterion was amended and PR #53 now closes #1.
 
 - 2026-11-13 17:30 UTC · claude · Lead resumed on the owner's second PC (no `../semi-edge.worktrees/` or Codex CLI here; worktrees on the other PC are untouched). Merged #81 (T6, `700d90d`; Claude PASS, CI green after the public-repo rerun). Reran #82's billing-era CI. Owner decisions: #20 source is Finnhub (primary) + Alpha Vantage (cross-check), keys `FINNHUB_API_KEY`/`ALPHAVANTAGE_API_KEY`, R16 unchanged; no Yahoo data. Claimed #20 (H1 row), #85 (cut Actions usage; restricted, folds in #66) and #86 (`docs/RUNBOOK.md`). Codex reviews of these need Codex run by the owner (no CLI here).
+
+- 2026-11-13 18:30 UTC · claude · Opened #87 (#85 CI: fail-closed docs-only classifier, path filters, uv/npm caches, PR-only cancel, monthly grouped Dependabot, extras audited; supersedes and closed #66), #88 (#20 earnings: Finnhub + Alpha Vantage cross-check, overrides, daily cache; R16 unchanged; 1696 passed locally) and #89 (#86 RUNBOOK). Merged `main` into #53 and #73 (conflict-only; owner approval remains). Claude review of #82: FAIL, F-160 (P2, held sessions off by one vs ADR-005) plus P3 F-161..F-164. Open question for the owner: `config/app.yaml` uses `daily_feed: sip`, but the owner note says IEX for now. Not changed, because the feed feeds the volume conditions.
