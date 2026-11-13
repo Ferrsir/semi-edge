@@ -82,7 +82,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T13 | #25 | Streamlit dashboard (dark theme) | codex | READY | T4 |
 | T14 | #26 | Discord notifications | codex | READY | T12 |
 | T15 | #27 | Docker / compose, health checks, graceful shutdown | claude | READY | T12 |
-| T16 | #29 | Security: secret handling, redaction, prompt-injection tests | codex | IN PROGRESS (codex), feature/29-security-boundaries | T4 |
+| T16 | #29 | Security: secret handling, redaction, prompt-injection tests | codex | REVIEW (PR #67 at 866e145; boundary core only, consumer integration remains #29) | T4 |
 | T17 | #18 | Corporate actions tracking | codex | READY | T1 |
 | A37 | #37 | Audit: reject missing runtime configuration sections | codex | DONE (PR #38) | T0 |
 | A40 | #40 | Harden shared paper endpoint guard against disguised URL objects | codex | DONE (PR #41, merged dfece2a) | T0 |
@@ -98,7 +98,7 @@ Codex: start here every session. When an item is done, post on the PR or issue, 
 delete the item from this list in the same `AGENTS.md` commit. If an item is blocked, say why in the
 log and move to the next one. Work in your own worktree under `../semi-edge.worktrees/`, not in the
 `.t3` checkout and not in a Claude worktree. Never push to a Claude branch. Report findings on the
-PR instead. The next finding ID is **F-041**.
+PR instead. The next finding ID is **F-061** (F-041..F-059 reserved for Claude reviews; F-060 security fix).
 
 2. **#62**: Codex FAIL at 4f8eb8d, F-037..F-040 (shared reader API, fill-source deduplication, idempotent split recovery, valid slippage domain). Claude contract fixes and re-review needed before T5.
 3. **#61**: F-031..F-035 fixed; rebased current head 0f328ea, 992 tests/1 skipped. Claude re-review needed after usage reset (reported 12:20am America/Chicago).
@@ -115,6 +115,7 @@ Merged this wave: #48 and Dependabot #56-#60, exact-head reviews and green check
 | #64 | A63 | codex | claude | F-036 fix at 51852d4; review requested |
 | #62 | T3b | claude | codex | FAIL at 4f8eb8d: F-037..F-040 contract blockers; fixes requested |
 | #49 | T47 | codex | claude + owner | Claude PASS at 835d80c, CI green; owner approval required for ci.yml |
+| #67 | T16 | codex | claude | boundary core/F-060 at 866e145; cross-provider review requested |
 | #53 | #1 | claude | codex + owner | Codex PASS (source); owner approval required |
 
 ## Discussion log (append-only, newest last; `YYYY-MM-DD HH:MM UTC · agent · note`)
@@ -267,3 +268,5 @@ Merged this wave: #48 and Dependabot #56-#60, exact-head reviews and green check
   #64 (IDs F-050..F-059).
 
 - 2026-11-13 06:27 UTC ? codex ? Resumed with owner instruction. #50 merged ce2490d by lead; claimed READY T16/#29 in feature/29-security-boundaries. Implement shared redaction/untrusted-text primitives and offline injection tests against available logging/config modules; no invented engine/state integration. #61/#64 exact-head review requests sent to Claude; #62 findings remain queued. Existing worktrees preserved.
+
+- 2026-11-13 06:40 UTC ? codex ? Delivered #29 boundary core as PR #67, feature/29-security-boundaries at 866e145, own ../semi-edge.worktrees/codex-security-boundaries. F-060/P2 reproduced/fixed unknown credential-labelled JSON log extras escaping redaction; old regression failed, now valid JSON stays redacted. Added strict deep JSON redaction, inert normalized/bounded UntrustedText and 29 safety cases/fixtures plus existing logging/temporary SQLite harness. Full post-rebase1073 passed/1 opt-in smoke skipped, focused35 passed, Ruff/format/types/Bandit pass. Rebase preserved both audit sections. Claude exact-head review requested; #29 remains open for future engine/outbox/dashboard consumers. Saw Claude PASS on #61 and #64; lead owns merges/follow-up allocation. NextF061; no broker access, no pushes to Claude branches.
