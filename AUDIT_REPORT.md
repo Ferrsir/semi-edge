@@ -114,3 +114,26 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Impact:** future callers relying only on the shared guard could accept an incorrectly configured client. The existing factory still constructs paper=True; no live request or order was demonstrated. PR #39 already has a local compensating check.
 - **Fix:** accept only identity-equal SDK `BaseURL.TRADING_PAPER` or an exact builtin `str` matching the paper endpoint (existing trailing-slash support retained). Never coerce arbitrary `.value` or display representations. Error remains sanitized.
 - **Tests:** seven regression/compatibility cases cover two disguises, a custom value wrapper, accepted SDK/string representations, and factory rejection of a disguised constructed client. Full suite: 219 passed; Ruff check/format and mypy passed. Offline fixtures only; no risk ceiling or trading permission changes.
+
+
+## PR #45 review fixes ? F-013, F-014, F-015
+
+### F-013 ? P2 ? Future/in-progress sessions accepted as completed
+- **Where:** `data.csv_import.parse_csv_bars` and `data.fixture_ingest.ingest_fixture`.
+- **Confirmed reproduction:** before the fix, a 2031-03-03 row, a 2099-12-31 cutoff on a historical row, and a Saturday cutoff all passed. Reproduced offline against PR head 5df112e using its exact source; no network or vendor data.
+- **Impact:** fixture provenance could call future or unfinished sessions completed, violating the no-future-bars contract.
+- **Fix:** require an injected aware `now` at all library entry points; the CLI passes the real UTC clock. Require cutoff and every input row to be an XNYS session closed plus a validated settlement delay (30 minutes by default). Reject future/unsettled rows even if after the historical cutoff. Record the actual last session and missing-session dates separately from the cutoff.
+- **Regression evidence:** `tests/unit/test_csv_completion.py` covers regular close boundaries, settlement equality, July 3 early close, DST, offset clocks, future rows/cutoffs, weekends, holidays, malformed clocks/delays and gap recording. The integration CLI test confirms a future cutoff writes no artifact.
+
+### F-014 ? P2 ? Fixture ancestor could permit vendor-cache pollution
+- **Where:** `data.fixture_ingest.ingest_fixture` output validation.
+- **Confirmed reproduction:** the old ancestor-name guard accepted a path under `fixtures/data/raw/bars/daily/feed=iex/adjustment=raw/`.
+- **Impact:** malformed fixture output in the vendor layout can break real-cache reads/status/fetch, though the store rejects its provenance rather than reading it as market data.
+- **Fix:** require the immediate resolved parent to be named fixture/fixtures, and reject the vendor raw/bars/daily sequence and feed=/adjustment= components anywhere in the destination.
+- **Regression evidence:** five vendor-layout and nested-parent cases in `tests/integration/test_fixture_ingest.py`; existing exclusive creation/symlink tests remain.
+
+### F-015 ? P3 ? Input-domain and coverage gaps
+- **Where:** CSV volume parsing, supported session range and fixture metadata.
+- **Fix:** validate share volume using exact decimal integrality/sign and a float64 exact-integer ceiling; reject fractional, negative-zero and oversized values. Explicitly limit the importer to sessions from 1990 onward. Preserve gaps without filling and list missing sessions through the cutoff; mark adjustment unknown. No claim of vendor point-in-time availability or complete event coverage.
+- **Regression evidence:** exact-volume, pre-history and missing-session tests. Additional library UTF-8 error normalization and interrupted-write cleanup are covered by integration tests.
+- **Remaining limitation:** output publication is exclusive but not atomic for concurrent readers; consumers must wait for command success. No vendor connection, broker request, credential access, risk-limit or strategy change occurred.
