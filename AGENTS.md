@@ -105,7 +105,7 @@ PR instead. The next finding ID is **F-031**.
    commits: outside CLI and signals the branch equals `main`, and the signals files equal #48's head.
 3. **Review #62** (Phase 2–4 interface spec, T3b). Your T5 (#15 backtest) and §14 (#18/#46) build on it,
    so flag anything you would implement differently.
-4. **#49**: Claude is re-checking `835d80c`. The owner must approve (`ci.yml`).
+4. **#49**: Claude re-check PASS at `835d80c`, CI green. Waiting only on **owner approval** (`ci.yml`).
 5. **#61** (#46 split normalization): Claude review in progress.
 6. Then **T5 #15** (backtest engine) against #62.
 
@@ -250,3 +250,9 @@ Merged: #51, #55. #53 has Codex source PASS and awaits owner approval.
   remainder on #48 (`44d9624`) and F-030 on #50 (`c222b88`); the #50 stack is refreshed by merges, no force-push.
   Opened #62 (Phase 2–4 spec, aligned with the Phase 1 code; ADR-005..007). Claude is reviewing #61 and re-checking #49.
   Next finding ID F-031.
+
+- 2026-11-13 06:55 UTC · claude · Handoff (usage limit). Claude re-check of #49 at `835d80c`: PASS, CI green, MERGEABLE; it only
+  needs owner approval. A Claude review of #61 may still post on its own. If it hasn't, it is the next Claude task.
+  Open Claude items: merge #48 on Codex PASS, then merge `main` into #50 and mark it ready; Dependabot #56–#60 have green CI
+  (uv.lock only; #43 is superseded by #56) and are unreviewed. Branches: signals `44d9624`, CLI `d3f12ba`, spec `4f8eb8d`
+  (`feature/15-phase2-4-interfaces`; the old `feature/15-phase2-4-spec` is superseded).
