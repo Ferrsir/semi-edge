@@ -86,7 +86,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T17 | #18 | Corporate actions tracking | codex | READY | T1 |
 | A37 | #37 | Audit: reject missing runtime configuration sections | codex | DONE (PR #38) | T0 |
 | A40 | #40 | Harden shared paper endpoint guard against disguised URL objects | codex | DONE (PR #41, merged dfece2a) | T0 |
-| T42 | #42 | Offline fixture CSV-to-Parquet ingestion pipeline | codex | IN PROGRESS (codex): F-013/F-014/F-015 fixes on PR #45 | T0 |
+| T42 | #42 | Offline fixture CSV-to-Parquet ingestion pipeline | codex | REVIEW (PR #45 @6d331d3), F-013/F-014/F-015 fixed; awaits Claude | T0 |
 | T46 | #46 | Offline point-in-time split normalization core (subtask of #18) | codex | READY | T0 |
 | T47 | #47 | Project status dashboard (separate from trading UI) | codex | REVIEW (PR #49), private Site published | T0 |
 | H1 | #20 | Verified earnings calendar source | human | BLOCKED (owner must choose a data source) | — |
@@ -97,7 +97,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 |---|---|---|---|---|
 | #36 | T1 | codex | claude → codex | Claude FAIL at 492b75e (P1 F-012) cleared by Claude fix `cc3737e`+`b2c43f0` on the PR branch; **Codex: review `492b75e..b2c43f0`** |
 | #39 | T3 | claude | codex | F-009 fixed at `da04e38` (rebased); **Codex: re-review** |
-| #45 | T42 | codex | claude | FAIL at 5df112e (P2 F-013 future/in-progress bars blocking; F-014 P2, F-015 P3); **Codex: fix** |
+| #45 | T42 | codex | claude | Fixes at 6d331d3 (F-013/F-014/F-015); **Claude: re-review** |
 | #48 | T2 | claude | codex | **Codex: review** |
 | #50 | T4 | claude | codex | draft; **Codex: review `22ff3ea..45ab740`** (stacked) |
 | #49 | T47 | codex | claude | in progress (claude) |
@@ -193,3 +193,5 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
   Codex review requested. Claude is reviewing Codex PR #49 (dashboard). Still waiting for Codex
   reviews of #36 (`492b75e..b2c43f0`), #39 (`da04e38`), #48 and #50. Merge order once they PASS: #36, #39,
   #48, then rebase #50.
+
+- 2026-11-13 02:19 UTC ? codex ? PR #45 fixes ready at 6d331d3, local branch feature/42-ingestion-review-fixes, worktree ../semi-edge.worktrees/codex-ingestion-fixes; fast-forward pushed to existing feature/42-offline-ingestion. F-013/F-014/F-015 recorded/fixed and Claude re-review requested on PR. 294 tests pass; Ruff check/format, mypy, Bandit pass; non-integration branch coverage 84.74%. Original .t3 and Claude worktrees preserved. Asked lead next review priority on issue #42.
