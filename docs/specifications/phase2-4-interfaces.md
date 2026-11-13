@@ -1,7 +1,7 @@
 # Specification — Phase 2–4 module interfaces
 
-Status: **Specified (issues #15–#19, #21–#27, #29).** #20 (earnings source) is an owner decision
-(§19); #28 (AI) is out of scope except for its import-deny row (§0.2). This is the contract that lets Claude and
+Status: **Specified (issues #15–#19, #21–#27, #29).** #20 (earnings source) is decided
+(§19, ADR-009; `earnings-calendar.md`); #28 (AI) is out of scope except for its import-deny row (§0.2). This is the contract that lets Claude and
 Codex implement Phase 2–4 in parallel without colliding. It extends
 `docs/specifications/phase1-interfaces.md` (whose general rules apply unchanged) and never
 changes `momentum_v1` (`docs/specifications/momentum_v1.md`). Changing a signature, table,
@@ -109,6 +109,9 @@ exist yet are skipped. The table is **append-only**: a PR may add rows or tighte
 | every module except `semiedge.safety.broker` | constructing `alpaca.trading.client.TradingClient` (already enforced by `check_unsafe_config.py`) |
 | every module except `semiedge.broker.*` and `semiedge.safety.broker` | `alpaca.trading` |
 | every module except `semiedge.data.alpaca_source` and `semiedge.data.corporate_actions` | `alpaca.data` |
+| `semiedge.data.earnings` (#20) | `alpaca`, `semiedge.risk`, `semiedge.data.earnings_sources`, network modules |
+| `semiedge.data.earnings_sources` (#20) | `alpaca`, `semiedge.risk`, `semiedge.broker`, `semiedge.execution`, `semiedge.engine`, `semiedge.state`, `semiedge.backtest`, `semiedge.notify`, `semiedge.dashboard` |
+| `semiedge.risk` (#20, tightening) | additionally `semiedge.data.earnings_sources` |
 
 Acceptance (module-level `pytestmark = pytest.mark.safety`; markers are always explicit, there
 is no auto-marking by directory):
@@ -379,10 +382,12 @@ against every later proposal in the same batch.
   `earnings_data_unavailable`. With `earnings_waiver="backtest_unavailable"` (BACKTEST only) the
   check is recorded as `passed=True, detail="waived: no point-in-time earnings data"` and the
   backtest result is labelled (§3.6). There is no waiver path in PAPER. Since
-  `require_verified_earnings_data=False` is refused at construction (§2.1), and the only
-  calendar until owner issue #20 provides a verified source is `UnavailableEarningsCalendar`,
-  **every new PAPER entry is rejected by R16 (`earnings_data_unavailable`) until #20 is resolved**
-  (§19 item 1). This only tightens; no PR may relax it.
+  `require_verified_earnings_data=False` is refused at construction (§2.1), a PAPER entry is
+  possible only with a verified calendar. Since #20 (ADR-009) that calendar is
+  `semiedge.risk.earnings.CrossCheckedEarningsCalendar` (spec `earnings-calendar.md`): Finnhub and
+  Alpha Vantage must both be fresh and agree, or a fresh hand-checked override must exist.
+  Otherwise R16 rejects with `earnings_data_unavailable`. Backtests still use the waiver (the
+  calendar is not point-in-time). This only tightens; no PR may relax it.
 - R10/R11 call `semiedge.risk.sizing.propose_position_size(equity, entry_reference, stop,
   max_risk_per_trade_pct=limits.max_risk_per_trade_pct, max_position_pct=limits.max_position_pct)`
   itself (exact `Fraction` floors); the risk manager never re-implements this arithmetic in
@@ -2233,10 +2238,11 @@ constants added next to them by the owning task).
 
 ## 19. Open questions (do not block implementation; decided by the named owner)
 
-1. Earnings source (#20, H1, owner): until decided, PAPER entries are all rejected with
-   `earnings_data_unavailable` (fail closed, `require_verified_earnings_data: true`); backtests
-   must use `earnings_policy: waive_unavailable` and are labelled. **Consequence: the paper
-   engine places no entries at all until H1 is resolved.**
+1. Earnings source (#20, H1): **decided 2026-11-13 (ADR-009)**: Finnhub (primary) plus Alpha
+   Vantage (cross-check) plus a manual override file, specified in `earnings-calendar.md`.
+   R16 and `require_verified_earnings_data: true` are unchanged. Backtests still must use
+   `earnings_policy: waive_unavailable` and are labelled, because the vendor calendar is not
+   point-in-time.
 2. Alpaca `opg` + `gtc` OCO support (§6.3): T9 verifies; a negative result requires a spec change.
 3. Gap overshoot of exposure caps (§2.2): accepted residual for paper; owner may later choose
    limit-at-open entries, which is a strategy-execution spec change.

@@ -1,0 +1,5 @@
+symbol,name,reportDate,fiscalDateEnding,estimate,currency,timeOfTheDay
+NVDA,NVIDIA Corp,2026-11-25,2026-10-31,1.1,USD,post-market
+AMD,Advanced Micro Devices Inc,2027-01-05,2026-12-31,0.9,USD,post-market
+ZZZZ.TO,Example Foreign Listing,2026-12-01,2026-09-30,,CAD,
+MSFT,Microsoft Corp,2027-01-28,2026-12-31,3.5,USD,post-market
