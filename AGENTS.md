@@ -101,17 +101,14 @@ Codex: start here every session. When an item is done, post on the PR or issue, 
 delete the item from this list in the same `AGENTS.md` commit. If an item is blocked, say why in the
 log and move to the next one. Work in your own worktree under `../semi-edge.worktrees/`, not in the
 `.t3` checkout and not in a Claude worktree. Never push to a Claude branch. Report findings on the
-PR instead. **Next finding ID: F-064** (F-060 is your #67 security fix; F-061..F-063 were used in your #69 review).
+PR instead. **Next finding ID: F-120** (F-060 is your #67 security fix; F-061..F-063 were used in your #69 review).
 
-**Do not start T5:** it is already being implemented by a `codex exec` run that the lead launched, in
-`../semi-edge.worktrees/codex-backtest-15` (branch `feature/15-backtest-engine`). Don't touch that worktree or branch.
-1. **T17 #18** corporate actions (`semiedge.data.corporate_actions`, spec §14) on top of the merged
-   `semiedge.data.splits` (#61): `CorporateAction` with exact `new_shares`/`old_shares` and `known_at`
-   (F-042), and `check_adjustment_consistency`.
-2. **Review Claude's state store PR** (T9 part 1, #21, `feature/21-state-store`) when it opens.
-3. **Review Claude's #54 governance fix PR** when it opens (restricted, so the owner approves too).
-4. **T13 #25** Streamlit trading dashboard once T5 and the state store merge.
-Claude is reviewing your #67 and #70.
+**T5 is delivered as PR #75** (written by a lead-run `codex exec`; Claude review in progress). Fix whatever that review raises
+on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest-15`, which is the lead's).
+0. **Fix #77** (T17): Claude review FAIL at `96d6c65`, two blocking P2s:
+   - F-110: the §14 "split after `fetched_at`" rule is unreachable (future ex-dates are skipped first, and there is no `as_of` input).
+   - F-111: the split-day detector needs an exact 1/ratio match, so a 3:2 mixed basis under the 35% threshold passes.
+   Also F-112 and F-113 (P3). Show the regressions failing on `96d6c65`.
 
 ## Review queue
 | PR | Task | Author | Reviewer | Verdict |
@@ -309,3 +306,7 @@ Claude is reviewing your #67 and #70.
 - 2026-11-13 07:18 UTC ? codex ? #74 security follow-ups delegated to isolated Codex agent feature/74-security-followups while root handles T17. Agent reports1283 full tests/1 skipped and65 new security regressions; no approval claimed, PR/Claude review pending. Root T17 typed ledger/raw read-only adapter has48 focused tests passing; exact counts, atomic ledger, explicit knowledge resolver and bounded pagination. Corporate adjusted-split contract concern on #18 is proposed F077 (not F064 already used on #70); not integrated into scanner/engine. #71 coordination WIP83798f0 is pushed for lead reuse, no duplicate PR.
 
 - 2026-11-13 07:32 UTC · codex · Delivered T17 core PR #77 at96d6c65: exact corporate-action DTO/ledger, bounded read-only data adapter requiring separate announcement evidence, adjustment consistency checker;66 safety cases,1273 full passed/1 opt-in smoke skipped, Ruff/types/Bandit pass. No consumer activation or verified coverage claim; #18 remains open. Proposed policy clarification has no finding ID (F077..79 belong to governance). #76 refreshed288ed94 fixes confirmed backslash-suffix leak;1292 passed/1 skipped, nine regressions (eight fail on prior head). Both exact-head Claude reviews requested. T5 and other worktrees untouched; #71 remains preserved coordination WIP.
+
+- 2026-11-13 11:40 UTC · claude · Claude review of Codex #77 (#18 corporate actions) at `96d6c65`: FAIL. Blocking P2s F-110 and F-111, plus
+  P3s F-112 and F-113; details are on the PR. Claude reviews of #75 (T5) and #76 (#74 security follow-ups) are running, and the state store (T9 part 1) is being
+  finished. The finding-ID register is now F-120 (F-080..F-119 are reserved for reviews this wave).
