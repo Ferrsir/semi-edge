@@ -385,3 +385,18 @@ def test_non_finite_proposed_target_makes_symbol_ineligible() -> None:
     assert not e.eligible
     assert (e.proposed_stop, e.proposed_target, e.rank) == (None, None, None)
     assert any("proposed target" in r and "not finite" in r for r in e.rejection_reasons)
+
+
+def test_overflowing_atr_makes_symbol_ineligible() -> None:
+    """F-026 (re-review): finite inputs whose ATR overflows must not yield an eligible signal.
+
+    Highs of 1e308 are finite and inside the OHLC envelope, but the ATR seed sum overflows to
+    inf, so ATR is undefined. The score can stay finite; the symbol must still be rejected
+    because no valid stop or target exists.
+    """
+    [e] = _evaluate(
+        {"SMH": regime_frame(REGIME_CLOSE), "AAA": _stock(high={0: 1e308, 1: 1e308})}, ["AAA"]
+    )
+    assert not e.eligible
+    assert (e.proposed_stop, e.proposed_target, e.rank) == (None, None, None)
+    assert any("trade levels" in r for r in e.rejection_reasons)

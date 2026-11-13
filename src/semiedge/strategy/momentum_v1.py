@@ -515,12 +515,15 @@ def evaluate_universe(
 
 
 def _trade_levels(
-    close: float, atr_value: float, params: MomentumV1Params
+    close: float | None, atr_value: float | None, params: MomentumV1Params
 ) -> tuple[float | None, float | None, list[str]]:
     """Proposed stop and target, or ``(None, None, reasons)`` when either is invalid.
 
-    Validated finite parameters can still overflow (F-026), so the computed values are checked.
+    Validated finite parameters can still overflow (F-026), so the inputs and the computed values
+    are checked.
     """
+    if close is None or atr_value is None or not (math.isfinite(atr_value) and atr_value > 0):
+        return None, None, ["trade levels undefined: close or ATR is undefined or not positive"]
     stop = close - params.stop_atr_multiple * atr_value
     target = close + params.target_atr_multiple * atr_value
     reasons: list[str] = []
@@ -595,7 +598,9 @@ def _evaluate_symbol(
     atr_value = values.get("atr")
 
     stop = target = None
-    if not reasons and close is not None and atr_value is not None:
+    if not reasons:
+        # Every condition passed, so a valid stop and target are required to be eligible (F-026):
+        # an undefined close or ATR (e.g. an ATR that overflowed to inf) rejects the symbol.
         stop, target, level_reasons = _trade_levels(close, atr_value, params)
         reasons.extend(level_reasons)
     eligible = not reasons

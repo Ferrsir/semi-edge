@@ -93,7 +93,12 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Fix:** `_trade_levels` computes stop and target before eligibility; a stop that is not positive
   or a target that is not finite and above the close makes the symbol ineligible with an explicit
   reason. Default formulas and thresholds are unchanged (no strategy change).
-- **Regression:** `tests/unit/strategy/test_momentum_v1_evaluate.py::test_non_finite_proposed_target_makes_symbol_ineligible`.
+- **Re-review (Codex, `92e9b48`): not fully closed.** Finite highs of 1e308 overflow the ATR seed to
+  inf, `_opt` maps it to `None`, and `_trade_levels` was only called when ATR was defined, so the
+  symbol was eligible with no stop or target. Fixed: once every condition passes, `_trade_levels`
+  always runs and rejects an undefined close or a non-finite or non-positive ATR.
+- **Regression:** `tests/unit/strategy/test_momentum_v1_evaluate.py::test_non_finite_proposed_target_makes_symbol_ineligible`,
+  `test_overflowing_atr_makes_symbol_ineligible` (fails on `92e9b48`).
 
 ### F-027 · P3 · Oversized integer sizing input raised OverflowError (Codex review, PR #48)
 - **Where:** `semiedge.risk.sizing._positive_finite`.
