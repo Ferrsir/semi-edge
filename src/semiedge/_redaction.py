@@ -12,10 +12,27 @@ _MAX_DEPTH = 32
 _MAX_NODES = 100_000
 
 
+def normalized_credential_key(key: str) -> str:
+    """Canonical field name shared by structural and textual credential handling."""
+    # Decode only percent-encoded bytes in a field name, never the untrusted value/body.
+    key = re.sub(r"%([0-9a-f]{2})", lambda m: chr(int(m[1], 16)), key, flags=re.IGNORECASE)
+    return re.sub(r"[^a-z0-9]", "", key.casefold())
+
+
 def credential_key(key: str) -> bool:
     """Prefer over-redaction to leaking unregistered credential-labelled values."""
-    normalized = re.sub(r"[^a-z0-9]", "", key.casefold())
-    return any(
+    normalized = normalized_credential_key(key)
+    return normalized in {
+        "pass",
+        "passwd",
+        "pwd",
+        "auth",
+        "credentials",
+        "cookie",
+        "setcookie",
+        "signature",
+        "sig",
+    } or any(
         marker in normalized
         for marker in ("key", "secret", "token", "password", "authorization", "webhook")
     )

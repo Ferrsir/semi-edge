@@ -1,5 +1,12 @@
 # SEMI-EDGE independent audit report
 
+## F-102 remaining credential grammar (#98)
+
+- Closes the explicitly deferred unregistered free-text forms from the #76 review: URL userinfo (through the last authority @), percent-encoded assignment keys/delimiters, complete textual list/dict/tuple credential values, exact normalized marker aliases, repeated quoted prefixes with attached tails, and PEM private-key blocks. Text and persisted/logged JSON share field normalization. Only keys are percent-decoded; untrusted bodies/values are never decoded for rendering or evaluated.
+- Collection scanning is linear with depth32; mismatched, unbalanced or deeper values mask the remaining input. Missing PEM end markers also mask the remainder. Semicolon-separated unquoted Cookie/Set-Cookie header values mask through the line ending. Well-formed collection replacements keep direct JSON envelopes valid. Registered-secret redaction and deliberate substring over-redaction remain intact; short aliases do not hide unrelated signal_count/author diagnostics.
+- Evidence: the initial 87 fake-value regression cases all fail on unchanged main5178a1e and pass after the implementation. The expanded focused security/logging selection passes240 cases before the two large malformed-prefix controls. Tests cover all three text/JSON/persisted surfaces, immutable inputs, direct JSON parsing, escaped brackets/quotes, newlines, extra authority @, encoded separator tails, nested and unterminated data, aliases, idempotence and public suffix preservation. Full final counts are posted on the delivery PR.
+- Scope remains bounded grammar hardening, not arbitrary secret detection or engine/notifier integration. Configured secret registration and consumer-boundary redaction remain mandatory (#29). No credentials, network, broker calls, risk/strategy/governance changes or production integration claim. Claude cross-provider review required.
+
 Running record of independently verified findings. Each entry names the severity, location,
 reproduction, impact, fix and test evidence. **Confirmed** findings were reproduced; **Speculative**
 concerns are risks that have not been demonstrated and must not be read as bugs.
