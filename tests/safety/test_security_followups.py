@@ -113,6 +113,29 @@ def test_redaction_happens_before_json_encoding(logger, capsys, message):
     assert REDACTED in parsed["msg"]
 
 
+@pytest.mark.parametrize("fmt", ["json", "text"])
+@pytest.mark.parametrize(
+    "value",
+    [r"abc\FAKE_PRIVATE_TAIL", r"abc\"FAKE_PRIVATE_TAIL", r"abc\\FAKE_PRIVATE_TAIL", "abc\\"],
+)
+def test_unquoted_backslash_credentials_mask_the_entire_value(logger, capsys, fmt, value):
+    configured = configure_logging(fmt=fmt)
+    configured.info("api_key=%s", value)
+    line = capsys.readouterr().err
+    assert "FAKE_PRIVATE_TAIL" not in line
+    assert "abc" not in line
+    assert REDACTED in line
+    if fmt == "json":
+        assert json.loads(line)["msg"] == "api_key=" + REDACTED
+
+
+def test_direct_encoded_json_redaction_preserves_escape_boundaries():
+    encoded = json.dumps({"message": 'auth failed api_key=abc\\"FAKE_PRIVATE_TAIL'})
+    line = SecretRedactionFilter().redact(encoded)
+    assert "FAKE_PRIVATE_TAIL" not in line
+    assert json.loads(line)["message"] == "auth failed api_key=" + REDACTED
+
+
 def test_raw_redaction_precedes_control_removal_and_truncation():
     secret = "PKFAKE0123456789ABCD"
     redactor = SecretRedactionFilter([secret, "fake\tsecret\tvalue"])

@@ -23,7 +23,7 @@ _ASSIGNMENT = re.compile(
 )
 _ASSIGNED_VALUE = re.compile(
     r"(?i)\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|"
-    r"(?:(?:Bearer|Basic|Token)\s+)?[^\s,;'\"\\}&\]]+"
+    r"(?:(?:Bearer|Basic|Token)\s+)?(?:\\(?:.|$)|[^\s,;'\"\\}&\]])+"
 )
 _PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?i)\bBearer\s+[^\s,'\"\\}&\]]+"),
