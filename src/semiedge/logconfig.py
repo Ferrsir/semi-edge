@@ -14,21 +14,21 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any
 
-REDACTED = "***REDACTED***"
+from semiedge._redaction import REDACTED, credential_key, redact_structure
 
 # Defence in depth for values not registered explicitly (e.g. echoed request headers).
+_ASSIGNMENT = re.compile(
+    r"(?i)(?<![a-z0-9_-])(?P<prefix>['\"]?(?P<key>[a-z][a-z0-9_-]{0,127})"
+    r"['\"]?\s*[:=]\s*)"
+)
+_ASSIGNED_VALUE = re.compile(
+    r"(?i)\"(?:\\[\s\S]|[^\"\\])*\"|'(?:\\[\s\S]|[^'\\])*'|"
+    r"(?:(?:Bearer|Basic|Token)\s+)?(?:\\(?:[\s\S]|$)|[^\s,;'\"\\}&\]])+"
+)
+_UNPARSED_VALUE = re.compile(r"[^\r\n,;&}\]]*")
 _PATTERNS: tuple[re.Pattern[str], ...] = (
-    # Nested extras are serialized after the record filter. Mask quoted JSON fields in the
-    # final rendered line too, including escaped quotes/backslashes inside their values.
-    re.compile(
-        r'(?i)("(?:APCA-API-(?:KEY-ID|SECRET-KEY)|(?:secret|api)[_-]?key|password|'
-        r"authorization|secret|(?:access|refresh)[_-]?token|token|"
-        r'discord[_-]?webhook[_-]?url)"\s*:\s*")(?:\\.|[^"\\])*'
-    ),
-    re.compile(r"(?i)(authorization\s*[:=]\s*(?:Bearer\s+)?)[^\s,'\"]+"),
-    re.compile(r"(?i)(APCA-API-(?:KEY-ID|SECRET-KEY)\s*[:=]\s*)[^\s,'\"]+"),
-    re.compile(r"(?i)((?:secret|api)_?key\s*[:=]\s*)[^\s,'\"]+"),
-    re.compile(r"https://(?:ptb\.|canary\.)?discord(?:app)?\.com/api/webhooks/[^\s'\"]+"),
+    re.compile(r"(?i)\bBearer\s+[^\s,'\"\\}&\]]+"),
+    re.compile(r"https://(?:ptb\.|canary\.)?discord(?:app)?\.com/api/webhooks/[^\s'\"\\]+"),
 )
 
 _STANDARD_ATTRS = frozenset(
@@ -42,13 +42,32 @@ class SecretRedactionFilter(logging.Filter):
     def __init__(self, secrets: Iterable[str] = ()) -> None:
         super().__init__()
         values = {s for s in secrets if s}
-        # Final JSON formatting escapes control characters; mask both representations.
+        # Exception/set repr can escape a value before it is subsequently JSON-escaped.
+        values.update(repr(s)[1:-1] for s in tuple(values))
         values.update(json.dumps(s)[1:-1] for s in tuple(values))
         self._secrets = sorted(values, key=len, reverse=True)
 
     def redact(self, text: str) -> str:
         for secret in self._secrets:
             text = text.replace(secret, REDACTED)
+
+        parts: list[str] = []
+        cursor = 0
+        for match in _ASSIGNMENT.finditer(text):
+            if match.start() < cursor or not credential_key(match.group("key")):
+                continue
+            value = _ASSIGNED_VALUE.match(text, match.end())
+            if value is None:
+                # Truncated/malformed upstream text is still credential-bearing. Mask through
+                # the next delimiter or line ending instead of exposing the unparsable value.
+                fallback = _UNPARSED_VALUE.match(text, match.end())
+                parts.extend((text[cursor : match.end()], REDACTED))
+                cursor = fallback.end() if fallback is not None else len(text)
+                continue
+            quote = value.group(0)[0] if value.group(0)[0] in "'\"" else ""
+            parts.extend((text[cursor : match.end()], quote + REDACTED + quote))
+            cursor = value.end()
+        text = "".join((*parts, text[cursor:]))
         for pattern in _PATTERNS:
             text = pattern.sub(lambda m: (m.group(1) if m.groups() else "") + REDACTED, text)
         return text
@@ -65,6 +84,10 @@ class SecretRedactionFilter(logging.Filter):
 class JsonFormatter(logging.Formatter):
     """One JSON object per line; extra ``logger.info(..., extra={...})`` fields are included."""
 
+    def __init__(self, redactor: SecretRedactionFilter | None = None) -> None:
+        super().__init__()
+        self._redactor = redactor if redactor is not None else SecretRedactionFilter()
+
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, Any] = {
             "ts": datetime.fromtimestamp(record.created, tz=UTC).isoformat(timespec="milliseconds"),
@@ -77,7 +100,19 @@ class JsonFormatter(logging.Formatter):
                 payload[key] = value
         if record.exc_info:
             payload["exc"] = self.formatException(record.exc_info)
-        return json.dumps(payload, default=str)
+        try:
+            clean = redact_structure(payload, self._redactor.redact, strict=False)
+            return json.dumps(clean, allow_nan=False)
+        except (ValueError, TypeError, OverflowError):
+            return json.dumps(
+                {
+                    "ts": payload["ts"],
+                    "logger": self._redactor.redact(record.name),
+                    "level": record.levelname,
+                    "msg": "Log payload redaction failed",
+                },
+                allow_nan=False,
+            )
 
 
 class _RedactingFormatter(logging.Formatter):
@@ -89,6 +124,9 @@ class _RedactingFormatter(logging.Formatter):
         self._redactor = redactor
 
     def format(self, record: logging.LogRecord) -> str:
+        if isinstance(self._formatter, JsonFormatter):
+            # Every field is already redacted structurally, then encoded exactly once.
+            return self._formatter.format(record)
         return self._redactor.redact(self._formatter.format(record))
 
 
@@ -105,7 +143,7 @@ def configure_logging(
     redactor = SecretRedactionFilter(secrets)
     handler.addFilter(redactor)
     formatter = (
-        JsonFormatter()
+        JsonFormatter(redactor)
         if fmt == "json"
         else logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
     )

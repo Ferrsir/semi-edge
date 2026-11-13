@@ -67,7 +67,7 @@ def test_json_keys_values_and_shared_children_are_copied():
     value = {"fixture-secret": shared, "second": shared, "API-Key": "unregistered"}
     result = redact_json(value, redactor)
     assert result == {
-        REDACTED: [REDACTED, True, None, 2, 3.5],
+        REDACTED: REDACTED,  # Credential-labelled values are masked in their entirety.
         "second": [REDACTED, True, None, 2, 3.5],
         "API-Key": REDACTED,
     }
@@ -163,6 +163,14 @@ def forbidden_calls(relative_path: str, source: str) -> list[str]:
             return aliases.get(node.id, node.id)
         if isinstance(node, ast.Attribute):
             return f"{name(node.value)}.{node.attr}"
+        if (
+            isinstance(node, ast.Call)
+            and name(node.func) in {"getattr", "builtins.getattr"}
+            and len(node.args) >= 2
+            and isinstance(node.args[1], ast.Constant)
+            and isinstance(node.args[1].value, str)
+        ):
+            return f"{name(node.args[0])}.{node.args[1].value}"
         return ""
 
     found = []
@@ -176,8 +184,19 @@ def forbidden_calls(relative_path: str, source: str) -> list[str]:
             "exec",
             "builtins.eval",
             "builtins.exec",
+            "compile",
+            "builtins.compile",
+            "__import__",
+            "builtins.__import__",
+            "pickle.load",
             "pickle.loads",
+            "marshal.load",
+            "marshal.loads",
+            "shelve.open",
+            "yaml.full_load",
+            "yaml.load_all",
             "yaml.unsafe_load",
+            "yaml.unsafe_load_all",
         }:
             found.append(call)
         if call == "yaml.load":
@@ -222,6 +241,17 @@ def test_normalized_untrusted_text_cannot_reveal_normalized_registered_secret():
         "import pickle as p; p.loads(b'x')",
         "from builtins import eval as run; run('1')",
         "from yaml import load as parse; parse('x')",
+        "import pickle; pickle.load(fh)",
+        "import yaml; yaml.full_load('x')",
+        "import yaml; yaml.load_all('x', Loader=yaml.Loader)",
+        "import yaml; yaml.unsafe_load_all('x')",
+        "import marshal; marshal.loads(b'x')",
+        "import marshal as m; m.load(fh)",
+        "import shelve; shelve.open('x')",
+        "import builtins; getattr(builtins, 'eval')('1')",
+        "import builtins as b; getattr(b, 'exec')('x=1')",
+        "compile('x=1', 'x', 'exec')",
+        "__import__('pickle')",
     ],
 )
 def test_evaluation_checker_detects_direct_and_aliased_calls(source):

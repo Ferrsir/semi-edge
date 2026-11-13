@@ -53,6 +53,19 @@ def test_ruleset_blocks_deletion_force_push_and_direct_push() -> None:
     pr = _rule(rules, "pull_request")["parameters"]
     assert pr["require_code_owner_review"] is True
     assert pr["dismiss_stale_reviews_on_push"] is True
+    assert pr["required_approving_review_count"] == 0
+
+
+def test_board_only_prs_need_no_approval() -> None:
+    """F-165: both agents push as one account, so last-push approval would always need the owner.
+
+    Stale-approval dismissal already covers a push after the owner approved a code-owned PR.
+    """
+    pr = _rule(_ruleset()["rules"], "pull_request")["parameters"]
+    assert pr["require_last_push_approval"] is False
+    assert pr["required_approving_review_count"] == 0
+    assert pr["require_code_owner_review"] is True
+    assert pr["dismiss_stale_reviews_on_push"] is True
     assert pr["allowed_merge_methods"] == ["squash"]
 
 
