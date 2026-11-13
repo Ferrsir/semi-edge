@@ -17,7 +17,7 @@ and must not hold a credential that does (#5).
 | `deletion` | `main` cannot be deleted. |
 | `non_fast_forward` | No force pushes. |
 | `required_linear_history` | No merge commits; squash merges only (also set below). |
-| `pull_request` | Every change to `main` goes through a PR. Code owners (`.github/CODEOWNERS`, the owner) must approve PRs that touch their paths. Stale approvals are dismissed on a new push, and the last push must be approved by someone other than its pusher. Other PRs need 0 approvals: the cross-provider review stays a PR comment, as ADR-004 defines it. |
+| `pull_request` | Every change to `main` goes through a PR. Code owners (`.github/CODEOWNERS`, the owner) must approve PRs that touch their paths. Stale approvals are dismissed on a new push, so a commit pushed after your approval needs approving again. Last-push approval is off (F-165): both agents push as `Ferrisfy`, so it would make every PR, board PRs included, wait for the owner. Other PRs need 0 approvals: the cross-provider review stays a PR comment, as ADR-004 defines it. |
 | `required_status_checks` | `ci-required`, `integration-required`, `security-required` and `trading-safety-required` must pass, published by the GitHub Actions app (id 15368). The branch does not have to be up to date with `main` (see below). |
 
 `tests/governance/test_main_ruleset.py` keeps the file fail closed: no bypass actors, deletion and
