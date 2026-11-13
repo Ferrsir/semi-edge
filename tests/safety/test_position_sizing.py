@@ -207,3 +207,20 @@ def test_float_rounding_cannot_add_a_share() -> None:
     r = _size(1_000_000, 0.3, 0.2, risk=RISK, alloc=ALLOC)
     rps = Fraction(0.3) - Fraction(0.2)
     assert r.shares_by_risk == math.floor(Fraction(1_000_000) * Fraction(RISK) / rps)
+
+
+@pytest.mark.parametrize("name", ["equity", "entry_price", "stop_price"])
+def test_integer_too_large_for_float_is_invalid_not_an_exception(name: str) -> None:
+    """F-027: an int beyond the float range returns the documented invalid result."""
+    kwargs = {"equity": 100_000, "entry_price": 100, "stop_price": 95}
+    kwargs[name] = 10**1000
+    result = propose_position_size(
+        kwargs["equity"],
+        kwargs["entry_price"],
+        kwargs["stop_price"],
+        max_risk_per_trade_pct=RISK,
+        max_position_pct=ALLOC,
+    )
+    assert (result.shares, result.binding_constraint) == (0, "invalid")
+    assert result.reason is not None
+    assert name in result.reason
