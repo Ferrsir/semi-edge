@@ -106,7 +106,7 @@ PR instead. **Next finding ID: F-165** (F-160..F-164 used in the Claude review o
 
 **T5 is delivered as PR #75** (written by a lead-run `codex exec`; Claude review in progress). Fix whatever that review raises
 on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest-15`, which is the lead's).
-00. **Review Claude PRs #88 (#20 earnings, Finnhub + Alpha Vantage), #87 (#85 CI usage, restricted) and #89 (#86 RUNBOOK).**
+00. **Review Claude PRs #91 (#5 agent identity, restricted), #92 (#4 main ruleset, restricted), #88 (#20 earnings, Finnhub + Alpha Vantage), #89 (#86 RUNBOOK), and #87 post-merge (#85 CI usage, already merged).**
    Exact-head PASS/FAIL comments; Codex CLI is not installed on the owner's second PC, so run it from the PC that has it.
 000. **Fix #82** (T13 dashboard): Claude review FAIL at `f5a99d0`: F-160 (P2) held sessions off by one against ADR-005 (use
    `semiedge.strategy.exits.held_sessions`); P3 F-161..F-163. F-164 is handled in #87.
@@ -123,6 +123,8 @@ on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest
 | #88 | H1/#20 | claude | codex | Earnings calendar, Finnhub + Alpha Vantage; review requested |
 | #87 | #85 | claude | codex (post-merge) | Owner merged 2026-11-13 18:09 UTC (`56cd3a8`); Codex review still wanted, findings become follow-ups |
 | #89 | #86 | claude | codex | RUNBOOK (docs only) |
+| #91 | #5 | claude | codex + owner | Agent identity `Ferrisfy` in policy, human/agent overlap rejected (restricted) |
+| #92 | #4 | claude | codex + owner | Main ruleset file + runbook (restricted); owner applies it after deciding board-update and strict-check options |
 | #82 | T13 | codex | claude | Claude FAIL at f5a99d0 (F-160 P2); back with Codex |
 | #76 | #74 | codex | claude | Claude FAIL at 288ed94 (F-100 P2); back with Codex |
 | #77 | T17 | codex | claude | Claude FAIL at 96d6c65 (F-110/F-111 P2); back with Codex |
@@ -347,3 +349,5 @@ on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest
 - 2026-11-13 19:00 UTC · claude · Owner approved and merged #73 (#54, `110cd83`) and #53 (#1, `b9ded4c`). Owner approved #87; it merges once Codex passes it. Owner still to do: Codex reviews of #87/#88/#89, #4–#6, and `.env` keys (H2).
 
 - 2026-11-13 19:50 UTC · claude · Board correction: the owner merged #87 (#85) at 18:09 UTC (`56cd3a8`), before the 18:17 board note that said it was pending; Codex review of it is now post-merge. Claude review of Dependabot #90 (alpaca-py 0.45.0, drops pytz): PASS, paper `TradingClient`/`BaseURL.TRADING_PAPER` surface unchanged; merged `50300fa`. #5 check: agents run as `Ferrisfy` (admin false, push true), `human_maintainers` is only `Ferrsir`; `agent_identities` still empty and `main` has 0 rulesets (#4), so merge rules are process-only.
+
+- 2026-11-13 20:20 UTC · claude · Opened #91 (#5: `agent_identities: ["Ferrisfy"]`, `load_policy` rejects human/agent overlap and malformed lists, setup report re-verified) and #92 (#4: `docs/governance/main-ruleset.json`, fail-closed test, runbook). Both are restricted and need a Codex review plus owner approval. #92 has two owner decisions: how board updates work once PRs are required (AGENTS.md is code-owned), and strict up-to-date checks. After #92 merges, the owner imports the ruleset, then #7 refusal tests.
