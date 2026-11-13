@@ -361,6 +361,21 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **F-143 (P2), Codex re-review:** `total_seconds()` float rounding accepted a 1,000,002 µs gap for a 1.000002 s cycle; the comparison is now exact (integer microseconds vs `Fraction(cycle)`). Regression `test_f143_spacing_uses_exact_microseconds`.
 - **F-144 (P2), Codex re-review:** `fromisoformat` truncated a 7-digit fraction, inflating a 0.9999991 s gap to 1 s. Lookup timestamps must now match an exact ISO form (≤ 6 fractional digits, `Z`/`±HH:MM` offset). Regression `test_f144_lookup_timestamps_must_not_lose_precision`.
 
+### F-077 · P2 · A truncated diff could hide excluded reviewer-config changes (Codex review, PR #73)
+- **Reproduce:** pad an earlier file so that a later `z/.claude/settings.json` change falls beyond
+  `MAX_DIFF_CHARS`. The sanitized review copy omits that path, so the change was in neither the prompt nor the copy.
+- **Fix:** if the diff is truncated and any changed path has an excluded component (case-insensitive),
+  the review fails closed with a request to split the PR.
+- **Regression:** `tests/governance/test_ai_review.py::test_truncated_diff_hiding_excluded_config_fails_closed`
+  (the reviewer ran on `fcdb423`); a large ordinary diff is still reviewed.
+
+### F-078 / F-079 · P2 · Rename sources and Git-quoted paths bypassed the F-077 guard (Codex re-review, PR #73)
+- **Reproduce:** `.claude/settings.json → ordinary.txt` showed only the destination in `--name-only`.
+  `.claude/é.json` was reported quoted (`".claude/Ã©.json"`), so the component check missed it.
+- **Fix:** the guard lists paths with `git diff --no-renames --name-only -z` (both rename endpoints,
+  NUL-delimited, unquoted).
+- **Regression:** `test_f078_renamed_excluded_config_fails_closed`, `test_f079_git_quoted_excluded_path_fails_closed`.
+
 ---
 
 ## Speculative concerns (not demonstrated; tracked for the relevant phase)
