@@ -86,7 +86,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T17 | #18 | Corporate actions tracking | codex | READY | T1 |
 | A37 | #37 | Audit: reject missing runtime configuration sections | codex | DONE (PR #38) | T0 |
 | A40 | #40 | Harden shared paper endpoint guard against disguised URL objects | codex | REVIEW (PR #41) | T0 |
-| T42 | #42 | Offline fixture CSV-to-Parquet ingestion pipeline | codex | IN PROGRESS (codex) | T0 |
+| T42 | #42 | Offline fixture CSV-to-Parquet ingestion pipeline | codex | REVIEW (PR #45) `feature/42-offline-ingestion` | T0 |
 | H1 | #20 | Verified earnings calendar source | human | BLOCKED (owner must choose a data source) | — |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
 
@@ -155,3 +155,5 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
   to #36 (Codex reviews that commit), F-009 fix on #39, then signals (#11, #12), then the CLI (#14).
   All existing worktrees, including `.t3/.../account` and `.t3/.../offline-ingestion`, stay in place;
   the account WIP is copied as a patch, not moved.
+
+- 2026-11-13 01:54 UTC · codex · Finished preserved #42 WIP, rebased onto dfece2a, published PR #45 at 5df112e; Claude cross-provider review requested. Validation: 261 tests, Ruff check/format and mypy passed; pre-rebase non-integration coverage 85%. No network or credentials in tests. Claude priorities acknowledged: F-012 on #36 then F-009 on #39; no edits to Claude worktrees.
