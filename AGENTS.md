@@ -69,12 +69,12 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T1 | #9, #10 | Data layer: calendar, Alpaca source, synthetic source, Parquet store, validation | codex | DONE (PR #36, merged c424d48) | T0 |
 | T2 | #11, #12 | Indicators, `momentum_v1` features/evaluation/score, position sizing | claude | DONE (PR #48, merged 375849b; Codex PASS 44d9624) | T0 |
 | T3 | #13 | Read-only paper account snapshot (`semiedge.broker.account`) | claude | DONE (PR #39, merged ee66aaf; P3 F-025 → #52) | T0 |
-| T3b | #15–#29 | Phase 2–4 interface spec (backtest, risk, execution, state, reconcile, engine, dashboard) | claude | REVIEW (PR #62 at 481f8b5; F-037..F-045 fixed; Codex re-review running) | T0 |
+| T3b | #15–#29 | Phase 2–4 interface spec (backtest, risk, execution, state, reconcile, engine, dashboard) | claude | DONE (PR #62, merged 0882031; Codex PASS ae80ac3) | T0 |
 | T4 | #14 | Signal report + CLI (`scan`, `data fetch/status`, `account`, `config check`) | claude | DONE (PR #50, merged ce2490d) | T1, T2, T3 |
-| T5 | #15 | Event-driven backtest engine: next-open fills, costs, slippage | codex | BLOCKED (resolve #62 contract findings before engine implementation) | T1, T2 |
+| T5 | #15 | Event-driven backtest engine: next-open fills, costs, slippage | codex | IN PROGRESS (lead-run codex), codex-backtest-15; interactive agent does not edit | T1, T2 |
 | T6 | #16 | Performance metrics, SMH/QQQ benchmark comparison | codex | READY | T5 |
 | T7 | #17 | Walk-forward + parameter sensitivity | claude | READY | T5, T6 |
-| T8 | #19 | Deterministic independent risk manager (exposure incl. pending, halts) | claude | IN PROGRESS (claude) `feature/19-risk-manager` against #62 §1–§2 | T2 |
+| T8 | #19 | Deterministic independent risk manager (exposure incl. pending, halts) | claude | DONE (PR #69, merged f79a496; Codex PASS a87d30c) | T2 |
 | T9 | #21 | Paper order lifecycle: idempotent client IDs, partial fills, brackets | claude | READY | T3, T8 |
 | T10 | #22 | Broker reconciliation + restart recovery | codex | READY | T9 |
 | T11 | #23 | Position management, stop/target, time exits | claude | READY | T9 |
@@ -82,14 +82,16 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T13 | #25 | Streamlit dashboard (dark theme) | codex | READY | T4 |
 | T14 | #26 | Discord notifications | codex | READY | T12 |
 | T15 | #27 | Docker / compose, health checks, graceful shutdown | claude | READY | T12 |
-| T16 | #29 | Security: secret handling, redaction, prompt-injection tests | codex | REVIEW (PR #67 at 866e145; boundary core only, consumer integration remains #29) | T4 |
-| T17 | #18 | Corporate actions tracking | codex | READY | T1 |
+| T16 | #29 | Security: secret handling, redaction, prompt-injection tests | codex | REVIEW (PR #67 at 13d12dd; boundary core only, consumer integration remains #29) | T4 |
+| T17 | #18 | Corporate actions tracking | codex | IN PROGRESS (interactive codex), feature/18-corporate-actions | T1 |
 | A37 | #37 | Audit: reject missing runtime configuration sections | codex | DONE (PR #38) | T0 |
 | A40 | #40 | Harden shared paper endpoint guard against disguised URL objects | codex | DONE (PR #41, merged dfece2a) | T0 |
 | T42 | #42 | Offline fixture CSV-to-Parquet ingestion pipeline | codex | DONE (PR #45, merged 9aa0e0c) | T0 |
 | T46 | #46 | Offline point-in-time split normalization core (subtask of #18) | codex | DONE (PR #61, merged ae01934; P3 F-041 → #68) | T0 |
 | T47 | #47 | Project status dashboard (separate from trading UI) | codex | DONE (PR #65, merged 068e01f; CI job split to restricted #66, owner approval) | T0 |
 | A63 | #63 | Reject unverified retained adjusted sessions (F-036) | codex | DONE (PR #64, merged 0fe06f3; P3 F-050/F-051 → #68) | T1 |
+| A68 | #68 | Split precision and adjusted-history recovery follow-ups | codex | REVIEW (PR #70 at 8cef298) | T46, T1 |
+| T71 | #71 | Backtest cost/config and shared exit primitives (subtask #15) | codex subagent | WIP (isolated primitives preserved for lead reuse; overlaps lead-owned T5) | T3b |
 | H1 | #20 | Verified earnings calendar source | human | BLOCKED (owner must choose a data source) | — |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
 
@@ -98,18 +100,22 @@ Codex: start here every session. When an item is done, post on the PR or issue, 
 delete the item from this list in the same `AGENTS.md` commit. If an item is blocked, say why in the
 log and move to the next one. Work in your own worktree under `../semi-edge.worktrees/`, not in the
 `.t3` checkout and not in a Claude worktree. Never push to a Claude branch. Report findings on the
-PR instead. The next finding ID is **F-061** (F-041..F-059 reserved for Claude reviews; F-060 security fix).
+PR instead. **Next finding ID: F-064** (F-060 is your #67 security fix; F-061..F-063 were used in your #69 review).
 
-1. **#62** (Phase 2–4 spec): the lead runs your re-review via `codex exec` (F-043..F-045 fixed at `481f8b5`). Then T5 starts.
-2. **#68** P3 follow-ups (F-041 exact chained splits, F-050 doc recovery path, F-051 test match strings).
-3. **T5 #15** backtest engine against #62 once it PASSes. **T13 #25** (Streamlit trading dashboard) after T5.
-4. Review Claude's T8 risk-manager PR (#19) when it opens.
+**Do not start T5:** it is already being implemented by a `codex exec` run that the lead launched, in
+`../semi-edge.worktrees/codex-backtest-15` (branch `feature/15-backtest-engine`). Don't touch that worktree or branch.
+1. **T17 #18** corporate actions (`semiedge.data.corporate_actions`, spec §14) on top of the merged
+   `semiedge.data.splits` (#61): `CorporateAction` with exact `new_shares`/`old_shares` and `known_at`
+   (F-042), and `check_adjustment_consistency`.
+2. **Review Claude's state store PR** (T9 part 1, #21, `feature/21-state-store`) when it opens.
+3. **Review Claude's #54 governance fix PR** when it opens (restricted, so the owner approves too).
+4. **T13 #25** Streamlit trading dashboard once T5 and the state store merge.
+Claude is reviewing your #67 and #70.
 
 ## Review queue
 | PR | Task | Author | Reviewer | Verdict |
 |---|---|---|---|---|
-| #62 | T3b | claude | codex | F-037..F-045 fixed at 481f8b5; Codex re-review running |
-| #67 | T16 | codex | claude | boundary core/F-060 at 866e145; cross-provider review requested |
+| #67 | T16 | codex | claude | boundary core/F-060 at 13d12dd; cross-provider review requested |
 | #66 | #47 | claude (Codex job) | owner | restricted `ci.yml`, **owner: approve** |
 | #53 | #1 | claude | codex + owner | Codex PASS (source); owner approval required |
 
@@ -270,3 +276,23 @@ PR instead. The next finding ID is **F-061** (F-041..F-059 reserved for Claude r
   keep-both) because `codex exec` cannot write git metadata on Windows. Dashboard: #65 (Codex's #49 content minus the
   `ci.yml` job, Codex-reviewed) merged as `068e01f` and closes #47. The CI job is restricted PR #66 (owner). #62: Codex re-review at
   `de9cd14` found F-043/F-044 (P2) and F-045 (P3); fixed at `481f8b5`, re-review running. P3 follow-ups are in #68. Next: T8.
+
+- 2026-11-13 08:20 UTC · claude · #62: Codex re-review PASS at `481f8b5`; P3 F-046 fixed at `ae80ac3` and being confirmed. T8 risk manager
+  opened as #69 (76 safety tests; R16 rejects every PAPER entry until #20). Codex reviews of both are running via `codex exec`.
+
+- 2026-11-13 06:46 UTC ? codex ? #62 current481f8b5 re-reviewed PASS; report posted, no runtime readiness claim. #67 rebased13d12dd after data merges,1113 passed/1 skipped plus Ruff/types/format; Claude review requested. Claimed next lead-queue item #68 (F-041/F-050/F-051) in own feature/68-data-followups, sibling codex-data-followups. Preserve all other worktrees; T5 follows the lead order.
+
+- 2026-11-13 09:00 UTC · claude · Merged #62 (Phase 2–4 spec, `0882031`; Codex PASS after F-037..F-046) and #69 (T8 risk manager,
+  `f79a496`; Codex FAIL F-061/F-062 P2 and F-063 P3, all fixed, then Codex PASS with 90 tests run). Codex is not running
+  interactively, so the lead is driving it through `codex exec`. Codex is implementing T5 (#15) in `../semi-edge.worktrees/codex-backtest-15` and
+  #68 P3s in `codex-p3-68`. The sandbox cannot write git metadata, so the lead commits its work labelled `Implemented-by: codex` and a
+  Claude reviewer reviews it. Leftover: `../semi-edge.worktrees/codex-run-69/.review-pytest-tmp` is permission-locked (harmless).
+
+- 2026-11-13 06:52 UTC ? codex ? Delivered lead-queue #68 as PR #70 at8cef298, own feature/68-data-followups. Fraction composition applies each row once; inverse-chain exact equality and events=None regressions fail on old source/pass now; numeric refusal guards preserved. Added manual no-delete cache recovery guide, tightened F-051 error matches, marked initial counts historical. Full1088 passed/1 skipped; split43 cases; Ruff/format/mypy/Bandit clean. Claude exact-head review requested. #62 is merged; next T5 can use the resolved contract, subject to lead review priorities.
+
+- 2026-11-13 06:56 UTC ? codex ? Started T5/#15 against merged #62. Own feature/15-backtest-engine in codex-backtest-engine. Delegated bounded #71 primitives to Codex agent in a separate feature/71-backtest-primitives worktree; public helper signatures coordinated, root owns shared risk types/proposals and engine/results. Claude retains T8. No fake/permissive gate in shipped CLI; test gates only in fixtures. No market performance result or live/credential access.
+
+- 2026-11-13 09:30 UTC · claude · Closed duplicate #72; Codex's own #70 covers #68 and Claude is reviewing it along with #67. **T5 is taken** by a
+  lead-run `codex exec` in `codex-backtest-15`, so interactive Codex should take T17 (#18) next. Corrected the finding-ID register: next is F-064.
+
+- 2026-11-13 07:01 UTC ? codex ? Coordination correction: T5 branch already belongs to lead-run Codex; creation failed safely, no edits to its worktree. Following lead 09:30 handoff, interactive Codex now claims T17/#18 in new feature/18-corporate-actions. #71 agent preserves isolated primitives for possible lead reuse, no duplicate PR. SDK inspection shows corporate-action models lack an announcement timestamp; will not invent known_at from fetched_at. Building typed core/store/consistency with explicit verified knowledge requirements and offline tests; vendor support limits will be documented.

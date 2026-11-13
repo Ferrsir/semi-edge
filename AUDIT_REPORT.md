@@ -205,6 +205,106 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Regression:** `tests/integration/broker/test_cli_account.py::test_account_client_construction_errors_are_sanitised`
   (3 exception types; fails on `c1f8cf8`).
 
+### F-037 · P2 · `StateReader.orders` had two incompatible signatures (Codex review, PR #62)
+- **Where:** `docs/specifications/phase2-4-interfaces.md` §5.1, §7 (head `4f8eb8d`).
+- **Reproduce:** `StateStore.orders(*, statuses, symbol, kinds)` vs `ReadOnlyStateStore.orders(limit)`;
+  §7 requires both to satisfy one `StateReader` for `diff_state` / `reconcile --dry-run`.
+- **Impact:** dry-run reconciliation could not be implemented against the spec without an
+  undocumented adapter; the two paths could diverge.
+- **Fix (spec):** one `@runtime_checkable StateReader` Protocol in `semiedge.state.models`:
+  `orders(*, statuses, symbol, kinds, limit) -> list[OrderRecord]` (limit `None` or int > 0, newest
+  first when set), `fills`, `positions`, `active_halts`, `corporate_action_adjustments`,
+  `store_id`; identical on both stores.
+- **Acceptance:** signature equality + equal results on one DB (§5.4); `diff_state` on both stores
+  gives equal reports for every reconcile scenario (§7).
+
+### F-038 · P2 · No deduplication between fallback and activity fill sources (Codex review, PR #62)
+- **Where:** §5.2 `fills`, §6.4, §7 (head `4f8eb8d`).
+- **Reproduce:** activities unavailable → cumulative 30 ingested as `cid:30`; activities recover →
+  the same execution arrives as activity `A(30)` with a different key and passes key idempotency:
+  local 60 vs broker 30.
+- **Impact:** spurious reconciliation halt and oversized protection attempts (refused by the
+  gateway's no-short guard).
+- **Fix (spec):** per-order cumulative watermark `W = max(Σ activity qty, max provisional cum_qty)`;
+  broker cumulative `filled_qty` is the upper bound; activity rows are authoritative (`final`);
+  fallback rows record only `B − W` as `provisional`; on recovery, provisional rows covered by
+  activities become `superseded` (kept, excluded) in one transaction; exceeding the broker
+  cumulative → `StateStoreError` + FILL_MISMATCH halt.
+- **Acceptance:** fallback 30 → `A(30)` → `B(20)` ⇒ local 50, no halt, one superseded row; replay
+  idempotent; activities above broker cumulative → error, nothing written (§5.4, §6.5, §7).
+
+### F-039 · P2 · Split recovery contradicted fill-derived quantity and was not idempotent (Codex review, PR #62)
+- **Where:** §7, §9.4 (head `4f8eb8d`).
+- **Reproduce:** 4:1 split, broker 100 → 400 with no executions; §7 declares any qty ≠ entry − exit
+  fills a POSITION_QTY_MISMATCH halt; §9.4 rescaled levels but had no quantity adjustment record
+  or event identity, so a restart could rescale again.
+- **Impact:** every held split either halted or risked double rescaling.
+- **Fix (spec):** verified split (§14 event with `event_id`, knowledge-verified `fetched_at ≤ now`)
+  applied at reconcile step 3b, before the generic check, via
+  `StateStore.apply_corporate_action_adjustment`: new table `corporate_action_adjustments`
+  UNIQUE `(symbol, event_id)`; one transaction scales qty, divides avg price/stop/target, records
+  the non-fill delta used in expected qty; re-application is a no-op. Unverified or inexact →
+  POSITION_QTY_MISMATCH halt.
+- **Acceptance:** 100 → 400 reconciles without halt; second run and restart do not rescale;
+  unverified 100 → 400 halts (§5.4, §7, §9.4).
+
+### F-040 · P2 · `slippage_bps` domain allowed zero/negative sell fills (Codex review, PR #62)
+- **Where:** §3.1, §3.2 (head `4f8eb8d`).
+- **Reproduce:** `slippage_bps=10000` (valid under `>= 0`) → sell fill `open·(1−1) = 0`; larger →
+  negative; `nan`/`inf` unrestricted.
+- **Impact:** nonsensical P&L instead of a fail-closed error.
+- **Fix (spec):** `BacktestSettings` validator: finite `0 <= slippage_bps < 10000`; every computed
+  fill price finite and `> 0`, every cost finite, else `ValueError` naming the trade. Input-domain
+  validation only; no cost value or risk limit changed.
+- **Acceptance:** `10000`, `1e6`, `nan`, `inf` → `ConfigError`; cost overflow → `ValueError` (§3.8).
+- **Also clarified (same review):** entry gap invalidation uses the slipped fill (open 99, target
+  100, 200 bps → 100.98 ⇒ invalidated); end-of-window liquidation costs replace the last equity
+  point (zero positions/exposure); levels must be finite `0 < stop < entry_reference < target`
+  (R07, F-026 boundary); §6.4 states the narrow `unknown → staged` recovery exception.
+
+### F-042 · P3 · Corporate-action contract did not match the split core (Claude review of #61, fixed in #62)
+- **Where:** `phase2-4-interfaces.md` §14 `CorporateAction`, §9.4, §5.
+- **Issue:** §14 used a float `ratio` and `fetched_at`, while `semiedge.data.splits` (#61) needs exact
+  integer share counts and a separate `known_at`. A float like 0.333… can't round-trip to an exact
+  1:3, and using `fetched_at` as `known_at` misstates point-in-time knowledge. The branch name was also wrong.
+- **Fix (spec):** `CorporateAction` carries `new_shares`, `old_shares` and `known_at`, with the ratio
+  derived exactly as a `Fraction`. Adjustment rows store share counts. A verified split requires
+  `known_at ≤ now`. §14 imports `semiedge.data.splits` and documents the two meanings of
+  "split-adjusted".
+
+### F-043 · P2 · Split verification needed a read missing from `StateReader` (Codex re-review, PR #62)
+- **Fix (spec):** `data_source()` is part of `StateReader`, implemented identically by both stores and
+  used by §9.4 verification. Parity acceptance covers matching and mismatching source classes.
+
+### F-044 · P2 · Available but incomplete fill activities left confirmed fills unaccounted (Codex re-review, PR #62)
+- **Example:** provisional 30, broker cumulative 50, activities `[A(30)]` → watermark 30, then a
+  reconciliation halt. Likewise an empty activities response with `B > 0`.
+- **Fix (spec):** ingestion step 2 always inserts a provisional remainder when `B > W`, whether
+  activities were available or not, priced at the broker's order-level average. Order notional is
+  defined while provisional rows are active. Acceptance covers partial, empty and catch-up
+  responses, plus replay.
+
+### F-045 · P3 · Acceptance example used the removed float split API (Codex re-review, PR #62)
+- **Fix (spec):** the example uses `new_shares`/`old_shares`; a 1:3 case was added.
+
+### F-046 · P3 · Ambiguous F-044 acceptance sequence (Codex re-review, PR #62)
+- **Fix (spec):** one monotonic sequence on a fresh DB (empty at B=40 → [A(30)] at B=50 →
+  [A(30), C(20)] at B=50), with replay and provisional-notional assertions at every stage.
+
+### F-061 · P2 · R02 did not validate position entry prices (Codex review, PR #69)
+- **Reproduce:** a `PositionView("ZZZ", 1, nan, 100.0)` passed R02, so the proposal could be approved.
+- **Fix:** R02 requires `avg_entry_price` (as well as `mark_price`) to be finite and > 0.
+- **Regression:** `test_f061_position_entry_price_must_be_finite_positive` (nan, ±inf, 0, negative).
+
+### F-062 · P2 · `max_positions=3.5` via `model_construct` passed construction (Codex review, PR #69)
+- **Reproduce:** with three positions, R09 evaluated `3 < 3.5` and approved a fourth.
+- **Fix:** the constructor requires `max_positions` to be a positive builtin int.
+- **Regression:** `test_f062_max_positions_must_be_a_positive_int` (3.5, 4.0, True, 0, -1).
+
+### F-063 · P3 · Risk-manager tests missed pending orders and batch exhaustion (Codex review, PR #69)
+- **Fix:** tests for batch approvals exhausting gross exposure and cash with exact sizes, equal-rank
+  symbol ties, a rejected earlier duplicate, and a property test with pending BUY/SELL orders.
+
 ---
 
 ## Speculative concerns (not demonstrated; tracked for the relevant phase)
@@ -287,7 +387,7 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - This is a new isolated research utility, not a newly discovered production bug. Contract: `docs/specifications/split-normalization.md`; implementation: `data.splits.normalize_raw_splits`.
 - Only explicitly RAW bars are accepted; the output is tagged split-adjusted and rejected on a second invocation. Events require symbol, effective session, exact positive integer share counts and aware knowledge timestamps. Duplicate/conflicting effective sessions fail explicitly.
 - Applied events must be both effective by as_of and known by the caller's cutoff. Future rows are excluded; the as_of session must have closed at that cutoff. Pre-effective prices/VWAP divide and volume multiplies by new/old shares; trade counts remain unchanged. Invalid inputs and numeric overflow/underflow raise; inputs remain unchanged.
-- Evidence: 35 deterministic unit cases cover forward/reverse/fractional/multiple splits, conservation, effective boundaries, historical prefixes, information cutoffs, timezone boundaries, malformed events/frames and arithmetic failures. Full offline suite: 806 passed, one opt-in paper smoke skipped; Ruff check/format, mypy and Bandit passed.
+- Historical evidence at initial a225f7c implementation: 35 deterministic unit cases covered forward/reverse/fractional/multiple splits, conservation, effective boundaries, historical prefixes, information cutoffs, timezone boundaries, malformed events/frames and arithmetic failures. Full offline suite: 806 passed, one opt-in paper smoke skipped; Ruff check/format, mypy and Bandit passed.
 - Limitations: no vendor event ingestion or ledger-coverage claim; no positions/orders/store/scanner integration; knowledge timestamps must be supplied from genuine historical availability evidence. This utility does not establish strategy performance or readiness for execution. Claude cross-provider review required.
 
 ### PR #61 cross-provider review fixes (F-031..F-035)
@@ -298,6 +398,13 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **F-034 / P3:** validate numerical values and session membership on the historical prefix. Future NaNs/non-sessions no longer change earlier results. Full-frame structural schema validation remains required and documented.
 - **F-035 / P3:** added applied-event prefix/effective-date equality, nested nonempty attrs isolation, early-close equality, maximum accepted share count and unsupported pre-1990 ledger cases.
 - Old-source regression evidence: four selected tests all FAIL when PYTHONPATH points to the unchanged a225f7c review checkout; they all PASS on the new implementation. Focused suite: 39 passed. No network, credentials, broker requests or risk/strategy changes.
+
+## #68 follow-ups (F-041, F-050, F-051)
+- **F-041 / P3:** Split normalization composes each row's later-event ratios exactly with Fraction, then applies the final factor once. A net factor one leaves floats unchanged; float64 representation/rounding and explicit numeric overflow/underflow refusal remain. Exact-equality inverse-chain regression fails on the old source and passes now. Cumulative factors outside float64 representation raise rather than clamp. Focused split suite:43 passed.
+- **F-050 / P3:** docs/ADJUSTED_CACHE_RECOVERY.md and the Phase1 interface contract describe start/end coverage constraints, permanently omitted vendor sessions, preserved original provenance and deliberate rebuild in a new empty cache root. Fetch success is not quality/actionability proof; no automatic deletion, unofficial replacement or invented bar is permitted. No cache was deleted or network contacted to write this guidance.
+- **F-051 / P3:** Gap/partial-append tests match the specific "unverified for retained sessions" refusal rather than the ambiguous "full stored range" text shared by older anchor failures.
+- **Additional review notes:** events=None now raises explicit SplitDataError; initial test totals above are marked historical. The two new inverse-chain/None regressions both failed against the unchanged pre-fix source, and now pass. No new strategy, risk ceiling, broker or credential changes. Claude cross-provider review required.
+
 ## F-060 / P2 / Nested JSON log credentials escaped pattern redaction (#29)
 - **Where:** logconfig._PATTERNS / _RedactingFormatter; reproduced by the independent security boundary harness.
 - **Reproduction:** configure_logging with registered fixture secrets, then log extra={"payload":{"authorization":"unregistered-fixture-token"}}. Existing post-format patterns did not recognize quoted JSON credential keys, so the token remained in the rendered JSON line. The new assertion failed on the old implementation; all inputs are hand-written fakes.
