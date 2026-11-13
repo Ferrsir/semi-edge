@@ -19,7 +19,11 @@ Event iterables are materialized once; input order has no effect. Bars after as_
 For each applied event, rows strictly before the effective session have OHLC and optional VWAP
 divided by new/old shares, and volume multiplied by that ratio. Effective-session rows are
 already on the new basis. Trade counts do not change. Multiple events compose in effective-date
-order. Reject nonfinite/invalid values, numerical overflow/underflow, unknown columns, malformed
+order: compose each row's later-event ratio exactly with Fraction, then apply the cumulative
+factor once. A net factor of one leaves the row unchanged, avoiding chained rounding drift.
+Final factors and bar arithmetic still use float64 and can round; there is no exact-decimal
+price claim. Reject unrepresentable cumulative factors and numerical overflow/underflow.
+Reject nonfinite/invalid values, unknown columns, malformed
 sessions, mismatched symbols, and already-adjusted inputs; never clamp or fill bad data. Frame
 structure (index, column names and dtypes) is validated before slicing; numerical values and
 session membership are validated only on the historical prefix, so future price corruption

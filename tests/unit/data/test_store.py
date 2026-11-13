@@ -261,7 +261,7 @@ def test_backfill_checks_latest_shared_session(store, bars):
     # The stored 2024-11-22 row is newer than the backfill, so it is retained and anchors itself.
     with pytest.raises(ValueError, match="adjustment basis changed at 2024-11-22"):
         _write(store, rebased, T0)
-    with pytest.raises(ValueError, match="full stored range"):
+    with pytest.raises(ValueError, match="unverified for retained sessions"):
         _write(store, bars.iloc[:6], T0)  # absent retained sessions are unverified
     _write(store, bars, T0)  # complete incoming coverage resolves the uncertainty
     stored = _read(store)
@@ -278,7 +278,7 @@ def test_interior_gap_in_rebased_refetch_rejected(
     rebased["close"] = rebased["close"] / 10.0  # vendor restated history after a split
     with pytest.raises(ValueError, match="adjustment basis changed at 2024-11-20"):
         _write(store, rebased, T1)
-    with pytest.raises(ValueError, match="full stored range"):
+    with pytest.raises(ValueError, match="unverified for retained sessions"):
         _write(store, bars.drop(pd.Timestamp("2024-11-21")), T1)
     stored = _read(store)
     assert stored is not None
