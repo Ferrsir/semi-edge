@@ -156,6 +156,24 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
   `tests/integration/data/test_store_adjustment_basis.py::test_rebased_refetch_with_interior_gap_is_rejected`,
   `test_same_basis_refetch_with_interior_gap_keeps_stored_session`.
 
+
+### F-024 · P1 · Fetch-time tie-breaking kept stored rows that the basis check never anchored (Codex review, PR #36)
+- **Where:** `semiedge.data.store.ParquetBarStore.write` / `_check_adjustment_basis` (head `b2c43f0`).
+- **Reproduce:** write split-adjusted 2024-01-02..03 (closes 100) at fetched_at Jan 4, refetch Jan 3
+  unchanged at Jan 6, then write both sessions rebased /10 at Jan 5. The check only anchored stored
+  sessions missing from the refetch (none), but tie-breaking kept the newer stored Jan 3: the
+  persisted closes were [10, 100], a fictitious +900% one-session return.
+- **Fix:** the merge runs the fetch-time tie-break first. The basis check then anchors every row that
+  survives *from the store*, including shared sessions where the stored fetch is newer; such a row
+  is its own anchor. A rebased write whose rows are all superseded by newer stored rows, or one at an
+  equal fetch time, is now rejected instead of silently ignored. Equal-timestamp keep-existing still
+  holds for same-basis corrections.
+- **Regression:** `tests/unit/data/test_store.py::test_newer_stored_row_cannot_splice_bases_with_older_refetch`,
+  `test_fully_newer_store_ignores_older_rebased_refetch_rows`,
+  `tests/integration/data/test_adapters_store.py::test_equal_timestamp_rebased_write_is_rejected_not_ignored`
+  (all three fail on `b2c43f0`); same-basis out-of-order and full newer replacement stay accepted
+  (`test_same_basis_out_of_order_refetch_is_accepted`, `test_newer_rebased_refetch_replacing_everything_is_accepted`).
+
 ---
 
 ## Speculative concerns (not demonstrated; tracked for the relevant phase)
@@ -186,3 +204,26 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Impact:** future callers relying only on the shared guard could accept an incorrectly configured client. The existing factory still constructs paper=True; no live request or order was demonstrated. PR #39 already has a local compensating check.
 - **Fix:** accept only identity-equal SDK `BaseURL.TRADING_PAPER` or an exact builtin `str` matching the paper endpoint (existing trailing-slash support retained). Never coerce arbitrary `.value` or display representations. Error remains sanitized.
 - **Tests:** seven regression/compatibility cases cover two disguises, a custom value wrapper, accepted SDK/string representations, and factory rejection of a disguised constructed client. Full suite: 219 passed; Ruff check/format and mypy passed. Offline fixtures only; no risk ceiling or trading permission changes.
+
+
+## PR #45 review fixes ? F-013, F-014, F-015
+
+### F-013 ? P2 ? Future/in-progress sessions accepted as completed
+- **Where:** `data.csv_import.parse_csv_bars` and `data.fixture_ingest.ingest_fixture`.
+- **Confirmed reproduction:** before the fix, a 2031-03-03 row, a 2099-12-31 cutoff on a historical row, and a Saturday cutoff all passed. Reproduced offline against PR head 5df112e using its exact source; no network or vendor data.
+- **Impact:** fixture provenance could call future or unfinished sessions completed, violating the no-future-bars contract.
+- **Fix:** require an injected aware `now` at all library entry points; the CLI passes the real UTC clock. Require cutoff and every input row to be an XNYS session closed plus a validated settlement delay (30 minutes by default). Reject future/unsettled rows even if after the historical cutoff. Record the actual last session and missing-session dates separately from the cutoff.
+- **Regression evidence:** `tests/unit/test_csv_completion.py` covers regular close boundaries, settlement equality, July 3 early close, DST, offset clocks, future rows/cutoffs, weekends, holidays, malformed clocks/delays and gap recording. The integration CLI test confirms a future cutoff writes no artifact.
+
+### F-014 ? P2 ? Fixture ancestor could permit vendor-cache pollution
+- **Where:** `data.fixture_ingest.ingest_fixture` output validation.
+- **Confirmed reproduction:** the old ancestor-name guard accepted a path under `fixtures/data/raw/bars/daily/feed=iex/adjustment=raw/`.
+- **Impact:** malformed fixture output in the vendor layout can break real-cache reads/status/fetch, though the store rejects its provenance rather than reading it as market data.
+- **Fix:** require the immediate resolved parent to be named fixture/fixtures, and reject the vendor raw/bars/daily sequence and feed=/adjustment= components anywhere in the destination.
+- **Regression evidence:** five vendor-layout and nested-parent cases in `tests/integration/test_fixture_ingest.py`; existing exclusive creation/symlink tests remain.
+
+### F-015 ? P3 ? Input-domain and coverage gaps
+- **Where:** CSV volume parsing, supported session range and fixture metadata.
+- **Fix:** validate share volume using exact decimal integrality/sign and a float64 exact-integer ceiling; reject fractional, negative-zero and oversized values. Explicitly limit the importer to sessions from 1990 onward. Preserve gaps without filling and list missing sessions through the cutoff; mark adjustment unknown. No claim of vendor point-in-time availability or complete event coverage.
+- **Regression evidence:** exact-volume, pre-history and missing-session tests. Additional library UTF-8 error normalization and interrupted-write cleanup are covered by integration tests.
+- **Remaining limitation:** output publication is exclusive but not atomic for concurrent readers; consumers must wait for command success. No vendor connection, broker request, credential access, risk-limit or strategy change occurred.

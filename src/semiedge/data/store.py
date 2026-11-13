@@ -120,11 +120,17 @@ class ParquetBarStore:
             old = self._read_raw(path, feed, adjustment)
             if not old["source"].eq(source.value).all():
                 raise ValueError("cannot merge different data sources")
-            if adjustment != Adjustment.RAW:
-                _check_adjustment_basis(symbol, old, incoming)
             # Stable ordering keeps the existing row for equal fetch timestamps.
-            incoming = pd.concat([incoming, old]).sort_values("fetched_at", kind="stable")
-            incoming = incoming.loc[~incoming.index.duplicated(keep="last")].sort_index()
+            merged = pd.concat(
+                [incoming.assign(_from_store=False), old.assign(_from_store=True)]
+            ).sort_values("fetched_at", kind="stable")
+            merged = merged.loc[~merged.index.duplicated(keep="last")].sort_index()
+            if adjustment != Adjustment.RAW:
+                # Checked on the rows that actually survive tie-breaking (F-024): a stored row
+                # kept because its fetch is newer is retained just like one the refetch lacks.
+                retained = merged.index[merged["_from_store"].to_numpy(dtype=bool)]
+                _check_adjustment_basis(symbol, old, incoming, retained)
+            incoming = merged.drop(columns="_from_store")
             columns = list(REQUIRED_BAR_COLUMNS)
             # Warn only when a stored session's values are actually replaced.
             if not old.loc[:, columns].equals(incoming.loc[old.index, columns]):
@@ -178,7 +184,9 @@ class ParquetBarStore:
             ).df()
 
 
-def _check_adjustment_basis(symbol: str, old: pd.DataFrame, incoming: pd.DataFrame) -> None:
+def _check_adjustment_basis(
+    symbol: str, old: pd.DataFrame, incoming: pd.DataFrame, retained: pd.Index
+) -> None:
     """Refuse merges that would splice two vendor adjustment bases into one series.
 
     Adjusted history is restated retroactively (splits, dividends): a corporate action rescales
@@ -188,6 +196,10 @@ def _check_adjustment_basis(symbol: str, old: pd.DataFrame, incoming: pd.DataFra
     only the preceding one for newer rows). Stored sessions missing *inside* the incoming range
     (vendor gaps) need both, because an ex-date right after the gap rescales the preceding session
     but not the following one.
+
+    ``retained`` holds the stored sessions that survive the merge's fetch-time tie-breaking:
+    sessions the refetch lacks *and* shared sessions whose stored fetch is newer. A retained
+    shared session is its own anchor, so its stored close must equal the refetch's.
     """
     shared = old.index.intersection(incoming.index)
     if shared.empty:
@@ -195,7 +207,6 @@ def _check_adjustment_basis(symbol: str, old: pd.DataFrame, incoming: pd.DataFra
             f"{symbol}: adjusted bars must overlap the stored sessions "
             f"({old.index[0].date()}..{old.index[-1].date()}) to verify the adjustment basis"
         )
-    retained = old.index.difference(incoming.index)
     positions = shared.searchsorted(retained, side="right")
     anchors = sorted(
         {shared[int(p) - 1] for p in positions if p > 0}

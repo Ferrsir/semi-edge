@@ -256,6 +256,10 @@ def test_clock_must_be_a_decoded_json_object(raw: object) -> None:
         ("timestamp", "2026-13-30T14:15:00Z", "not a valid RFC 3339"),
         ("next_open", "2026-11-02T25:30:00Z", "not a valid RFC 3339"),
         ("next_open", "2026-11-02T09:30:00+24:00", "not a valid RFC 3339"),
+        # F-025: offset minutes above 59 must not be normalised into a different instant
+        ("timestamp", "2026-10-30T10:15:30+00:60", "with an offset"),
+        ("timestamp", "2026-10-30T10:15:30+01:99", "with an offset"),
+        ("next_open", "2026-11-02T09:30:00-05:60", "with an offset"),
         ("next_open", "２０２６-11-02T09:30:00Z", "with an offset"),
         ("next_close", None, "missing"),
         ("is_open", "true", "must be a boolean"),
@@ -278,6 +282,9 @@ def test_clock_fields_fail_closed(field: str, value: object, match: str) -> None
             datetime(2026, 10, 30, 14, 15, 30, 123456, tzinfo=UTC),
         ),
         ("2026-10-30T15:45:30+01:30", datetime(2026, 10, 30, 14, 15, 30, tzinfo=UTC)),
+        ("2026-10-30T14:16:29+00:59", datetime(2026, 10, 30, 13, 17, 29, tzinfo=UTC)),
+        ("2026-10-31T14:14:30+23:59", datetime(2026, 10, 30, 14, 15, 30, tzinfo=UTC)),
+        ("2026-10-29T14:16:30-23:59", datetime(2026, 10, 30, 14, 15, 30, tzinfo=UTC)),
     ],
 )
 def test_rfc3339_timestamps_are_parsed_to_utc(value: str, expected: datetime) -> None:

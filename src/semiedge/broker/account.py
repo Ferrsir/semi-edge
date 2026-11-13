@@ -57,10 +57,12 @@ MIN_ACCOUNT_NUMBER_CHARS: Final = 8  # the mask must hide at least half of the a
 _DECIMAL: Final = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
 _MISSING: Final = object()
 # RFC 3339 date-time with a mandatory offset, ASCII digits only. Alpaca sends up to nanoseconds;
-# the fraction is truncated to microseconds (``datetime`` resolution) before parsing.
+# the fraction is truncated to microseconds (``datetime`` resolution) before parsing. Offset
+# minutes are 00..59 here because ``fromisoformat`` silently normalises +00:60 (F-025); offset
+# hours of 24 or more are rejected by ``fromisoformat`` itself.
 _TIMESTAMP: Final = re.compile(
     r"([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(?:\.([0-9]{1,9}))?"
-    r"(Z|[+-][0-9]{2}:[0-9]{2})"
+    r"(Z|[+-][0-9]{2}:[0-5][0-9])"
 )
 # Ticker symbols (equities incl. class shares, crypto pairs, OCC option symbols). Validated before
 # a symbol is ever echoed in an error message, so broker data cannot inject log lines.

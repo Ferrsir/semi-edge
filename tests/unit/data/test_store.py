@@ -258,7 +258,8 @@ def test_backfill_checks_latest_shared_session(store, bars):
     _write(store, bars.iloc[4:], T1)
     rebased = bars.iloc[:6].copy()
     rebased["close"] = rebased["close"] * 10.0  # pre-split basis
-    with pytest.raises(ValueError, match="adjustment basis changed at 2024-11-25"):
+    # The stored 2024-11-22 row is newer than the backfill, so it is retained and anchors itself.
+    with pytest.raises(ValueError, match="adjustment basis changed at 2024-11-22"):
         _write(store, rebased, T0)
     _write(store, bars.iloc[:6], T0)  # same basis: backfill merges
     stored = _read(store)
@@ -293,3 +294,62 @@ def test_interior_gap_before_ex_date_rejected(store: ParquetBarStore, bars: pd.D
     rebased.loc[before_ex_date, "close"] = rebased.loc[before_ex_date, "close"] / 10.0
     with pytest.raises(ValueError, match="adjustment basis changed at 2024-11-20"):
         _write(store, rebased, T1)
+
+
+def _two_sessions() -> pd.DataFrame:
+    index = pd.DatetimeIndex(["2024-01-02", "2024-01-03"], name="session", dtype="datetime64[ns]")
+    return pd.DataFrame(
+        {"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0, "volume": 1_000.0},
+        index=index,
+        dtype="float64",
+    )
+
+
+def _rebased(frame: pd.DataFrame, factor: float) -> pd.DataFrame:
+    out = frame.copy()
+    out[["open", "high", "low", "close"]] = out[["open", "high", "low", "close"]] / factor
+    out["volume"] = out["volume"] * factor
+    return out
+
+
+def _at(day: int) -> datetime:
+    return datetime(2024, 1, day, tzinfo=UTC)
+
+
+def test_newer_stored_row_cannot_splice_bases_with_older_refetch(store: ParquetBarStore) -> None:
+    """F-024: a stored row kept by a newer fetched_at is anchored like any retained row."""
+    bars = _two_sessions()
+    _write(store, bars, _at(4))
+    _write(store, bars.iloc[1:], _at(6))  # Jan 3 now has a newer fetch time than Jan 2
+    with pytest.raises(ValueError, match="adjustment basis changed at 2024-01-03"):
+        _write(store, _rebased(bars, 10.0), _at(5))  # older than Jan 3's stored fetch
+    stored = _read(store)
+    assert stored is not None
+    assert stored.frame["close"].tolist() == [100.0, 100.0]
+
+
+def test_same_basis_out_of_order_refetch_is_accepted(store: ParquetBarStore) -> None:
+    bars = _two_sessions()
+    _write(store, bars, _at(4))
+    _write(store, bars.iloc[1:], _at(6))
+    _write(store, bars, _at(5))  # older than one stored row, same basis: harmless
+    stored = _read(store)
+    assert stored is not None
+    pd.testing.assert_frame_equal(stored.frame, bars)
+
+
+def test_fully_newer_store_ignores_older_rebased_refetch_rows(store: ParquetBarStore) -> None:
+    """Every stored row is newer: they are all retained, so each must match the refetch."""
+    bars = _two_sessions()
+    _write(store, bars, _at(6))
+    with pytest.raises(ValueError, match="adjustment basis changed"):
+        _write(store, _rebased(bars, 10.0), _at(5))
+
+
+def test_newer_rebased_refetch_replacing_everything_is_accepted(store: ParquetBarStore) -> None:
+    bars = _two_sessions()
+    _write(store, bars, _at(4))
+    _write(store, _rebased(bars, 10.0), _at(5))  # full overlap, newer: nothing old retained
+    stored = _read(store)
+    assert stored is not None
+    assert stored.frame["close"].tolist() == [10.0, 10.0]
