@@ -5,6 +5,8 @@ mark at closes, including the final close. The position remains held: there
 is no unexecuted sell charge or sell notional. Correlation and beta use aligned daily returns,
 sample covariance/variance and zero risk-free rate. Missing bars remain explicit
 comparison rows; nothing is filled forward. Buy-and-hold has no risk unit R.
+Two nonconstant aligned returns necessarily yield correlation +/-1; that value does not
+establish statistical significance. Finite correlations are bounded to [-1, 1] after rounding.
 """
 
 from __future__ import annotations
@@ -132,6 +134,9 @@ def compare_benchmarks(
                     if not zero_volatility(s)
                     else Metric(None, "zero_strategy_variance")
                 )
+                if corr.value is not None:
+                    # Roundoff may exceed the mathematical bounds by a few ulps.
+                    corr = Metric(max(-1.0, min(1.0, corr.value)))
             excess = (
                 finite_metric(strategy.net_return.value - metrics.net_return.value)
                 if strategy.net_return.value is not None and metrics.net_return.value is not None

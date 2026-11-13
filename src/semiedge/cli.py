@@ -29,7 +29,13 @@ import pandas as pd
 from pydantic import SecretStr, TypeAdapter, ValidationError
 
 from semiedge import __version__
-from semiedge.backtest.engine import BacktestData, BacktestRequest, load_backtest_data, run_backtest
+from semiedge.backtest.engine import (
+    BacktestData,
+    BacktestInputError,
+    BacktestRequest,
+    load_backtest_data,
+    run_backtest,
+)
 from semiedge.backtest.metrics_context import read_context
 from semiedge.backtest.metrics_report import metrics_report
 from semiedge.backtest.results import BacktestResult
@@ -43,7 +49,7 @@ from semiedge.config import (
     config_fingerprint,
     load_app_config,
 )
-from semiedge.config.loader import load_backtest_settings, load_earnings_settings, run_fingerprint
+from semiedge.config.loader import load_backtest_settings, load_earnings_settings
 from semiedge.dashboard.launch import launch
 from semiedge.data.alpaca_source import AlpacaMarketDataSource, MarketDataError
 from semiedge.data.calendar import TradingCalendar
@@ -617,6 +623,19 @@ def _cmd_backtest(args: argparse.Namespace) -> int:
         raise CommandError(EXIT_CONFIG, _CONFIG_FAILED) from None
     calendar = TradingCalendar(config.data.calendar)
     try:
+        valid_window = args.start <= args.end and all(
+            calendar.is_session(d) for d in (args.start, args.end)
+        )
+    except ValueError:
+        valid_window = False
+    if not valid_window:
+        raise CommandError(EXIT_CONFIG, "Backtest failed: invalid_window.")
+    try:
+        if args.output is not None and (args.output.exists() or args.output.is_symlink()):
+            raise CommandError(EXIT_DATA, "Backtest failed: output_path_exists.")
+    except OSError:
+        raise CommandError(EXIT_DATA, "Backtest failed: output_path_unavailable.") from None
+    try:
         if args.source == "synthetic":
             source = SyntheticMarketDataSource(calendar=calendar)
             previous = calendar.previous_session(args.start)
@@ -662,15 +681,16 @@ def _cmd_backtest(args: argparse.Namespace) -> int:
             backtest,
             config.data,
             args.reproduce_command,
+            config.scanner,
         )
         result = run_backtest(request, data, gate=gate, calendar=calendar)
-        result = replace(
-            result, git_sha=git_sha(), config_fingerprint=run_fingerprint(config, backtest)
-        )
+        result = replace(result, git_sha=git_sha())
         # No output directory is created until the entire simulation succeeds.
         if args.output is not None:
             args.output.mkdir(parents=True, exist_ok=False)
         path = result.save(args.output if args.output is not None else settings.data_dir)
+    except BacktestInputError as exc:
+        raise CommandError(EXIT_DATA, f"Backtest failed: {exc.reason_code}.") from None
     except (ValueError, OSError, OverflowError):
         raise CommandError(
             EXIT_DATA, "Backtest failed: invalid or unavailable data/output."

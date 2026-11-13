@@ -1,5 +1,17 @@
 # SEMI-EDGE independent audit report
 
+## PR follow-up implementation: #79 (F-090..F-095, F-154)
+
+- **F-090:** CLI refuses non-session/reversed windows as configuration errors before creating a data source; existing output paths are refused before loading/simulation. Known input failures expose only allowlisted reason codes, never raw paths, upstream messages or credentials.
+- **F-091:** every absent tradable, regime or comparison bar is recorded once per simulation session, including unheld symbols. Results carry an explicit DATA GAPS label; held-position carry-forward and missing-entry cancellation remain unchanged. Cache series with a truncated requested span are refused as incomplete_window. Internal gaps remain subject to configured quality checks.
+- **F-092:** initial regime quality uses the configured missing-session allowance, just like later decisions; latest-session freshness remains mandatory. A hand-built warm-up with one missing interior session passes only with an allowance of one.
+- **F-093:** the wall-clock guard includes date/datetime.today and direct/aliased imports of time.time/time_ns; seven small AST fixtures cover blocked calls and an explicit-calendar control. This is a bounded static guard, not a claim against arbitrary dynamic Python.
+- **F-094:** seeded arbitrary future OHLCV and deletion are checked at every fixture cutoff, including the initial decision session; all earlier decisions/equity and closed trades must remain equal. OHLCV stays structurally valid so the check isolates look-ahead rather than malformed-input refusal.
+- **F-095:** pure API and CLI use the same run_fingerprint definition. BacktestRequest now requires scanner_settings to represent the full AppConfig explicitly; scanner settings affect provenance only, not backtest sizing. The CLI no longer replaces the API fingerprint.
+- **F-154:** finite correlation is clamped to its mathematical bounds; non-finite/undefined cases retain explicit reasons. Documented that two nonconstant returns necessarily produce +/-1 without establishing significance.
+- **Reproduction:** corrected regression selection on unchanged c7698dc source: 14 failed / one passing negative-correlation control. This covers all 13 input/audit regressions plus the naturally rounded positive-correlation overflow; no performance result or real data is used. Focused post-fix validation: 201 passed. Full validation and Claude review are recorded on the delivery PR.
+- **Scope:** F-096 remains the previously merged ADR-008 rule and its regression; no strategy, risk ceiling, broker permission, credentials or live endpoint change. Future real-data or integration readiness is not claimed.
+
 Running record of independently verified findings. Each entry names the severity, location,
 reproduction, impact, fix and test evidence. **Confirmed** findings were reproduced; **Speculative**
 concerns are risks that have not been demonstrated and must not be read as bugs.

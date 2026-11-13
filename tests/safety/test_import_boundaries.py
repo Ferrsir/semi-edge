@@ -214,6 +214,49 @@ def test_relative_and_dynamic_imports(source):
     assert violations(source, "semiedge.backtest.probe")
 
 
+def wall_clock_calls(source):
+    """Bounded static guard including aliases imported directly from time."""
+    tree = ast.parse(source)
+    direct = {
+        alias.asname or alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module == "time"
+        for alias in node.names
+        if alias.name in {"time", "time_ns"}
+    }
+    return [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and (
+            (
+                isinstance(node.func, ast.Attribute)
+                and node.func.attr in {"now", "utcnow", "today", "time", "time_ns"}
+            )
+            or (isinstance(node.func, ast.Name) and node.func.id in direct)
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from datetime import date; date.today()",
+        "from datetime import datetime as D; D.today()",
+        "from time import time; time()",
+        "from time import time as tick; tick()",
+        "import time as t; t.time()",
+        "import datetime as dt; dt.datetime.now()",
+    ],
+)
+def test_wall_clock_guard_catches_direct_and_aliased_calls(source):
+    assert wall_clock_calls(source)
+
+
+def test_wall_clock_guard_accepts_explicit_simulation_time():
+    assert not wall_clock_calls("day = calendar.next_session(request.start)")
+
+
 def test_new_modules_do_not_read_wall_clock():
     root = Path(semiedge.__file__).parent
     prefixes = ("risk", "backtest", "state", "execution", "engine", "notify")
@@ -221,6 +264,4 @@ def test_new_modules_do_not_read_wall_clock():
         relative = path.relative_to(root)
         if relative.parts[0] not in prefixes and relative.as_posix() != "broker/gateway.py":
             continue
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-                assert node.func.attr not in {"now", "utcnow", "time"}, str(path)
+        assert not wall_clock_calls(path.read_text(encoding="utf-8")), str(path)

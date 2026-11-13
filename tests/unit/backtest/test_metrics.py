@@ -449,3 +449,17 @@ def test_review_single_negative_return_sortino(scenario):
     metrics = compute_metrics(result)
     assert metrics.sortino.value == pytest.approx(-math.sqrt(252))
     assert metrics.sharpe.reason == "fewer_than_2_returns"
+
+
+@pytest.mark.parametrize("closes", [(90.0, 72.0), (110.0, 132.0)])
+def test_two_return_correlation_stays_in_mathematical_bounds(scenario, closes):
+    """Two varying returns imply correlation +/-1; rounding must not exceed those bounds."""
+    result, data, request = result_for(scenario, [110.0, 132.0])
+    frame = data.bars["SMH"].copy()
+    for i, close in enumerate(closes, len(frame) - 2):
+        opened = 100.0 if i == len(frame) - 2 else closes[0]
+        frame.iloc[i] = [opened, max(opened, close) + 1, min(opened, close) - 1, close, 1e6]
+    (comparison,) = compare_benchmarks(result, replace(data, bars={"SMH": frame}), request.settings)
+    assert comparison.correlation.value is not None
+    assert -1 <= comparison.correlation.value <= 1
+    assert abs(comparison.correlation.value) == pytest.approx(1)

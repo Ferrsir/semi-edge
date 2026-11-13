@@ -599,6 +599,7 @@ class BacktestRequest:
     settings: BacktestSettings
     data_settings: DataConfig
     command: str                       # exact CLI that reproduces the run (ground rule 5)
+    scanner_settings: ScannerConfig    # explicit full-app provenance for run_fingerprint
 
 def run_backtest(request: BacktestRequest, data: BacktestData, *, gate: EntryGate,
                  calendar: TradingCalendar) -> BacktestResult: ...
@@ -611,6 +612,16 @@ def run_backtest(request: BacktestRequest, data: BacktestData, *, gate: EntryGat
 - Warm-up: the decision for the first fill session `start` happens at `previous_session(start)`;
   data must cover `required_history()` sessions before it (else that symbol is ineligible; if the
   **regime benchmark** lacks it → `BacktestInputError`, fail closed for the whole run).
+  The warm-up quality check uses `data_settings.max_missing_sessions_in_lookback`, matching
+  subsequent decisions; its latest required session must still be present.
+- The pure API and CLI both use `run_fingerprint(AppConfig(universe=..., strategy=params,
+  risk=..., data=data_settings, scanner=scanner_settings), settings)` with no CLI replacement.
+  `scanner_settings` is required even though scanner sizing is not used in the simulation.
+- Every missing universe/regime/comparison bar in the simulation window is recorded once in
+  `data_gaps`, even when no position is held; any gap adds a `DATA GAPS` label. Existing held-bar
+  marks and cancellation semantics remain as in §3.2. Cache loading refuses a present series
+  whose stored span does not cover `[start, end]` (`incomplete_window`); internal gaps retain
+  the configured quality policy and are recorded during simulation.
 - Validation before running (each → `BacktestInputError` with reason): every frame passes
   `validate_bar_frame`; one feed/adjustment/source for all symbols (never mixed, S-003);
   `DataSource.SYNTHETIC` and `DataSource.FIXTURE` never mixed with others; `start ≤ end`, both sessions; synthetic data is
