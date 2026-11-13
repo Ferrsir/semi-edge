@@ -481,8 +481,10 @@ from a frame index), in this exact order, symbols processed in ascending order w
    if cash after the entry's costs would be < 0 → cancelled `entry_insufficient_cash`;
    else fill `approved_shares` at `fill = open_d · (1 + slip)` (an `opg` market order cannot be
    withdrawn after the auction, so a gap does **not** cancel it);
-   then, if `fill ≤ stop` or `fill ≥ target` (the **slipped fill price**, the same quantity the
-   paper engine compares, `filled_avg_price` in §6.3), the entry is invalidated: the position is
+   then, if `fill ≤ stop`, `open_d ≤ stop` or `fill ≥ target` (`fill` is the **slipped fill
+   price**, the same quantity the paper engine compares, `filled_avg_price` in §6.3; the raw
+   `open_d ≤ stop` test, ADR-008, keeps slippage from hiding a gap through the stop), the entry
+   is invalidated: the position is
    immediately flattened at `open_d · (1 − slip)` with exit reason `entry_gap_flatten` (both
    legs' costs charged). Example: `open_d = 99`, `target = 100`, 200 bps → `fill = 100.98 ≥ 100`
    → invalidated, although `open_d < target`.
@@ -714,6 +716,8 @@ an existing file is never overwritten.
   missing fill-day bar → `entry_no_bar`; end-of-window close.
 - Slipped-fill invalidation: `open = 99`, `target = 100`, `slippage_bps = 200` → entry fill
   `100.98`, then `entry_gap_flatten` (and with `slippage_bps = 0` the same bar is not invalidated).
+- Open below stop (ADR-008): `stop = 9.5`, `open = 9.4`, 200 bps → entry fill `9.588 > stop`, still
+  `entry_gap_flatten` at `9.4 · 0.98`, never a later `stop` fill at `9.5 · 0.98`.
 - End of window: the last `EquityPoint` is the post-liquidation point (one point for `end`, not
   two), `positions == 0`, `gross_exposure == 0`, `equity == cash`, and equals the hand-computed
   value including the liquidation sell costs.

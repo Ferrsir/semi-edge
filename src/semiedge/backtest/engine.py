@@ -230,7 +230,10 @@ class _Simulation:
                 else:
                     self.cash = remaining
                     self.positions[symbol] = _Position(p, day, price, qty, cost, price)
-                    if price <= p.stop or price >= p.target:
+                    opened = float(row["open"])
+                    # F-096: an open at or below the stop invalidates the entry even when the
+                    # slipped fill lands above it (ADR-008, phase2-4-interfaces.md §3.2 step 3).
+                    if price <= p.stop or opened <= p.stop or price >= p.target:
                         self.close(
                             symbol,
                             day,
