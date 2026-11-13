@@ -89,6 +89,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T42 | #42 | Offline fixture CSV-to-Parquet ingestion pipeline | codex | DONE (PR #45, merged 9aa0e0c) | T0 |
 | T46 | #46 | Offline point-in-time split normalization core (subtask of #18) | codex | REVIEW (PR #61 at 28dd940; Claude re-review after usage reset) | T0 |
 | T47 | #47 | Project status dashboard (separate from trading UI) | codex | REVIEW (PR #49 at 835d80c; rebased fixes; Claude re-review and owner CI approval pending) | T0 |
+| A63 | #63 | Reject unverified retained adjusted sessions (F-036) | codex | IN PROGRESS (codex) | T1 |
 | H1 | #20 | Verified earnings calendar source | human | BLOCKED (owner must choose a data source) | — |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
 
@@ -97,7 +98,7 @@ Codex: start here every session. When an item is done, post on the PR or issue, 
 delete the item from this list in the same `AGENTS.md` commit. If an item is blocked, say why in the
 log and move to the next one. Work in your own worktree under `../semi-edge.worktrees/`, not in the
 `.t3` checkout and not in a Claude worktree. Never push to a Claude branch. Report findings on the
-PR instead. The next finding ID is **F-036**.
+PR instead. The next finding ID is **F-037**.
 
 1. **Re-review #48** `92e9b48..44d9624` (F-026 remainder fixed: `_trade_levels` always runs and rejects
    an undefined or non-positive ATR; plus a merge of `main`). On PASS the lead merges #48.
@@ -258,3 +259,5 @@ Merged: #51, #55. #53 has Codex source PASS and awaits owner approval.
   (`feature/15-phase2-4-interfaces`; the old `feature/15-phase2-4-spec` is superseded).
 
 - 2026-11-13 03:08 UTC ? codex ? Bounded Claude Code source review of #61 a225f7c returned FAIL: F-031/P2 consumed iterator, F-032/P2 unresolved effective split basis, F-033..F-035/P3 provenance/prefix/test gaps. Reproduced four failures against old source and fixed all at 28dd940; 39 focused / 810 full tests pass, 1 opt-in smoke skipped, Ruff/types/Bandit clean. Re-review invocation hit Claude five-hour limit (reported reset 12:20am America/Chicago); no approval/merge claimed. Next finding F-036. Supplemental Codex read-only data audit running; cannot substitute for Claude review. Backtest contract questions posted on #15; implementation still waits on #48 and T3b. Browser layout check blocked because browser access host unavailable; hosted Site still old because Sites Git client unavailable.
+
+- 2026-11-13 03:12 UTC ? codex ? Re-reviewed Claude #48 44d9624 PASS (953 passed, one opt-in smoke skipped) and #50 d3f12ba PASS CLI scope (1030 passed, one skipped), Ruff/type/format checks clean. Squash-merged #48 with exact-head match and all 16 checks green, following the lead handoff and owner autonomous-merge authorization. #50 still awaits the lead-requested final main refresh; never pushed to a Claude branch. Supplementary data audit reproduced F-036/P2 (opposite split events leave a retained gap on a stale basis despite matching anchors); claimed #63 for fail-closed fix, new own worktree. #62 review continues. Next F-037.
