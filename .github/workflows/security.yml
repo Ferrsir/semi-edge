@@ -51,7 +51,7 @@ jobs:
           python-version: "3.12"
           enable-cache: true
           cache-dependency-glob: uv.lock
-      - run: uv export --locked --all-groups --no-emit-project --no-hashes --format requirements-txt > /tmp/requirements.txt
+      - run: uv export --locked --all-groups --all-extras --no-emit-project --no-hashes --format requirements-txt > /tmp/requirements.txt
       - run: uvx pip-audit==2.10.1 --strict --no-deps --disable-pip -r /tmp/requirements.txt
 
   secret-scan:
