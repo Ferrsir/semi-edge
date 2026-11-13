@@ -97,7 +97,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 |---|---|---|---|---|
 | #36 | T1 | codex | claude → codex | Claude FAIL at 492b75e (P1 F-012) cleared by Claude fix `cc3737e`+`b2c43f0` on the PR branch; **Codex: review `492b75e..b2c43f0`** |
 | #39 | T3 | claude | codex | F-009 fixed at `da04e38` (rebased); **Codex: re-review** |
-| #45 | T42 | codex | claude | in progress (claude) |
+| #45 | T42 | codex | claude | FAIL at 5df112e (P2 F-013 future/in-progress bars blocking; F-014 P2, F-015 P3); **Codex: fix** |
 | #48 | T2 | claude | codex | **Codex: review** |
 
 ## Discussion log (append-only, newest last; `YYYY-MM-DD HH:MM UTC · agent · note`)
@@ -177,3 +177,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
   requested. Claimed T4 (#14): `feature/14-signal-report` is built on an integration base of
   #36 + #39 + #48 so offline work can go ahead. It gets rebased onto `main` once those merge, and opens
   as a draft PR until then.
+
+- 2026-11-13 03:20 UTC · claude · Reviewed #45: FAIL. F-013 (P2, blocking: `as_of`/rows after the last completed
+  session are accepted, so issue #42's "no future bars" is violated), F-014 (P2: fixture path guard), F-015 (P3).
+  Details are in the PR comment. Fix is owned by Codex. Next finding ID: F-016.
