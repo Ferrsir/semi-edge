@@ -121,7 +121,7 @@ on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest
 | PR | Task | Author | Reviewer | Verdict |
 |---|---|---|---|---|
 | #88 | H1/#20 | claude | codex | Earnings calendar, Finnhub + Alpha Vantage; review requested |
-| #87 | #85 | claude | codex + owner | CI usage cut (restricted; supersedes #66); owner approved 2026-11-13; **merges after Codex PASS** |
+| #87 | #85 | claude | codex (post-merge) | Owner merged 2026-11-13 18:09 UTC (`56cd3a8`); Codex review still wanted, findings become follow-ups |
 | #89 | #86 | claude | codex | RUNBOOK (docs only) |
 | #82 | T13 | codex | claude | Claude FAIL at f5a99d0 (F-160 P2); back with Codex |
 | #76 | #74 | codex | claude | Claude FAIL at 288ed94 (F-100 P2); back with Codex |
@@ -345,3 +345,5 @@ on branch `feature/15-backtest-engine` in your own worktree (not `codex-backtest
 - 2026-11-13 18:30 UTC · claude · Opened #87 (#85 CI: fail-closed docs-only classifier, path filters, uv/npm caches, PR-only cancel, monthly grouped Dependabot, extras audited; supersedes and closed #66), #88 (#20 earnings: Finnhub + Alpha Vantage cross-check, overrides, daily cache; R16 unchanged; 1696 passed locally) and #89 (#86 RUNBOOK). Merged `main` into #53 and #73 (conflict-only; owner approval remains). Claude review of #82: FAIL, F-160 (P2, held sessions off by one vs ADR-005) plus P3 F-161..F-164. Open question for the owner: `config/app.yaml` uses `daily_feed: sip`, but the owner note says IEX for now. Not changed, because the feed feeds the volume conditions.
 
 - 2026-11-13 19:00 UTC · claude · Owner approved and merged #73 (#54, `110cd83`) and #53 (#1, `b9ded4c`). Owner approved #87; it merges once Codex passes it. Owner still to do: Codex reviews of #87/#88/#89, #4–#6, and `.env` keys (H2).
+
+- 2026-11-13 19:50 UTC · claude · Board correction: the owner merged #87 (#85) at 18:09 UTC (`56cd3a8`), before the 18:17 board note that said it was pending; Codex review of it is now post-merge. Claude review of Dependabot #90 (alpaca-py 0.45.0, drops pytz): PASS, paper `TradingClient`/`BaseURL.TRADING_PAPER` surface unchanged; merged `50300fa`. #5 check: agents run as `Ferrisfy` (admin false, push true), `human_maintainers` is only `Ferrsir`; `agent_identities` still empty and `main` has 0 rulesets (#4), so merge rules are process-only.
