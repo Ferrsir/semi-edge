@@ -18,6 +18,14 @@ REDACTED = "***REDACTED***"
 
 # Defence in depth for values not registered explicitly (e.g. echoed request headers).
 _PATTERNS: tuple[re.Pattern[str], ...] = (
+    # Nested extras are serialized after the record filter. Mask quoted JSON fields in the
+    # final rendered line too, including escaped quotes/backslashes inside their values.
+    re.compile(
+        r'(?i)("(?:APCA-API-(?:KEY-ID|SECRET-KEY)|(?:secret|api)[_-]?key|password|'
+        r"authorization|secret|(?:access|refresh)[_-]?token|token|"
+        r'discord[_-]?webhook[_-]?url)"\s*:\s*")(?:\\.|[^"\\])*'
+    ),
+    re.compile(r"(?i)(authorization\s*[:=]\s*(?:Bearer\s+)?)[^\s,'\"]+"),
     re.compile(r"(?i)(APCA-API-(?:KEY-ID|SECRET-KEY)\s*[:=]\s*)[^\s,'\"]+"),
     re.compile(r"(?i)((?:secret|api)_?key\s*[:=]\s*)[^\s,'\"]+"),
     re.compile(r"https://(?:ptb\.|canary\.)?discord(?:app)?\.com/api/webhooks/[^\s'\"]+"),
