@@ -69,7 +69,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T1 | #9, #10 | Data layer: calendar, Alpaca source, synthetic source, Parquet store, validation | codex | DONE (PR #36, merged c424d48) | T0 |
 | T2 | #11, #12 | Indicators, `momentum_v1` features/evaluation/score, position sizing | claude | REVIEW (PR #48) `feature/11-signals-strategy`; awaits Codex review | T0 |
 | T3 | #13 | Read-only paper account snapshot (`semiedge.broker.account`) | claude | DONE (PR #39, merged ee66aaf; P3 F-025 → #52) | T0 |
-| T3b | #15–#29 | Phase 2–4 interface spec (backtest, risk, execution, state, reconcile, engine, dashboard) | claude | IN PROGRESS (claude) `feature/15-phase2-4-spec` | T0 |
+| T3b | #15–#29 | Phase 2–4 interface spec (backtest, risk, execution, state, reconcile, engine, dashboard) | claude | REVIEW (PR #62) `feature/15-phase2-4-interfaces` | T0 |
 | T4 | #14 | Signal report + CLI (`scan`, `data fetch/status`, `account`, `config check`) | claude | REVIEW (draft PR #50, stacked on #36/#39/#48; review `22ff3ea..45ab740`) | T1, T2, T3 |
 | T5 | #15 | Event-driven backtest engine: next-open fills, costs, slippage | codex | READY | T1, T2 |
 | T6 | #16 | Performance metrics, SMH/QQQ benchmark comparison | codex | READY | T5 |
@@ -97,25 +97,29 @@ Codex: start here every session. When an item is done, post on the PR or issue, 
 delete the item from this list in the same `AGENTS.md` commit. If an item is blocked, say why in the
 log and move to the next one. Work in your own worktree under `../semi-edge.worktrees/`, not in the
 `.t3` checkout and not in a Claude worktree. Never push to a Claude branch. Report findings on the
-PR instead. The next finding ID is **F-030**.
+PR instead. The next finding ID is **F-031**.
 
-1. **#48**: Codex follow-up FAIL at 92e9b48: F-026 still permits eligible signals with undefined ATR/levels; Claude fix requested.
-2. **#50**: Codex FAIL at c1f8cf8: F-030/P2 unsanitised account-client construction errors; Claude fix and final rebase requested.
-3. **#49**: rebased/follow-up head 835d80c; Claude re-review and explicit owner approval of ci.yml remain. Hosted publication blocked by Sites Git client availability.
-4. **#61 / #46**: implementation at a225f7c awaits Claude cross-provider review. Preserve old .t3 worktree.
-5. Then **T5 #15** once #48 and the Phase 2-4 interface spec (T3b) are ready.
+1. **Re-review #48** `92e9b48..44d9624` (F-026 remainder fixed: `_trade_levels` always runs and rejects
+   an undefined or non-positive ATR; plus a merge of `main`). On PASS the lead merges #48.
+2. **Re-review #50** at `d3f12ba`, CLI scope only: F-030 fix `c222b88`. The stack is refreshed by merge
+   commits: outside CLI and signals the branch equals `main`, and the signals files equal #48's head.
+3. **Review #62** (Phase 2–4 interface spec, T3b). Your T5 (#15 backtest) and §14 (#18/#46) build on it,
+   so flag anything you would implement differently.
+4. **#49**: Claude is re-checking `835d80c`. The owner must approve (`ci.yml`).
+5. **#61** (#46 split normalization): Claude review in progress.
+6. Then **T5 #15** (backtest engine) against #62.
 
-Reviews #51 and #55 PASS; #53 source review PASS, owner approval still required. Reports are on the exact-head PR comments.
+Merged: #51, #55. #53 has Codex source PASS and awaits owner approval.
 
 ## Review queue
 | PR | Task | Author | Reviewer | Verdict |
 |---|---|---|---|---|
-| #48 | T2 | claude | codex | FAIL at 38b7865: F-026/P2 infinite proposed target; F-027/P3 sizing overflow; Claude fix requested |
-| #50 | T4 | claude | codex | draft; pre-screen fixes pushed; **Codex: review from `22ff3ea` to head** (stacked) |
+| #48 | T2 | claude | codex | Codex FAIL at 92e9b48 (F-026 ATR remainder) → Claude fix `44d9624`; **Codex: re-review** |
+| #50 | T4 | claude | codex | Codex FAIL at c1f8cf8 (P2 F-030) → Claude fix at `d3f12ba`; **Codex: re-review CLI scope**; draft until #48 merges |
+| #61 | T46 | codex | claude | Claude review in progress |
+| #62 | T3b | claude | codex | **Codex: review** |
 | #49 | T47 | codex | claude | Claude PASS at 4a8bd9d (P3 F-028, F-029); **Codex: rebase + F-028; owner: approve (.github)** |
-| #53 | #1 | claude | codex + owner | governance docs reconcile (restricted) — **Codex: review; owner: approve** |
-| #55 | #52 | claude | codex | F-025 fix — **Codex: review** |
-| #51 | — | claude | codex | `.t3` migration docs — **Codex: review** |
+| #53 | #1 | claude | codex + owner | Codex PASS (source); **owner: approve** (restricted) |
 
 ## Discussion log (append-only, newest last; `YYYY-MM-DD HH:MM UTC · agent · note`)
 - 2026-10-30 15:10 UTC · claude · Took over as lead/integrator at the owner's request. Owner
@@ -241,3 +245,8 @@ Reviews #51 and #55 PASS; #53 source review PASS, owner approval still required.
 - 2026-11-13 02:52 UTC ? codex ? Queue handoff: #36 2c396ef PASS (362 tests), now merged; #48 92e9b48 FAIL same F-026 undefined-ATR bypass (394 tests pass); #50 c1f8cf8 FAIL F-030/P2 account constructor exception sanitization (936 passed, 1 opt-in smoke skipped). #51 docs and #55 F-025 PASS; #53 source PASS, owner approval remains. Finding collision corrected on PR #50: F-028/F-029 belong to dashboard, CLI is F-030; next F-031. #49 rebased/follow-ups at 835d80c, 785 passed/1 skipped plus DOM tests and lint/types; Claude re-review requested. Site still old version because Sites Git returns sites_git_client_upgrade_required; no new deployment claimed. Moving to #46 per lead queue, all other worktrees preserved.
 
 - 2026-11-13 02:58 UTC ? codex ? Delivered #46 as PR #61, feature/46-split-core at a225f7c in ../semi-edge.worktrees/codex-split-core. Pure RAW split normalization with effective/knowledge cutoffs, duplicate/provenance/numerical guards, unchanged inputs, 35 hand-written regression cases. Full 806 passed / 1 opt-in smoke skipped; non-integration coverage 93.58%, Ruff check/format, mypy and Bandit pass. Claude review requested. No vendor/broker/portfolio integration or event-coverage claim. Next queue item T5 waits for #48 and T3b interface review; starting independent spec inspection meanwhile.
+
+- 2026-11-13 06:40 UTC · claude · Merged #51 (`067ae21`) and #55 (`9155740`, closes #52), both Codex PASS. Fixed the F-026
+  remainder on #48 (`44d9624`) and F-030 on #50 (`c222b88`); the #50 stack is refreshed by merges, no force-push.
+  Opened #62 (Phase 2–4 spec, aligned with the Phase 1 code; ADR-005..007). Claude is reviewing #61 and re-checking #49.
+  Next finding ID F-031.
