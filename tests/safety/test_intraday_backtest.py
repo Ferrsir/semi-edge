@@ -228,6 +228,48 @@ def test_target_at_two_r(limits_5k):
     assert t.r_multiple == 2.0
 
 
+@pytest.mark.parametrize("account", ["unrestricted", "margin_pdt", "cash"])
+@pytest.mark.parametrize("slip", [0.0, 20.0])
+def test_gap_up_fill_caps_actual_stop_risk(limits_5k, account, slip):
+    b = _flat(100.0)
+    # The signal reserves 12 shares with $1 estimated risk. The $110 next open
+    # leaves only four shares within the $50 entry-to-stop budget.
+    for values in (b.o, b.h, b.lo, b.c):
+        values[11:] = 110.0
+    b.lo[12], b.c[12] = 99.0, 99.0
+    ps = _session({"NVDA": b}, {10: [("NVDA", Trigger("A", 10, 99.0, 1.0))]})
+    result = _run([ps], limits_5k, account=account, slip=slip)
+    (trade,) = result.trades
+    budget = 5000.0 * limits_5k.max_risk_per_trade_pct
+    assert trade.shares * (trade.entry - trade.stop) <= budget
+    assert trade.shares == 4
+    assert trade.reason == "stop"
+    assert trade.target == pytest.approx(trade.entry + 2 * (trade.entry - trade.stop))
+    assert result.session_equity[-1][1] == pytest.approx(5000.0 + trade.pnl, abs=0.01)
+
+
+@pytest.mark.parametrize("account", ["unrestricted", "margin_pdt", "cash"])
+def test_gap_up_fill_refuses_when_one_share_exceeds_risk_budget(limits_5k, account):
+    b = _flat(100.0)
+    for values in (b.o, b.h, b.lo, b.c):
+        values[11:] = 160.0  # $61 risk per share exceeds the $50 budget
+    ps = _session({"NVDA": b}, {10: [("NVDA", Trigger("A", 10, 99.0, 1.0))]})
+    result = _run([ps], limits_5k, account=account)
+    assert result.trades == []
+    assert result.refusals["fill_over_cap"] == 1
+    assert result.session_equity == [(ps.session.isoformat(), 5000.0)]
+
+
+def test_favorable_fill_does_not_increase_reserved_shares(limits_5k):
+    def mutate(b):
+        for values in (b.o, b.h, b.lo, b.c):
+            values[11:] = 99.5
+
+    (trade,) = _one_trade(limits_5k, mutate).trades
+    assert trade.shares == 12
+    assert trade.entry == 99.5
+
+
 def test_a_bar_touching_stop_and_target_counts_as_the_stop(limits_5k):
     def m(b):
         b.h[15], b.lo[15] = 102.5, 98.5

@@ -356,6 +356,9 @@ def replay(  # noqa: PLR0912, PLR0915 - one pass over the bar loop keeps the fil
                     continue
                 shares = min(
                     p.shares,
+                    # Recheck the reserved quantity against the actual slipped fill:
+                    # a next-open gap can widen entry-to-stop risk since admission.
+                    math.floor(p.equity * limits.max_risk_per_trade_pct / risk),
                     math.floor(p.equity * limits.max_position_pct / fill),
                     math.floor(cash / fill),
                 )
