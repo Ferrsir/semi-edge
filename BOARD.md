@@ -43,6 +43,8 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | A98 | #98 | Remaining free-text credential forms (F-102) | codex | DONE (PR #101 merged 32128fd; 2150 passed/two skips) | T16 |
 | A103 | #103 | Equity-chart observation/session handling | codex | DONE (superseded by dashboard redesign #108 and price Charts #117; #105 closed) | T13 |
 | A122 | #122 | Dashboard status truthfulness and current strategy label (F-177/F-178) | codex | REVIEW (PR #125 at 52d77d2; 2209 passed/two skips; Claude review requested) | T13 |
+| I128 | #128 | $5k risk profile, decoupled defaults, account models in the spec | claude | REVIEW (PR #129; restricted, owner approval) | T8 |
+| I131 | #131 | Intraday backtest: intraday_v1 at $5k, 3 account models x 3 slippages | claude | REVIEW (PR #130; code-owned, owner approval; stacked on #129) | I128, #118 |
 | H1 | #20 | Verified earnings calendar source (owner chose Finnhub primary + Alpha Vantage cross-check) | claude | DONE (#88; #115 isolates Finnhub parse failure to TSM; R16 still blocks uncovered symbols and MRVL/MU date disagreements) | T8 |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
 | H3 | — | GitHub Actions billing/spending limit: since ~12:00 UTC 2026-11-13 no CI job starts, so nothing can merge | human | DONE (repo made public 2026-11-13; #81 CI re-run green 16:45 UTC) | — |
@@ -53,6 +55,8 @@ delete the item from this list in the same `BOARD.md` commit. If an item is bloc
 log and move to the next one. Work in your own worktree under `../semi-edge.worktrees/`, not in the
 `.t3` checkout and not in a Claude worktree. Never push to a Claude branch. Report findings on the
 PR instead. **Next finding ID: F-179** (F-160..F-164 used in the Claude review of #82; F-060 is your #67 security fix; F-061..F-063 were used in your #69 review).
+
+When Codex is back: post-merge or exact-head review of #129 ($5k profile) and #130 (intraday backtest); both were Claude self-reviewed.
 
 #100/#108/#109/#117/#120 dashboard work is merged. #101 (redaction) and #115 (TSM Finnhub isolation) are merged; #103/#105 were closed as superseded. #125 fixes F-177/F-178 and awaits Claude review.
 
@@ -317,3 +321,4 @@ PR instead. **Next finding ID: F-179** (F-160..F-164 used in the Claude review o
 - 2026-11-14 02:47 UTC · codex · Closed #105 and #103 as superseded: #108 replaced the old Overview equity chart, while #117 delivers the current read-only daily price Charts page. No rebase is useful because it would restore the obsolete dashboard implementation. #101 remains with Claude for cross-provider review.
 - 2026-11-14 02:55 UTC · codex · Reconciled board with main: #101 merged at 32128fd, #115 at d9a0a43 (per-symbol TSM isolation), and #117 at 5dea98b (read-only daily price Charts). Updated T13/T16/A98/H1 and removed the stale #101 review row. #103/#105 closure already recorded.
 - 2026-11-14 03:06 UTC · codex · #109 post-merge safety review found F-177/P2 (RUNNING without a fresh engine heartbeat) and F-178/P3 (retired momentum_v1 desk branding). Opened #122, implemented fail-closed status plus neutral active-strategy wording in #125 at exact head 52d77d2. Rebased after #120/#124; full2209/two, Ruff/format, mypy78 and Bandit pass. Claude review requested; no trading/risk changes.
+- 2026-11-14 04:40 UTC · claude · #130 (closes #131): `semiedge backtest-intraday` replays intraday_v1 at $5k for unrestricted, margin_pdt and cash accounts at 10/20/30 bps; code committed `901936c` before the first real-data run. Result (`semiedge backtest-intraday --start 2024-12-16 --end 2026-11-13 --equity 5000 --risk-profile 5k`): all nine runs lose about 5% and hit the 5% drawdown halt (unrestricted/cash within 3-5 weeks; margin_pdt later only because PDT throttles it). Expectancy -0.39R to -1.12R net, -0.01R to -0.18R with slippage backed out: no edge on this data. Nothing tuned (rule 3). #129 and #130 need owner approval. Next Claude: review Codex #125, then strategy-agnostic paper plumbing (T9 part 2).
