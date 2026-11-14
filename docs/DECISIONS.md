@@ -70,6 +70,18 @@ blocked all 16 symbols. Owner decision: an unparseable answer now leaves only th
 uncovered (`finnhub_symbol_not_covered`, still blocked by R16); transport and HTTP failures and an
 all-symbols parse failure still fail the whole snapshot. R16 itself is unchanged.
 
+ADR-011 (2026-11-14, #128): a $5k account profile and account models. Owner decisions: the
+day-trading strategy is tested with about $5,000 so results reflect a similar amount of real money,
+through a backtest, a local simulation on live bars and Alpaca paper. `config/risk_5k.yaml` holds
+the $5k limits (1% risk per trade, 25% per position, 3 positions, 75% gross exposure, unchanged 1%
+daily-loss and 5% drawdown halts) and is used only when a run selects it; `config/risk.yaml` is
+unchanged. The ceilings in `src/semiedge/safety/limits.py` rise just enough to allow that profile,
+and `RiskLimits` defaults are now `DEFAULT_RISK_LIMITS` (today's values) instead of the ceilings,
+so raising a ceiling never loosens a run that relies on defaults. Every backtest reports three
+account models (`unrestricted`, `margin_pdt`, `cash`) because a real account of this size is bound
+by the pattern-day-trader rule or by T+1 settlement. Spec: `intraday_v1.md`, "Accounts, profiles
+and run modes", written before any intraday result.
+
 
 ADR-012 (2026-11-14, #133): after `intraday_v1` showed no edge on real data (#130: every $5k run
 hit the 5% drawdown halt; expectancy -0.01R to -0.18R even before slippage), the owner asked for
@@ -96,3 +108,12 @@ once on 2026. It replaces `dip_v1` (ADR-012) as the main strategy; `dip_v1`'s re
 record. ADR-010's same-day rule applies again. Risk limits are unchanged (`5k` profile, ADR-011).
 At $5,000 the pattern-day-trader rule allows 3 day trades in 5 sessions in a margin account; a
 cash account has no day-trade limit but trades only settled cash. Both are reported.
+
+ADR-014 (2026-11-14, #141): after `intraday_dip_v1` failed (#139), the owner asked for a same-day
+strategy that fits moves like NVDA on 2026-11-12: it opened 13% below the previous close on news
+of the CEO's resignation and recovered most of the way within the session. The candidate is
+`gap_reversal_v1` (`docs/specifications/gap_reversal_v1.md`): a gap down of at least 1 daily ATR,
+bought only after a reclaim (of VWAP, or of the 15-minute high), with a half-gap target and the
+day's-low stop, flat by 15:55. The idea came from inspecting 2026-10-26..2026-11-13, so that
+window is excluded from both test periods and the disclosure is in the spec. R16 is unchanged:
+live trading skips earnings gaps that the backtest includes.
