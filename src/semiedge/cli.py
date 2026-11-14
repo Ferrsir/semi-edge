@@ -730,6 +730,15 @@ def _cmd_backtest_orb_inplay(args: argparse.Namespace) -> int:
     return _run_intraday_family(args, orb_inplay, "orb_inplay_v1", "backtest-orb-inplay")
 
 
+def _cmd_backtest_closing_momentum(args: argparse.Namespace) -> int:
+    """closing_momentum_v2 on cached 5-minute bars: signal study and $5k runs (#169)."""
+    from semiedge.backtest import closing_momentum  # noqa: PLC0415
+
+    return _run_intraday_family(
+        args, closing_momentum, "closing_momentum_v2", "backtest-closing-momentum"
+    )
+
+
 def _run_intraday_family(args: argparse.Namespace, idip: Any, strategy: str, prog: str) -> int:
     settings, config, _ = _load(args)
     limits = _risk_limits(args, args.config_dir or settings.config_dir)
@@ -1429,6 +1438,17 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - one flat parse
     bto.add_argument("--risk-profile", default="5k", help="risk_<name>.yaml; 'default' = risk.yaml")
     bto.add_argument("--output", type=Path, help="new output directory (existing paths refused)")
     bto.set_defaults(handler=_cmd_backtest_orb_inplay)
+    btc = commands.add_parser(
+        "backtest-closing-momentum",
+        parents=[common],
+        help="closing_momentum_v2 on cached 5-minute bars (spec periods only)",
+    )
+    btc.add_argument("--period", choices=("development", "holdout"), required=True)
+    btc.add_argument("--variant", choices=("M1", "M2"), help="required for the holdout")
+    btc.add_argument("--equity", type=float, default=5000.0)
+    btc.add_argument("--risk-profile", default="5k", help="risk_<name>.yaml; 'default' = risk.yaml")
+    btc.add_argument("--output", type=Path, help="new output directory (existing paths refused)")
+    btc.set_defaults(handler=_cmd_backtest_closing_momentum)
     intraday = data_commands.add_parser(
         "fetch-intraday",
         parents=[common],
