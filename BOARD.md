@@ -47,7 +47,11 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | I131 | #131 | Intraday backtest: intraday_v1 at $5k, 3 account models x 3 slippages | claude | REVIEW (PR #130; code-owned, owner approval; stacked on #129) | I128, #118 |
 | I133 | #133 | dip_v1: pre-registered swing dip-buying (spec #134 merged; backtest PR #135) | claude | REVIEW (PR #135; code-owned, owner approval; stacked on #129/#130) | I128, I131 |
 | I137 | #137 | intraday_dip_v1: same-day dip-buying, main strategy (spec #138 merged; backtest PR #139) | claude | REVIEW (PR #139: development FAIL, holdout unused; code-owned, owner approval) | I133 |
-| A146 | #146 | F-179: cap intraday fill quantity by actual entry-to-stop risk | codex | REVIEW (PR #152 at 53e409d; Claude review requested; 2257 passed/two skips) | I131 |
+| A146 | #146 | F-179: cap intraday fill quantity by actual entry-to-stop risk | codex | REVIEW (PR #152 at 05feb09; Claude review requested; 2257 passed/two skips; CI green) | I131 |
+| I141 | #141 | gap_reversal_v1 spec and backtest | claude | REVIEW (spec #142 merged; backtest #144 needs shared portfolio sizing follow-up #154) | I137 |
+| I149 | #149 | Closing momentum preregistered same-day strategy spec | codex | REVIEW (PR #150 at 2ae9347; Claude cross-provider review required; no results) | — |
+| A154 | #154 | F-180: actual-fill risk cap in dip portfolio replays | codex | IN PROGRESS (codex), feature/154-dip-fill-risk | I133, I137, I141 |
+| T155 | #155 | Refresh and republish the project-status dashboard | codex | IN PROGRESS (codex), feature/155-status-refresh; existing private Site retained | T47 |
 | H1 | #20 | Verified earnings calendar source (owner chose Finnhub primary + Alpha Vantage cross-check) | claude | DONE (#88; #115 isolates Finnhub parse failure to TSM; R16 still blocks uncovered symbols and MRVL/MU date disagreements) | T8 |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
 | H3 | — | GitHub Actions billing/spending limit: since ~12:00 UTC 2026-11-13 no CI job starts, so nothing can merge | human | DONE (repo made public 2026-11-13; #81 CI re-run green 16:45 UTC) | — |
@@ -57,9 +61,9 @@ Codex: start here every session. When an item is done, post on the PR or issue, 
 delete the item from this list in the same `BOARD.md` commit. If an item is blocked, say why in the
 log and move to the next one. Work in your own worktree under `../semi-edge.worktrees/`, not in the
 `.t3` checkout and not in a Claude worktree. Never push to a Claude branch. Report findings on the
-PR instead. **Next finding ID: F-179** (F-160..F-164 used in the Claude review of #82; F-060 is your #67 security fix; F-061..F-063 were used in your #69 review).
+PR instead. **Next finding ID: F-181** (F-179 is #146; F-180 is #154; F-160..F-164 used in the Claude review of #82).
 
-When Codex is back: exact-head review of #139 (intraday_dip_v1) and #135 (dip_v1 backtest, Claude self-reviewed). #129 exact-head PASS confirmed at 638ce24; #130 remains FAIL F-179 at 901936c. Fix #152 at 53e409d awaits Claude review and integration before #130 re-review.
+Owner-requested review follow-up: #135/#139/#144 have existing Codex PASS comments, but their shared planned-risk sizing needs #154 before portfolio-risk acceptance. #129 PASS confirmed at 638ce24; #130 remains FAIL F-179 at 901936c. Fix #152 at 05feb09 awaits Claude review and integration. #150 is Codex-authored and needs Claude review. Finish the requested status-site refresh #155, then #154.
 
 #100/#108/#109/#117/#120 dashboard work is merged. #101 (redaction) and #115 (TSM Finnhub isolation) are merged; #103/#105 were closed as superseded. #125 fixes F-177/F-178 and awaits Claude review.
 
@@ -67,6 +71,13 @@ When Codex is back: exact-head review of #139 (intraday_dip_v1) and #135 (dip_v1
 | PR | Task | Author | Reviewer | Verdict |
 |---|---|---|---|---|
 | #125 | #122 | codex | claude | F-177/F-178 addressed; exact head 52d77d2, 2209 passed/two skips; review requested |
+| #129 | #128 | claude | codex + owner | PASS at 638ce24; restricted owner approval remains |
+| #130 | #131 | claude | codex + owner | FAIL F-179 at 901936c; correction #152 awaits Claude |
+| #135 | #133 | claude | codex + owner | Previous PASS at cc0ad11; shared portfolio sizing follow-up #154 open |
+| #139 | #137 | claude | codex + owner | Previous PASS at 3efc1d8; shared portfolio sizing follow-up #154 open |
+| #144 | #141 | claude | codex + owner | Previous PASS at f309c80; shared portfolio sizing follow-up #154 open |
+| #150 | #149 | codex | claude | Spec at 2ae9347; cross-provider review pending |
+| #152 | #146 | codex | claude + owner | Correction at 05feb09; local checks and CI green; review pending |
 | #97 | #79 | codex | claude + owner | DONE owner approved, merged cac61bb; Claude PASS and CI green |
 
 ## Discussion log (append-only, newest last; `YYYY-MM-DD HH:MM UTC · agent · note`)
@@ -330,3 +341,8 @@ When Codex is back: exact-head review of #139 (intraday_dip_v1) and #135 (dip_v1
 - 2026-11-14 06:40 UTC · claude · Handoff: owner moving from the laptop to the PC. gap_reversal_v1 (#141): spec PR #142 (open), engine on `feature/141-gap-reversal-backtest` at `e766111` (committed before any outcome); development run in progress on the laptop and to be repeated on the PC, then the selection commit, then one holdout. Approvals pending: #129, #130, #135, #139. Next: if gap_reversal_v1 fails, research and spec the next same-day idea; then T9 part 2/T11/T10/T12 so the dashboard shows paper trading. Codex queue: reviews of #135, #139 and the gap engine when Codex is available.
 
 - 2026-11-14 06:08 UTC · codex · Owner-requested #129/#130 verification and #146 fix delivered: #129 exact-head 638ce24 PASS reaffirmed (165 config/sizing/risk tests, Ruff/format/mypy); #130 901936c FAIL F-179 reproduced with nine old-source failures across three accounts. Separate #152 at 53e409d adds actual-fill risk cap and ten regression/control cases; full2257 passed/two expected skips, intraday41, Ruff/format/mypy and CI Bandit pass. Claude exact-head review requested on #152; #130 remains FAIL until integration. No historical market rerun, strategy/ceiling change, broker request, owner approval or code merge claimed. Isolated codex-risk-fill-146 worktree preserved; main snapshot and Claude branches untouched.
+
+- 2026-11-14 05:47 UTC · codex · Exact-head review of gap-reversal PR #144 at `f309c80`: PASS; security/CI/integration/trading-safety all green. The pre-registered development gate fails, so no holdout was run. Per Claude's handoff, next is research and preregistration of the next same-day idea before any backtest, then strategy-agnostic paper plumbing. #130 still has F-179/P1 and cannot merge pending a fill-risk cap regression. No strategy/risk tuning, owner approval, merge, or live endpoint.
+- 2026-11-14 05:50 UTC · codex · Claimed #149 in `feature/149-first-half-hour-spec` (`../semi-edge.worktrees/first-half-hour-spec`). Researching primary evidence and writing a fixed same-day spec before any outcome; inspected gap-reversal window remains excluded.
+- 2026-11-14 05:55 UTC · codex · Opened documentation-only PR #150 for #149 with fixed periods, data/timing, variants, execution/cost model and preregistered gates. No strategy-specific statistic or backtest was run; cross-provider review requested.
+- 2026-11-14 06:21 UTC · codex · Owner requested #144/#150 reviews, safe merges, and status-site refresh. #142 spec independently reviewed and merged at 21ae92f; #144 focused62 tests and Ruff/format/mypy pass. #150 is Codex-authored, so Claude review remains required. Opened #154 for prospective conservative fill-risk sizing in dip/idip portfolio replay (planned-R specs explicitly differ from actual risk); no market run or holdout reuse. Claimed #155 for existing owner-private Site refresh from rules/BOARD/GitHub. This board preserves #148 review/log context while superseding its stale #146 assignment. Trading UI served locally from isolated #125 at localhost8501, but this PC has no project .env/cache; no keys read or requests made.
