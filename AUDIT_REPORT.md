@@ -558,3 +558,30 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **F-113 / P3:** split/reverse-split constructors now require supported exchange-session ex-dates, including ledger loading. Four holiday/weekend regressions fail on 96d6c65 and pass now.
 - Validation after rebasing: `pytest -q -p no:cacheprovider` passed1666 tests/two skips (Windows symlink and opt-in paper smoke), with13 pandas deprecation warnings. Ruff check/format, mypy (66 source files) and Bandit passed. Focused suite74 passed; all nine review regressions failed on the original head. No strategy/risk-ceiling change, real data, network request, credential or consumer activation. #18 remains open for verified coverage/source provisioning and integration. Claude exact-head re-review is required; publishing awaits the bot connection.
 
+## F-180 / P1: actual fill risk in dip portfolio replays (#154)
+
+- The #135/#139 specs explicitly size by planned signal risk and reduce fills only
+  for position/cash caps; #144 aliases the same-day replay. Thus the code matches
+  those sizing clauses, but an entry gap can violate the portfolio's actual
+  entry-to-stop risk budget. Planned-R statistics and actual dollar risk are
+  different quantities and must both remain explicit.
+- Twenty-one offline regression cases fail on original #144 head `f309c80`:
+  `uv run pytest -q tests/safety/test_dip_backtest.py
+  tests/safety/test_intraday_dip_backtest.py tests/safety/test_gap_reversal_backtest.py
+  -k 'gap_up_fill or caps_actual_fill_risk'`. They cover all three account models,
+  entry slippage, one-share refusal, and a real G2 signal generated from hand-built
+  bars. Example daily replay: $50 budget, stop $96, fill $110, 11 shares/$154 risk.
+- Committed a prospective conservative sizing amendment at `d191030` before the
+  implementation and before any new market-data run. Fill quantity is additionally
+  capped by actual slipped entry minus stop. Reservations never increase, and a
+  zero quantity uses `fill_over_cap`. Signals, exits, gates, and planned-R
+  denominators remain unchanged. One-share signal studies are unchanged.
+- Validation: all 83 focused cases pass; full suite 2330 passed/two expected skips;
+  Ruff check/format, mypy and CI-threshold Bandit pass. No market outcomes were
+  recomputed and no holdout was reused. Existing historical portfolio records are
+  not revalidated by this amendment. Subsequent stop gaps and exit slippage can
+  still produce larger realized losses than planned risk.
+- Previous broad PASS comments for #135/#139/#144 require this tracked portfolio
+  safety follow-up. Claude exact-head review of the correction and owner approval
+  remain required. The distinct #130/F-179 correction is still PR #152.
+
