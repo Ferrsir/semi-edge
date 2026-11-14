@@ -21,10 +21,17 @@ import pandas as pd
 
 from semiedge.dashboard.charts import (
     RANGES,
+    cached_intraday_symbols,
     cached_symbols,
     candle_rows,
     candle_spec,
+    intraday_rows,
+    intraday_sessions,
+    intraday_spec,
     load_daily,
+    load_intraday,
+    prior_day_high,
+    session_levels,
     summary,
 )
 from semiedge.dashboard.desk import render_desk
@@ -118,8 +125,16 @@ PAGES = ["Overview", "Signals", "Positions", "Trade history", "Operations", "Cha
 
 
 def _charts(st: Any, root: Path) -> None:
-    """Daily candles from the price cache (#116); needs no state database."""
+    """Candles from the price cache (#116, #121); needs no state database."""
     st.header("Charts")
+    size = st.radio("Bar size", ["Daily", "5-minute"], index=0, horizontal=True)
+    if size == "5-minute":
+        _intraday_chart(st, root)
+    else:
+        _daily_chart(st, root)
+
+
+def _daily_chart(st: Any, root: Path) -> None:
     symbols = cached_symbols(root)
     if not symbols:
         st.text("No cached daily bars yet. Run `semiedge data fetch` to fill the cache.")
@@ -146,7 +161,43 @@ def _charts(st: Any, root: Path) -> None:
     st.text(display(read["last"]))
     st.text(display(read["averages"]))
     st.vega_lite_chart(spec, width="stretch")
-    st.caption("5-minute candles appear here once the intraday data is cached.")
+
+
+def _intraday_chart(st: Any, root: Path) -> None:
+    symbols = cached_intraday_symbols(root)
+    if not symbols:
+        st.text("No cached 5-minute bars yet. Run `semiedge data fetch-intraday` to fill them.")
+        return
+    st.caption(
+        "5-minute bars from the local cache · regular hours, New York time · SIP · split-adjusted"
+    )
+    default = symbols.index("SMH") if "SMH" in symbols else 0
+    symbol = st.selectbox("Symbol", symbols, index=default)
+    try:
+        frame = load_intraday(root, symbol)
+        daily = load_daily(root, symbol) if symbol in cached_symbols(root) else None
+    except (OSError, ValueError) as exc:
+        st.text("Price data unavailable")
+        st.text(display(exc))
+        return
+    if frame is None or frame.empty:
+        st.text("No cached 5-minute bars for this symbol.")
+        return
+    sessions = intraday_sessions(frame)
+    session = st.selectbox("Session", sessions, index=0)
+    rows = intraday_rows(frame, session)
+    levels = session_levels(rows, prior_day_high(daily, session))
+    spec = intraday_spec(rows, title=f"{symbol} · {session}", levels=levels)
+    if spec is None:
+        st.text("No usable bars in this session.")
+        return
+    shown = " · ".join(
+        f"{name} {value:,.2f}" if value is not None else f"{name} n/a"
+        for name, value in levels.items()
+    )
+    st.text(display(f"{len(rows)} bars · {shown}"))
+    st.text("Violet line: VWAP · dashed lines: opening range and prior-day high")
+    st.vega_lite_chart(spec, width="stretch")
 
 
 def render(st: Any, *, source: Any = "cache", now: datetime | None = None) -> None:
