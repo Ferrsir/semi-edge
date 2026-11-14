@@ -390,8 +390,11 @@ class EarningsProvider:
     def _covers_request(
         snap: SourceSnapshot, attempts: Mapping[str, Any], wanted: frozenset[str] | None
     ) -> bool:
-        """Fresh for this universe: it covers every wanted symbol, or the last fetch asked for exactly
-        this universe and only unparseable symbols are missing (#114). A changed universe refetches."""
+        """Fresh for this universe (#114).
+
+        True when the snapshot covers every wanted symbol, or when the last fetch asked for exactly
+        this universe and only unparseable symbols are missing. A changed universe refetches.
+        """
         if snap.symbols == wanted:
             return True
         if wanted is None or snap.symbols is None or not snap.symbols <= wanted:
