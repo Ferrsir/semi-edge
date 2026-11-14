@@ -371,3 +371,32 @@ def test_streamlit_toolbar_is_viewer_only():
         Path(semiedge.dashboard.__file__).parents[3] / ".streamlit" / "config.toml"
     ).read_text()
     assert 'toolbarMode = "viewer"' in config
+
+
+# ------------------------------------------------------------------ auto-refresh (#125)
+
+
+class _AutoUI(FakeUI):
+    def __init__(self, page):
+        super().__init__(page)
+        self.fragments = []
+
+    def toggle(self, label, value=False):
+        return True
+
+    def fragment(self, run_every=None):
+        def wrap(fn):
+            self.fragments.append(run_every)
+            return fn
+
+        return wrap
+
+
+@pytest.mark.parametrize(("page", "timed"), [("Overview", True), ("Operations", False)])
+def test_auto_refresh_reruns_pages_but_never_the_halt_form(tmp_path, monkeypatch, page, timed):
+    fixture_db(tmp_path, "cache")
+    monkeypatch.setenv("SEMIEDGE_DATA_DIR", str(tmp_path))
+    ui = _AutoUI(page)
+    render(ui, source="cache", now=NOW)
+    assert ui.fragments == ([60] if timed else [])
+    assert any(line.startswith("Updated ") for line in ui.output)

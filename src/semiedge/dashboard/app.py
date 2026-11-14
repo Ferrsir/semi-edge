@@ -200,15 +200,14 @@ def _intraday_chart(st: Any, root: Path) -> None:
     st.vega_lite_chart(spec, width="stretch")
 
 
-def render(st: Any, *, source: Any = "cache", now: datetime | None = None) -> None:
-    st.set_page_config(page_title="SEMI-EDGE", layout="wide")
-    st.sidebar.text("SEMI-EDGE · PAPER only")
-    root = source_root(Path(os.environ.get("SEMIEDGE_DATA_DIR", "data")), source)
-    path = root / "state" / "semiedge.sqlite3"
-    if source == "synthetic":
-        st.warning(SYNTHETIC_BANNER)
-    page = st.sidebar.radio("Page", PAGES)
-    st.sidebar.button("Refresh")
+AUTO_REFRESH_SECONDS = 60
+
+
+def _page_body(
+    st: Any, page: str, root: Path, path: Path, source: Any, *, now: datetime | None
+) -> None:
+    """Everything below the sidebar for one page; re-run on a timer when auto-refresh is on."""
+    st.caption(f"Updated {datetime.now(UTC):%H:%M:%S} UTC")
     if page == "Charts":  # reads the price cache only, so it works before the bot has ever run
         _charts(st, root)
         return
@@ -234,6 +233,30 @@ def render(st: Any, *, source: Any = "cache", now: datetime | None = None) -> No
         _operations(st, view, path, now)
     else:
         _section(st, view.sections[page])
+
+
+def render(st: Any, *, source: Any = "cache", now: datetime | None = None) -> None:
+    st.set_page_config(page_title="SEMI-EDGE", layout="wide")
+    st.sidebar.text("SEMI-EDGE · PAPER only")
+    root = source_root(Path(os.environ.get("SEMIEDGE_DATA_DIR", "data")), source)
+    path = root / "state" / "semiedge.sqlite3"
+    if source == "synthetic":
+        st.warning(SYNTHETIC_BANNER)
+    page = st.sidebar.radio("Page", PAGES)
+    st.sidebar.button("Refresh")
+    toggle = getattr(st.sidebar, "toggle", None)
+    auto = (
+        bool(toggle(f"Auto-refresh every {AUTO_REFRESH_SECONDS} s", value=True))
+        if toggle
+        else False
+    )
+    # The halt form would lose what the operator is typing if the page re-ran under it.
+    if auto and page != "Operations" and hasattr(st, "fragment"):
+        st.fragment(run_every=AUTO_REFRESH_SECONDS)(_page_body)(
+            st, page, root, path, source, now=now
+        )
+    else:
+        _page_body(st, page, root, path, source, now=now)
 
 
 def main() -> None:
