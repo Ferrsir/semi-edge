@@ -48,3 +48,16 @@ failures retry at most `max_attempts_per_day` times). R16, `earnings_blackout_se
 `require_verified_earnings_data: true` are unchanged. Yahoo and other unofficial feeds are
 excluded. The vendor calendar is not point-in-time, so backtests keep the labelled waiver.
 Spec: `docs/specifications/earnings-calendar.md`.
+
+ADR-010 (2026-11-14): SEMI-EDGE is a day-trading system. Owner decision: replace the daily swing
+strategy `momentum_v1` (daily bars, next-open entries, holds of up to 5 sessions, a 50-day sector
+filter) with a same-day strategy on 5-minute bars, flat by 15:55 ET, on the same 16 tradable semis
+with SMH as the market filter, under the unchanged risk ceilings. The first strategy is an
+opening-range breakout (`docs/specifications/intraday_orb_v1.md`), the lead's recommendation when
+the owner asked: these stocks concentrate range and volume in the first hour, the rules are fully
+mechanical, and the risk per trade is known before entry. It was chosen and parameterised before
+any intraday data was examined. For the record, the one swing backtest run on real data
+(`semiedge backtest --source cache --start 2023-06-01 --end 2026-11-13`) returned +3.4% over the
+period, while buying and holding SMH or QQQ returned far more. That result did not drive this
+decision; the owner made it because the system is meant to day trade.
+
