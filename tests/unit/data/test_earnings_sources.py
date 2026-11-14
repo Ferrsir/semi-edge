@@ -261,8 +261,6 @@ def test_failure_keeps_error_status_and_blocks_until_success(tmp_path: Path) -> 
     ("response", "code"),
     [
         ((401, b""), "http_401"),
-        ((200, b"not json"), "parse_error"),
-        ((200, b'{"earningsCalendar":[{"symbol":"AMD","date":"2026-11-25"}]}'), "parse_error"),
         (TimeoutError("timed out"), "transport_timeouterror"),
     ],
 )
@@ -493,3 +491,37 @@ def test_well_formed_cache_still_loads(tmp_path: Path) -> None:
         snap, attempts = load_snapshot(provider.cache_path(source), source)
         assert snap is not None
         assert set(attempts) == {"date", "count", "last_attempt_at"}
+
+
+# ------------------------------------------------------------------ #114: per-symbol parse failures
+
+_TAIWAN_ROW = b'{"earningsCalendar":[{"symbol":"2330.TW","date":"2027-01-13","hour":"bmo"}]}'
+
+
+@pytest.mark.parametrize(
+    "bad_body",
+    [_TAIWAN_ROW, b"not json", b'{"earningsCalendar":[{"symbol":"AMD","date":"2026-11-25"}]}'],
+)
+def test_one_unparseable_symbol_blocks_only_that_symbol(tmp_path: Path, bad_body: bytes) -> None:
+    """Finnhub answers TSM with 2330.TW: that symbol is left uncovered, the rest stay verified."""
+    clock = FrozenClock(START)
+    provider = _provider(tmp_path, FakeHttp({"NVDA": (200, bad_body)}), clock)
+    finnhub, _ = provider.refresh()
+    assert (finnhub.action, finnhub.status, finnhub.error) == ("fetched", "ok", None)
+    snap = provider.snapshots()[FINNHUB]
+    assert snap is not None
+    assert snap.symbols == frozenset({"AMD"})
+    resolve = provider.resolver()
+    nvda = resolve("NVDA", START.date())
+    assert (nvda.verified, nvda.reason) == (False, "finnhub_symbol_not_covered")
+    assert resolve("AMD", START.date()).verified is True
+
+
+def test_every_symbol_unparseable_still_fails_the_snapshot(tmp_path: Path) -> None:
+    http = FakeHttp({"NVDA": (200, _TAIWAN_ROW), "AMD": (200, b"not json")})
+    assert _provider(tmp_path, http, FrozenClock(START)).refresh()[0].error == "parse_error"
+
+
+def test_an_http_failure_on_one_symbol_still_fails_the_whole_snapshot(tmp_path: Path) -> None:
+    http = FakeHttp({"NVDA": (500, b"")})
+    assert _provider(tmp_path, http, FrozenClock(START)).refresh()[0].error == "http_500"

@@ -416,17 +416,31 @@ class EarningsProvider:
         start = now.date()
         end = start + timedelta(days=self._settings.lookahead_days)
         events: list[EarningsEvent] = []
+        covered: list[str] = []
+        unparsed: list[str] = []
         for index, symbol in enumerate(self._universe):
             if index:
                 self._sleep(self._settings.finnhub_min_interval_seconds)
             query = urlencode({"from": start.isoformat(), "to": end.isoformat(), "symbol": symbol})
+            # A transport or HTTP failure is an outage, not one symbol: it fails the whole snapshot.
             body = self._get(f"{_FINNHUB_URL}?{query}", {"X-Finnhub-Token": key})
             try:
                 events.extend(parse_finnhub_json(body, symbol=symbol, start=start, end=end))
             except FinnhubParseError:
-                raise _FetchError("parse_error") from None
+                # Owner decision 2026-11-14 (#114): one symbol's unparseable answer (Finnhub returns
+                # 2330.TW for TSM) leaves that symbol uncovered, so R16 blocks it alone.
+                unparsed.append(symbol)
+                continue
+            covered.append(symbol)
+        if not covered:
+            raise _FetchError("parse_error")
+        if unparsed:
+            log.warning(
+                "finnhub answers failed to parse; symbols left uncovered",
+                extra={"source": FINNHUB, "symbols": ",".join(unparsed)},
+            )
         return SourceSnapshot(
-            FINNHUB, now, start, end, frozenset(self._universe), tuple(events), "ok", None
+            FINNHUB, now, start, end, frozenset(covered), tuple(events), "ok", None
         )
 
     def _fetch_av(self, key: str, now: datetime) -> SourceSnapshot:

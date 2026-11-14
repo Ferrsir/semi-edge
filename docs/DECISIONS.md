@@ -64,3 +64,9 @@ any intraday data was examined. For the record, the one swing backtest run on re
 period, while buying and holding SMH or QQQ returned far more. That result did not drive this
 decision; the owner made it because the system is meant to day trade.
 
+ADR-009 amendment (2026-11-14, #114): with real keys, Finnhub answered TSM with a row for the
+Taiwan listing `2330.TW`, and the rule that one symbol's parse failure fails the whole snapshot
+blocked all 16 symbols. Owner decision: an unparseable answer now leaves only that symbol
+uncovered (`finnhub_symbol_not_covered`, still blocked by R16); transport and HTTP failures and an
+all-symbols parse failure still fail the whole snapshot. R16 itself is unchanged.
+
