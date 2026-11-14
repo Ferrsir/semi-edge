@@ -47,6 +47,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | I131 | #131 | Intraday backtest: intraday_v1 at $5k, 3 account models x 3 slippages | claude | REVIEW (PR #130; code-owned, owner approval; stacked on #129) | I128, #118 |
 | I133 | #133 | dip_v1: pre-registered swing dip-buying (spec #134 merged; backtest PR #135) | claude | REVIEW (PR #135; code-owned, owner approval; stacked on #129/#130) | I128, I131 |
 | I137 | #137 | intraday_dip_v1: same-day dip-buying, main strategy (spec #138 merged; backtest PR #139) | claude | REVIEW (PR #139: development FAIL, holdout unused; code-owned, owner approval) | I133 |
+| A146 | #146 | F-179: cap intraday fill quantity by actual entry-to-stop risk | codex | IN PROGRESS (codex), feature/146-fill-risk-cap; isolated codex-risk-fill-146 | I131 |
 | H1 | #20 | Verified earnings calendar source (owner chose Finnhub primary + Alpha Vantage cross-check) | claude | DONE (#88; #115 isolates Finnhub parse failure to TSM; R16 still blocks uncovered symbols and MRVL/MU date disagreements) | T8 |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
 | H3 | — | GitHub Actions billing/spending limit: since ~12:00 UTC 2026-11-13 no CI job starts, so nothing can merge | human | DONE (repo made public 2026-11-13; #81 CI re-run green 16:45 UTC) | — |
