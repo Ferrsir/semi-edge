@@ -447,7 +447,11 @@ def _cmd_data_status(args: argparse.Namespace) -> int:
 
 
 def _read_intraday_caches(
-    data_dir: Path, config: AppConfig, symbols: tuple[str, ...]
+    data_dir: Path,
+    config: AppConfig,
+    symbols: tuple[str, ...],
+    *,
+    daily_symbols: tuple[str, ...] | None = None,
 ) -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
     """Read the cached 5-minute and daily frames; a corrupt file is an error, never skipped."""
     feed, adjustment = config.data.daily_feed, config.data.adjustment
@@ -460,6 +464,7 @@ def _read_intraday_caches(
             series = intraday_store.read(symbol, feed=feed, adjustment=adjustment)
             if series is not None:
                 intraday[symbol] = series.frame
+        for symbol in symbols if daily_symbols is None else daily_symbols:
             stored = daily_store.read(symbol, feed=feed, adjustment=adjustment)
             if stored is not None:
                 daily[symbol] = stored.frame
@@ -493,6 +498,154 @@ def _intraday_summary_lines(
             f"{s_all['max_drawdown_pct']:>9.2f}"
             f"{s_all['net_without_best_5_sessions']:>11,.0f}   {per}"
         )
+    return lines
+
+
+def _risk_limits(args: argparse.Namespace, config_dir: Path) -> Any:
+    from semiedge.config.loader import load_risk_profile  # noqa: PLC0415
+
+    try:
+        profile = None if args.risk_profile in (None, "default") else args.risk_profile
+        return load_risk_profile(config_dir, profile)
+    except ConfigError as exc:
+        raise CommandError(EXIT_CONFIG, f"Risk profile rejected: {exc}") from None
+
+
+def _dip_report(args: argparse.Namespace, panel: Any, limits: Any) -> dict[str, Any]:
+    from semiedge.backtest import dip  # noqa: PLC0415
+
+    start, end = dip.DEVELOPMENT if args.period == "development" else dip.HOLDOUT
+    variants = list(dip.VARIANTS) if args.variant is None else [args.variant]
+    study: dict[str, dict[str, Any]] = {}
+    for slip in dip.SLIPPAGES:
+        for v in (*variants, "baseline"):
+            trades = dip.signal_study(panel, v, start=start, end=end, slippage_bps=slip)
+            study[f"{v}@{slip:g}"] = dip.study_stats(trades)
+    at20 = {v: study[f"{v}@20"] for v in (*variants, "baseline")}
+    runs = [
+        dip.replay(
+            panel,
+            variant=v,
+            start=start,
+            end=end,
+            start_equity=args.equity,
+            limits=limits,
+            account=a,
+            slippage_bps=slip,
+        )
+        for v in variants
+        for a in dip.ACCOUNT_MODELS
+        for slip in dip.SLIPPAGES
+    ]
+    report: dict[str, Any] = {"study": study}
+    if args.period == "development":
+        chosen, notes = dip.select_variant(at20)
+        report["selection"] = {"selected": chosen, "notes": notes}
+    else:
+        net = next(
+            r.summary()["net_pnl"]
+            for r in runs
+            if r.account == "unrestricted" and r.slippage_bps == dip.SELECTION_SLIPPAGE
+        )
+        failed = dip.holdout_pass(at20, args.variant, net)
+        report["holdout"] = {"variant": args.variant, "passed": not failed, "failed": failed}
+    report["runs"] = [r.to_dict() for r in runs]
+    report["smh_buy_and_hold_pct"] = dip.smh_buy_and_hold(panel, start, end)
+    report["window"] = [start.isoformat(), end.isoformat()]
+    return report
+
+
+_DIP_LABELS = [
+    "SURVIVORSHIP-BIASED UNIVERSE: current hand-picked list, not point-in-time",
+    "EARNINGS BLACKOUT NOT APPLIED: no point-in-time earnings history",
+    "PRICE RETURNS ONLY: dividends excluded",
+    "DAILY BARS: an intraday stop fill assumes the stop price traded",
+]
+
+
+def _cmd_backtest_dip(args: argparse.Namespace) -> int:
+    """dip_v1 on cached daily bars: signal study and $5k portfolio runs (#133)."""
+    from semiedge.backtest import dip  # noqa: PLC0415
+
+    settings, config, _ = _load(args)
+    limits = _risk_limits(args, args.config_dir or settings.config_dir)
+    if not (args.equity > 0 and math.isfinite(args.equity)):
+        raise CommandError(EXIT_CONFIG, "--equity must be a positive number")
+    if args.period == "holdout" and args.variant is None:
+        raise CommandError(EXIT_CONFIG, "the holdout runs once, with the selected --variant")
+    if args.output is not None and args.output.exists():
+        raise CommandError(EXIT_DATA, "Backtest failed: output_path_exists.")
+    tradable = config.universe.tradable_symbols
+    benchmark = config.universe.regime_benchmark
+    _, end = dip.DEVELOPMENT if args.period == "development" else dip.HOLDOUT
+    _, daily = _read_intraday_caches(
+        settings.data_dir, config, (), daily_symbols=(*tradable, benchmark)
+    )
+    if benchmark not in daily:
+        raise CommandError(EXIT_DATA, f"No cached daily bars for {benchmark}.")
+    panel = dip.prepare_panel(daily, tradable=tradable, benchmark=benchmark, end=end)
+    body = _dip_report(args, panel, limits)
+    command = (
+        f"semiedge backtest-dip --period {args.period}"
+        + (f" --variant {args.variant}" if args.variant else "")
+        + f" --equity {args.equity:g} --risk-profile {args.risk_profile or 'default'}"
+    )
+    holdout_label = ["HOLDOUT RUN: run once with the pre-selected variant"]
+    report = {
+        "strategy": "dip_v1",
+        "period": args.period,
+        "command": command,
+        "start_equity": args.equity,
+        "risk_profile": args.risk_profile or "default",
+        "limits": limits.model_dump(mode="json"),
+        "labels": [*_DIP_LABELS, *(holdout_label if args.period == "holdout" else [])],
+        **body,
+    }
+    if args.output is not None:
+        args.output.mkdir(parents=True, exist_ok=False)
+        path = args.output / "dip_backtest.json"
+        path.write_text(json.dumps(report, indent=1, default=str), encoding="utf-8")
+    sys.stdout.write("\n".join(_dip_summary_lines(report)) + "\n")
+    return EXIT_OK
+
+
+def _dip_summary_lines(report: dict[str, Any]) -> list[str]:
+    w = report["window"]
+    lines = [
+        f"dip_v1 {report['period']} {w[0]}..{w[1]}, start equity "
+        f"{report['start_equity']:,.0f}, profile {report['risk_profile']}",
+        *report["labels"],
+        "",
+        "Signal study (one-share trades, no limits):",
+        f"{'variant@bps':<16}{'trades':>8}{'win%':>7}{'mean R':>9}{'95% CI':>20}",
+    ]
+    for key, s in report["study"].items():
+        ci = s.get("mean_r_95ci", ["", ""])
+        lines.append(
+            f"{key:<16}{s.get('trades', 0):>8}{s.get('win_rate', 0) * 100:>7.1f}"
+            f"{s.get('mean_r', 0):>9.3f}{ci!s:>20}"
+        )
+    if "selection" in report:
+        sel = report["selection"]
+        lines += ["", f"Selection (20 bps): {sel['selected'] or 'none qualifies'}", *sel["notes"]]
+    if "holdout" in report:
+        h = report["holdout"]
+        lines += ["", f"Holdout pass test: {'PASS' if h['passed'] else 'FAIL'}", *h["failed"]]
+    lines += [
+        "",
+        f"Portfolio runs (SMH buy-and-hold {report['smh_buy_and_hold_pct']}%):",
+        f"{'variant':<9}{'account':<13}{'slip':>5}{'trades':>8}{'win%':>7}{'mean R':>8}"
+        f"{'net $':>10}{'net %':>8}{'maxDD %':>9}  halted",
+    ]
+    for r in report["runs"]:
+        s = r["summary"]
+        lines.append(
+            f"{r['variant']:<9}{r['account']:<13}{r['slippage_bps']:>5.0f}{s['trades']:>8}"
+            f"{s.get('win_rate', 0) * 100:>7.1f}{s.get('mean_r', 0):>8.3f}"
+            f"{s['net_pnl']:>10,.0f}{s['net_return_pct']:>8.2f}"
+            f"{s['max_drawdown_pct']:>9.2f}  {s['drawdown_halt_on'] or '-'}"
+        )
+    lines += ["", f"Command: {report['command']}"]
     return lines
 
 
@@ -1092,6 +1245,15 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - one flat parse
     bti.add_argument("--risk-profile", default="5k", help="risk_<name>.yaml; 'default' = risk.yaml")
     bti.add_argument("--output", type=Path, help="new output directory (existing paths refused)")
     bti.set_defaults(handler=_cmd_backtest_intraday)
+    btd = commands.add_parser(
+        "backtest-dip", parents=[common], help="dip_v1 on cached daily bars (spec periods only)"
+    )
+    btd.add_argument("--period", choices=("development", "holdout"), required=True)
+    btd.add_argument("--variant", choices=("S1", "S2"), help="required for the holdout")
+    btd.add_argument("--equity", type=float, default=5000.0)
+    btd.add_argument("--risk-profile", default="5k", help="risk_<name>.yaml; 'default' = risk.yaml")
+    btd.add_argument("--output", type=Path, help="new output directory (existing paths refused)")
+    btd.set_defaults(handler=_cmd_backtest_dip)
     intraday = data_commands.add_parser(
         "fetch-intraday",
         parents=[common],
