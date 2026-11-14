@@ -70,6 +70,18 @@ blocked all 16 symbols. Owner decision: an unparseable answer now leaves only th
 uncovered (`finnhub_symbol_not_covered`, still blocked by R16); transport and HTTP failures and an
 all-symbols parse failure still fail the whole snapshot. R16 itself is unchanged.
 
+ADR-011 (2026-11-14, #128): a $5k account profile and account models. Owner decisions: the
+day-trading strategy is tested with about $5,000 so results reflect a similar amount of real money,
+through a backtest, a local simulation on live bars and Alpaca paper. `config/risk_5k.yaml` holds
+the $5k limits (1% risk per trade, 25% per position, 3 positions, 75% gross exposure, unchanged 1%
+daily-loss and 5% drawdown halts) and is used only when a run selects it; `config/risk.yaml` is
+unchanged. The ceilings in `src/semiedge/safety/limits.py` rise just enough to allow that profile,
+and `RiskLimits` defaults are now `DEFAULT_RISK_LIMITS` (today's values) instead of the ceilings,
+so raising a ceiling never loosens a run that relies on defaults. Every backtest reports three
+account models (`unrestricted`, `margin_pdt`, `cash`) because a real account of this size is bound
+by the pattern-day-trader rule or by T+1 settlement. Spec: `intraday_v1.md`, "Accounts, profiles
+and run modes", written before any intraday result.
+
 
 ADR-012 (2026-11-14, #133): after `intraday_v1` showed no edge on real data (#130: every $5k run
 hit the 5% drawdown halt; expectancy -0.01R to -0.18R even before slippage), the owner asked for
@@ -105,3 +117,11 @@ bought only after a reclaim (of VWAP, or of the 15-minute high), with a half-gap
 day's-low stop, flat by 15:55. The idea came from inspecting 2026-10-26..2026-11-13, so that
 window is excluded from both test periods and the disclosure is in the spec. R16 is unchanged:
 live trading skips earnings gaps that the backtest includes.
+
+ADR-015 (2026-11-14, #145): owner decisions overnight: keep working toward a same-day strategy
+that works in a backtest, and test only the current market regime. The candidate is
+`orb_inplay_v1` (`docs/specifications/orb_inplay_v1.md`), the 5-minute opening-range breakout
+in stocks in play from Zarattini, Barbon and Aziz (2024), long-only. Periods: development
+2026-01..06, holdout 2026-07-01..10-23, with the inspected 10-26..11-13 window excluded. The
+decision cost is 10 bps a side for this spec only; the rationale is in the spec. Risk limits are
+unchanged.

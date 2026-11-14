@@ -178,6 +178,19 @@ discarded.
 
 ## Implementation plan (separate PRs)
 
+### Prospective portfolio safety amendment (#154, F-180; 2026-11-14)
+
+Before any new market-data run, fill quantity must additionally be capped by
+`floor(signal_equity * max_risk_per_trade_pct / (slipped_fill - stop))`.
+Refuse the entry if no share fits; never increase the reserved quantity.
+Rationale: a next-open gap can widen actual entry-to-stop risk beyond the reserved
+budget even though the signal's planned risk is unchanged. This conservative cap
+does not change signals, stops, exits, selection gates or the planned-R denominator
+used in either study or portfolio statistics. Exit slippage and later stop gaps can
+still make realized losses exceed planned risk. Historical results remain records
+of the original sizing rule; this amendment does not authorize a holdout rerun or
+relabel those results as validated under the new cap.
+
 1. Daily-history fetch from 2016-01-04 (the existing `data fetch`).
 2. `backtest/dip.py` with the signal study, the portfolio replay and the CLI, committed before any
    real-data run.
