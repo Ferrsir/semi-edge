@@ -361,7 +361,7 @@ class RiskManager:
 
     def _r01_mode(self, portfolio: PortfolioView) -> tuple[RiskCheck, str]:
         mode = portfolio.mode
-        ok = mode in (TradingMode.BACKTEST, TradingMode.PAPER)
+        ok = mode in (TradingMode.BACKTEST, TradingMode.PAPER, TradingMode.SIM)
         if self._waiver != "none" and mode != TradingMode.BACKTEST:
             ok = False
         return _check("R01_mode", ok, f"mode {mode!s}, earnings_waiver {self._waiver}"), (
