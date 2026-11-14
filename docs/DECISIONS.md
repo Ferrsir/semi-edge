@@ -84,3 +84,15 @@ picking whichever variant tests best would overfit. So two dip signals are pre-r
 selected on 2016–2024 only, and 2025–2026 is held out and run once against a baseline of buying
 any day in an uptrend. The intraday dip variant is deferred, not tested. Risk limits are
 unchanged (the `5k` profile, ADR-011).
+
+ADR-013 (2026-11-14, #137): owner decision: SEMI-EDGE's main strategy is same-day dip-buying,
+traded at high frequency between the open and the close, with no multi-day holds and no 50-day
+filter ("we are DAY TRADING ... we just need the signal that a stock is low and that it should
+go back up"). The strategy is `intraday_dip_v1` (`docs/specifications/intraday_dip_v1.md`): a
+stock stretched below today's VWAP prints a reversal bar; the target is VWAP, the stop is the
+day's low, and everything is flat by 15:55. Two stretch signals are pre-registered (distance
+below VWAP; drop relative to SMH since the open), selected on 2024-12-16..2025-12-31 and tested
+once on 2026. It replaces `dip_v1` (ADR-012) as the main strategy; `dip_v1`'s results stay on
+record. ADR-010's same-day rule applies again. Risk limits are unchanged (`5k` profile, ADR-011).
+At $5,000 the pattern-day-trader rule allows 3 day trades in 5 sessions in a margin account; a
+cash account has no day-trade limit but trades only settled cash. Both are reported.
