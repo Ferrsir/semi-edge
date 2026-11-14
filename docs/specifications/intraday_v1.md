@@ -44,8 +44,8 @@ For one symbol on session `d`, bars are `b_1` (09:30–09:35) … `b_78`.
 | `ORH`, `ORL` | max high / min low of `b_1 … b_3` (09:30–09:45) |
 | `ORW` | `ORH − ORL` |
 | `ORV` | `V(b_1) + V(b_2) + V(b_3)` |
-| `ORV_avg` | mean of `ORV` over the prior 20 sessions; current session excluded |
-| `SV_k` | slot volume: mean of `V(b_k)` over the prior 20 sessions (the same bar of the day) |
+| `ORV_avg` | mean of `ORV` over those of the prior 20 sessions whose opening range is complete (at least 15); current session excluded |
+| `SV_k` | slot volume: mean of `V(b_k)` over those of the prior 20 sessions that have bar `b_k` (at least 15; an early close or a vendor gap drops a session) |
 | `PDH` | prior session's daily high |
 | `ATR_d1` | Wilder ATR(14) of daily bars up to and including session `d−1` (as in `momentum_v1`) |
 | `VWAP_k` | `Σ(TP·V) / ΣV` over `b_1 … b_k`, with `TP = (H + L + C) / 3`; resets every session |
@@ -58,7 +58,9 @@ that bar:
 
 1. **Market filter:** `C_SMH(b_k) > VWAP_SMH_k`.
 2. **Earnings:** R16 (`earnings_blackout_sessions`, verified earnings data) allows the symbol today.
-3. **History:** 20 prior sessions of complete 5-minute data and 15 daily bars exist.
+3. **History:** 20 prior sessions exist, at least 15 of them with complete 5-minute data, and
+   15 daily bars exist. (Clarified 2026-11-14, #130, before any intraday result: read literally,
+   one early close or vendor gap would have disabled the late-day setups for four weeks.)
 4. **Role:** `role: tradable` in the universe.
 5. **One position per symbol:** the symbol has no open position or pending entry.
 
