@@ -44,6 +44,7 @@ STOP_ATR = 2.0
 MIN_HISTORY = 60
 MAX_HELD = 3
 MIN_RISK_FRACTION = 0.0005
+PLACEHOLDER_MAX_VOLUME = 1_000.0  # revision 1.1: H == L on less volume is not a trading session
 PDT_EQUITY = 25_000.0
 PDT_MAX_DAY_TRADES = 3
 PDT_WINDOW = 5
@@ -107,6 +108,16 @@ def _session_dates(index: pd.Index) -> list[date]:
     return [pd.Timestamp(x).date() for x in index]
 
 
+def _drop_placeholders(frame: pd.DataFrame) -> pd.DataFrame:
+    """Revision 1.1: a bar with no range on almost no volume did not trade; it becomes missing."""
+    if "volume" not in frame.columns:
+        return frame
+    placeholder = (frame["high"] == frame["low"]) & (frame["volume"] < PLACEHOLDER_MAX_VOLUME)
+    out = frame.copy()
+    out.loc[placeholder, ["open", "high", "low", "close"]] = np.nan
+    return out
+
+
 def prepare_panel(
     daily: dict[str, pd.DataFrame],
     *,
@@ -139,6 +150,7 @@ def prepare_panel(
         else:
             frame = cut(raw)
             frame = frame.set_axis(pd.Index(_session_dates(frame.index))).reindex(grid)
+            frame = _drop_placeholders(frame)
         c = frame["close"].astype(float)
         h, lo = frame["high"].astype(float), frame["low"].astype(float)
         a = atr(h, lo, c, ATR_WINDOW)
@@ -205,6 +217,7 @@ class _Open:
     fill: float
     stop: float
     shares: int
+    risk: float  # revision 1.1: risk planned at the signal, C(t) - stop = 2 * ATR14(t)
     held: int = 0
     exit_pending: str | None = None
 
@@ -288,7 +301,7 @@ def signal_study(
             fill = _try_fill(p, sig.symbol, i + 1, sig.stop, slip)
             if isinstance(fill, str):
                 continue
-            pos = _Open(sig.symbol, i, i + 1, fill, sig.stop, 1)
+            pos = _Open(sig.symbol, i, i + 1, fill, sig.stop, 1, sig.close - sig.stop)
             done: tuple[str, float, int] | None = None
             for j in range(i + 1, i1 + 1):
                 res = _open_exit(p, pos, j) if j > pos.entry_i else None
@@ -299,7 +312,7 @@ def signal_study(
             if done is None:
                 done = ("end_of_window", _last_close(p, sig.symbol, i1, fill), i1)
             reason, price, j = done
-            r = (price * (1 - slip) - fill) / (fill - sig.stop)
+            r = (price * (1 - slip) - fill) / (sig.close - sig.stop)
             trades.append(
                 StudyTrade(
                     sig.symbol,
@@ -489,7 +502,7 @@ def replay(  # noqa: PLR0912, PLR0915 - one pass over the sessions keeps the eve
                 round(sale, 4),
                 reason,
                 round(pnl, 2),
-                round((sale - pos.fill) / (pos.fill - pos.stop), 4),
+                round((sale - pos.fill) / pos.risk, 4),
             )
         )
 
@@ -517,7 +530,9 @@ def replay(  # noqa: PLR0912, PLR0915 - one pass over the sessions keeps the eve
                 result.refusals["fill_over_cap"] += 1
                 continue
             cash -= shares * fill
-            positions[sym] = _Open(sym, pend.signal_i, i, fill, pend.stop, shares)
+            positions[sym] = _Open(
+                sym, pend.signal_i, i, fill, pend.stop, shares, pend.estimate - pend.stop
+            )
         pending = {}
         # 2. the session: stops (live from the entry session), then the close-based exits
         for pos in list(positions.values()):

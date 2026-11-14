@@ -123,7 +123,38 @@ def test_gap_through_the_stop_sells_at_the_open():
     p.o["NVDA"][3], p.lo["NVDA"][3] = 94.0, 93.0
     (t,) = _study(p)
     assert t.reason == "stop_gap"
-    assert t.r_multiple == pytest.approx((94 - 100) / 4)
+    assert t.r_multiple == pytest.approx((94 - 100) / 4)  # planned risk C(t) - stop = 4
+
+
+def test_r_uses_the_risk_planned_at_the_signal():
+    """Revision 1.1: an open that gaps toward the stop cannot inflate R."""
+    p = _panel(10)
+    _signal(p, "NVDA", 1)
+    p.o["NVDA"][2] = 96.5  # fill 0.5 above the stop; planned risk is still 4
+    p.sma5["NVDA"][2] = 95.0
+    p.o["NVDA"][3] = 98.5
+    (t,) = _study(p)
+    assert t.reason == "bounce"
+    assert t.r_multiple == pytest.approx((98.5 - 96.5) / 4)  # not (98.5 - 96.5) / 0.5
+
+
+def test_placeholder_bars_are_missing():
+    frames = _daily(("NVDA", "SMH"), date(2019, 1, 2), date(2019, 12, 31))
+    nvda = frames["NVDA"].copy()
+    rows = nvda.index[100:110]
+    nvda.loc[rows, ["open", "high", "low", "close"]] = 50.0
+    nvda.loc[rows, "volume"] = 0.0
+    p = dip.prepare_panel(
+        {**frames, "NVDA": nvda}, tradable=("NVDA",), benchmark="SMH", end=date(2019, 12, 31)
+    )
+    assert np.isnan(p.c["NVDA"][100:110]).all()
+    assert not p.shared["NVDA"][100:161].any()
+    busy = nvda.copy()
+    busy.loc[rows, "volume"] = 5_000.0  # a real zero-range session on volume is kept
+    q = dip.prepare_panel(
+        {**frames, "NVDA": busy}, tradable=("NVDA",), benchmark="SMH", end=date(2019, 12, 31)
+    )
+    assert (q.c["NVDA"][100:110] == 50.0).all()
 
 
 def test_entry_opening_at_or_below_the_stop_is_cancelled():
@@ -138,7 +169,7 @@ def test_slippage_applies_to_both_legs():
     _signal(p, "NVDA", 1)
     (t,) = _study(p, slip=20.0)
     fill, sale = 100 * 1.002, 100 * 0.998
-    assert t.r_multiple == pytest.approx((sale - fill) / (fill - 96.0), abs=1e-4)
+    assert t.r_multiple == pytest.approx((sale - fill) / 4.0, abs=1e-4)  # planned risk
 
 
 def test_an_open_trade_closes_at_the_end_of_the_window():
