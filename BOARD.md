@@ -25,7 +25,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T10 | #22 | Broker reconciliation + restart recovery | codex | READY | T9 |
 | T11 | #23 | Position management, stop/target, time exits | claude | READY | T9 |
 | T12 | #24 | Exchange-calendar scheduler / trading loop | codex | READY | T9, T10, T11 |
-| T13 | #25 | Streamlit dashboard (dark theme) | codex | DONE (#82/#100/#109 merged; daily price Charts in #117) | T4 |
+| T13 | #25 | Streamlit dashboard (dark theme) | codex | DONE (#82/#100/#109; daily Charts #117 and 5-minute Charts #120 merged) | T4 |
 | T14 | #26 | Discord notifications | codex | READY | T12 |
 | T15 | #27 | Docker / compose, health checks, graceful shutdown | claude | READY | T12 |
 | T16 | #29 | Security: secret handling, redaction, prompt-injection tests | codex | IN PROGRESS (codex): core and redaction follow-ups #74/#101 merged; §13 e2e test open | T4 |
@@ -42,7 +42,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | A79 | #79 | Backtest review follow-ups F-090..F-095 and F-154 | codex | DONE (owner-approved PR #97 merged cac61bb) | T5, T6 |
 | A98 | #98 | Remaining free-text credential forms (F-102) | codex | DONE (PR #101 merged 32128fd; 2150 passed/two skips) | T16 |
 | A103 | #103 | Equity-chart observation/session handling | codex | DONE (superseded by dashboard redesign #108 and price Charts #117; #105 closed) | T13 |
-| A122 | #122 | Dashboard status truthfulness and current strategy label (F-177/F-178) | codex | IN PROGRESS (codex) | T13 |
+| A122 | #122 | Dashboard status truthfulness and current strategy label (F-177/F-178) | codex | REVIEW (PR #125 at 52d77d2; 2209 passed/two skips; Claude review requested) | T13 |
 | H1 | #20 | Verified earnings calendar source (owner chose Finnhub primary + Alpha Vantage cross-check) | claude | DONE (#88; #115 isolates Finnhub parse failure to TSM; R16 still blocks uncovered symbols and MRVL/MU date disagreements) | T8 |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
 | H3 | — | GitHub Actions billing/spending limit: since ~12:00 UTC 2026-11-13 no CI job starts, so nothing can merge | human | DONE (repo made public 2026-11-13; #81 CI re-run green 16:45 UTC) | — |
@@ -54,13 +54,12 @@ log and move to the next one. Work in your own worktree under `../semi-edge.work
 `.t3` checkout and not in a Claude worktree. Never push to a Claude branch. Report findings on the
 PR instead. **Next finding ID: F-179** (F-160..F-164 used in the Claude review of #82; F-060 is your #67 security fix; F-061..F-063 were used in your #69 review).
 
-#100/#108/#109/#117 dashboard work is merged. #101 (redaction) and #115 (TSM Finnhub isolation) are merged; #103/#105 were closed as superseded.
+#100/#108/#109/#117/#120 dashboard work is merged. #101 (redaction) and #115 (TSM Finnhub isolation) are merged; #103/#105 were closed as superseded. #125 fixes F-177/F-178 and awaits Claude review.
 
 ## Review queue
 | PR | Task | Author | Reviewer | Verdict |
 |---|---|---|---|---|
-
-
+| #125 | #122 | codex | claude | F-177/F-178 addressed; exact head 52d77d2, 2209 passed/two skips; review requested |
 | #97 | #79 | codex | claude + owner | DONE owner approved, merged cac61bb; Claude PASS and CI green |
 
 ## Discussion log (append-only, newest last; `YYYY-MM-DD HH:MM UTC · agent · note`)
@@ -317,3 +316,4 @@ PR instead. **Next finding ID: F-179** (F-160..F-164 used in the Claude review o
 - 2026-11-14 01:30 UTC · claude · Owner decisions: (1) SEMI-EDGE is a day-trading system. `momentum_v1` (daily swing) is retired; the new strategy is `docs/specifications/intraday_v1.md` (ADR-010, #111, merged as #112 `b2d4066`): long-only on 5-minute bars, three setups (opening-range breakout to 11:30, prior-day-high breakout to 15:30, VWAP pullback 10:30-15:00), flat by 15:55, same 16 semis, unchanged risk limits. Written before any intraday data was examined. (2) Codex is out of quota, so Claude reviews its own PRs, labelled "Claude self-review", until the owner says Codex is back. #109 (desk) merged `cc74054` after self-review. Real-data runs with the owner's keys: paper account read (100k, flat), daily bars cached 2023-01-03..2026-11-13, swing backtest +3.4% (`semiedge backtest --source cache --start 2023-06-01 --end 2026-11-13`). Known issue: Finnhub returns `2330.TW` for TSM, which fails the whole Finnhub refresh and blocks all symbols in R16; fix next (TSM-only block). Next Claude tasks: 5-minute data fetch/cache, then the intraday backtest engine.
 - 2026-11-14 02:47 UTC · codex · Closed #105 and #103 as superseded: #108 replaced the old Overview equity chart, while #117 delivers the current read-only daily price Charts page. No rebase is useful because it would restore the obsolete dashboard implementation. #101 remains with Claude for cross-provider review.
 - 2026-11-14 02:55 UTC · codex · Reconciled board with main: #101 merged at 32128fd, #115 at d9a0a43 (per-symbol TSM isolation), and #117 at 5dea98b (read-only daily price Charts). Updated T13/T16/A98/H1 and removed the stale #101 review row. #103/#105 closure already recorded.
+- 2026-11-14 03:06 UTC · codex · #109 post-merge safety review found F-177/P2 (RUNNING without a fresh engine heartbeat) and F-178/P3 (retired momentum_v1 desk branding). Opened #122, implemented fail-closed status plus neutral active-strategy wording in #125 at exact head 52d77d2. Rebased after #120/#124; full2209/two, Ruff/format, mypy78 and Bandit pass. Claude review requested; no trading/risk changes.
