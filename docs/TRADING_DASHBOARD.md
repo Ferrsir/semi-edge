@@ -124,6 +124,13 @@ New York time, with the running VWAP, the opening range (09:30-09:45 high and lo
 three bars exist) and the prior day's high from the daily cache: the levels `intraday_v1` trades. When the state database is missing, the other
 pages keep their "Dashboard unavailable" error and point to the Charts page.
 
+## Auto-refresh
+
+A sidebar switch (on by default) re-runs the open page every 60 seconds with Streamlit's
+`st.fragment(run_every=...)`, so new cache data or state rows appear without a click; each run
+shows its UTC time. The Operations page is never re-run on a timer, because the manual-halt form
+would lose what the operator is typing. **Refresh** still re-runs everything at once.
+
 ## Dependencies and validation
 
 `dashboard = ["streamlit>=1.40"]` is an optional dependency and its resolved packages
