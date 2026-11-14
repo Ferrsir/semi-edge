@@ -44,7 +44,11 @@ appended to the §0.2 import table (`tests/safety/test_import_boundaries.py`).
   at least `finnhub_min_interval_seconds` apart (free tier: 60 calls/min). Every response must be
   a JSON object whose `earningsCalendar` is a list of objects. Each object has a `symbol` equal to
   the requested symbol and an ISO `date` inside the requested window. Anything else is a
-  `parse_error`. A failure for any one symbol fails the whole Finnhub snapshot (fail closed).
+  `parse_error`. A transport or HTTP failure for any one symbol fails the whole Finnhub snapshot
+  (fail closed). An answer for one symbol that does not parse (Finnhub returns `2330.TW` for TSM)
+  leaves only that symbol uncovered, so it resolves as `finnhub_symbol_not_covered` and R16 blocks
+  it alone; if no symbol parses, the snapshot fails with `parse_error` (owner decision
+  2026-11-14, #114).
 - Alpha Vantage: one bulk request per refresh,
   `GET https://www.alphavantage.co/query?function=EARNINGS_CALENDAR&horizon=3month&apikey=…`
   (free tier: 25 requests/day). The response must be CSV with at least the columns `symbol` and

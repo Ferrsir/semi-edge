@@ -170,6 +170,7 @@ def _snapshot_to_json(snap: SourceSnapshot, attempts: Mapping[str, Any]) -> dict
 
 
 _ATTEMPT_KEYS = frozenset({"date", "count", "last_attempt_at"})
+_OPTIONAL_ATTEMPT_KEYS = frozenset({"requested"})  # symbols the last fetch asked for (#114)
 
 
 def _req(raw: Mapping[str, Any], key: str, kind: type | tuple[type, ...]) -> Any:
@@ -202,7 +203,7 @@ def _attempts_from_json(raw: Any) -> dict[str, Any]:
         raise EarningsDataError("cache attempts missing")
     if not raw:
         return {}
-    if set(raw) != _ATTEMPT_KEYS:
+    if not _ATTEMPT_KEYS <= set(raw) <= _ATTEMPT_KEYS | _OPTIONAL_ATTEMPT_KEYS:
         raise EarningsDataError("cache attempts malformed")
     date.fromisoformat(_req(raw, "date", str))
     if _req(raw, "count", int) < 0:
@@ -210,6 +211,10 @@ def _attempts_from_json(raw: Any) -> dict[str, Any]:
     last = datetime.fromisoformat(_req(raw, "last_attempt_at", str))
     if last.tzinfo is None:
         raise EarningsDataError("cache last_attempt_at must be timezone-aware")
+    if "requested" in raw:
+        requested = _req(raw, "requested", list)
+        if [_symbol(r) for r in requested] != sorted(set(requested)):
+            raise EarningsDataError("cache attempts requested list malformed")
     return dict(raw)
 
 
@@ -344,7 +349,7 @@ class EarningsProvider:
                 snap is not None
                 and snap.status == "ok"
                 and snap.fetched_at.astimezone(UTC).date() == now.date()
-                and snap.symbols == wanted
+                and self._covers_request(snap, attempts, wanted)
             ):
                 return RefreshOutcome(source, "skipped_fresh", "ok", None)
             count = int(attempts.get("count", 0)) if attempts.get("date") == today else 0
@@ -368,6 +373,8 @@ class EarningsProvider:
                     )
         prior = int(attempts.get("count", 0)) if attempts.get("date") == today else 0
         new_attempts = {"date": today, "count": prior + 1, "last_attempt_at": now.isoformat()}
+        if wanted is not None:
+            new_attempts["requested"] = sorted(wanted)
         try:
             fresh = self._fetch_finnhub(key, now) if source == FINNHUB else self._fetch_av(key, now)
         except _FetchError as exc:
@@ -378,6 +385,21 @@ class EarningsProvider:
         _save(path, fresh, new_attempts)
         log.info("earnings refresh ok", extra={"source": source, "events": len(fresh.events)})
         return RefreshOutcome(source, "fetched", "ok", None)
+
+    @staticmethod
+    def _covers_request(
+        snap: SourceSnapshot, attempts: Mapping[str, Any], wanted: frozenset[str] | None
+    ) -> bool:
+        """Fresh for this universe (#114).
+
+        True when the snapshot covers every wanted symbol, or when the last fetch asked for exactly
+        this universe and only unparseable symbols are missing. A changed universe refetches.
+        """
+        if snap.symbols == wanted:
+            return True
+        if wanted is None or snap.symbols is None or not snap.symbols <= wanted:
+            return False
+        return attempts.get("requested") == sorted(wanted)
 
     @staticmethod
     def _status(snap: SourceSnapshot | None) -> Literal["ok", "error", "missing"]:
@@ -416,17 +438,31 @@ class EarningsProvider:
         start = now.date()
         end = start + timedelta(days=self._settings.lookahead_days)
         events: list[EarningsEvent] = []
+        covered: list[str] = []
+        unparsed: list[str] = []
         for index, symbol in enumerate(self._universe):
             if index:
                 self._sleep(self._settings.finnhub_min_interval_seconds)
             query = urlencode({"from": start.isoformat(), "to": end.isoformat(), "symbol": symbol})
+            # A transport or HTTP failure is an outage, not one symbol: it fails the whole snapshot.
             body = self._get(f"{_FINNHUB_URL}?{query}", {"X-Finnhub-Token": key})
             try:
                 events.extend(parse_finnhub_json(body, symbol=symbol, start=start, end=end))
             except FinnhubParseError:
-                raise _FetchError("parse_error") from None
+                # Owner decision 2026-11-14 (#114): one symbol's unparseable answer (Finnhub returns
+                # 2330.TW for TSM) leaves that symbol uncovered, so R16 blocks it alone.
+                unparsed.append(symbol)
+                continue
+            covered.append(symbol)
+        if not covered:
+            raise _FetchError("parse_error")
+        if unparsed:
+            log.warning(
+                "finnhub answers failed to parse; symbols left uncovered",
+                extra={"source": FINNHUB, "symbols": ",".join(unparsed)},
+            )
         return SourceSnapshot(
-            FINNHUB, now, start, end, frozenset(self._universe), tuple(events), "ok", None
+            FINNHUB, now, start, end, frozenset(covered), tuple(events), "ok", None
         )
 
     def _fetch_av(self, key: str, now: datetime) -> SourceSnapshot:
