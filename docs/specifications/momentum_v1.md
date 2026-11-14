@@ -1,7 +1,7 @@
 # Specification — `momentum_v1`
 
 Status: **Retired 2026-11-14 (owner decision, ADR-010).** SEMI-EDGE is a day-trading system; the
-replacement is `intraday_orb_v1.md`. The implementation stays in the repo until the intraday
+replacement is `intraday_v1.md`. The implementation stays in the repo until the intraday
 strategy replaces it. Parameters: `config/strategies/momentum_v1.yaml`.
 
 Long-only, sector-relative momentum breakout on completed **daily** bars.
