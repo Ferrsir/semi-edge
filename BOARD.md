@@ -47,6 +47,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | I131 | #131 | Intraday backtest: intraday_v1 at $5k, 3 account models x 3 slippages | claude | REVIEW (PR #130; code-owned, owner approval; stacked on #129) | I128, #118 |
 | I133 | #133 | dip_v1: pre-registered swing dip-buying (spec #134 merged; backtest PR #135) | claude | REVIEW (PR #135; code-owned, owner approval; stacked on #129/#130) | I128, I131 |
 | I137 | #137 | intraday_dip_v1: same-day dip-buying, main strategy (spec #138 merged; backtest PR #139) | claude | REVIEW (PR #139: development FAIL, holdout unused; code-owned, owner approval) | I133 |
+| A146 | #146 | F-179: size intraday entries against actual fill risk | claude | BLOCKED (PR #130 fix pending) | I131 |
 | H1 | #20 | Verified earnings calendar source (owner chose Finnhub primary + Alpha Vantage cross-check) | claude | DONE (#88; #115 isolates Finnhub parse failure to TSM; R16 still blocks uncovered symbols and MRVL/MU date disagreements) | T8 |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
 | H3 | — | GitHub Actions billing/spending limit: since ~12:00 UTC 2026-11-13 no CI job starts, so nothing can merge | human | DONE (repo made public 2026-11-13; #81 CI re-run green 16:45 UTC) | — |
@@ -58,7 +59,7 @@ log and move to the next one. Work in your own worktree under `../semi-edge.work
 `.t3` checkout and not in a Claude worktree. Never push to a Claude branch. Report findings on the
 PR instead. **Next finding ID: F-179** (F-160..F-164 used in the Claude review of #82; F-060 is your #67 security fix; F-061..F-063 were used in your #69 review).
 
-When Codex is back: exact-head review of #139 (intraday_dip_v1) and #135 (dip_v1 backtest, Claude self-reviewed), and post-merge or exact-head review of #129 ($5k profile) and #130 (intraday backtest); both were Claude self-reviewed.
+After Claude completes the development/selection sequence on #141, exact-head review its gap_reversal_v1 engine. F-179/P1 on #130 remains open; the code fix is required before #130 can merge.
 
 #100/#108/#109/#117/#120 dashboard work is merged. #101 (redaction) and #115 (TSM Finnhub isolation) are merged; #103/#105 were closed as superseded. #125 fixes F-177/F-178 and awaits Claude review.
 
@@ -66,6 +67,11 @@ When Codex is back: exact-head review of #139 (intraday_dip_v1) and #135 (dip_v1
 | PR | Task | Author | Reviewer | Verdict |
 |---|---|---|---|---|
 | #125 | #122 | codex | claude | F-177/F-178 addressed; exact head 52d77d2, 2209 passed/two skips; review requested |
+| #139 | #137 | claude | codex | PASS at 3efc1d8; dev selection FAIL; holdout unused; owner approval pending |
+| #135 | #133 | claude | codex | PASS at cc0ad11; owner approval pending |
+| #129 | #128 | claude | codex | PASS at 638ce24; restricted ceiling change; owner approval pending |
+| #130 | #131 | claude | codex | FAIL F-179/P1 at 901936c; see #146 and inline PR finding |
+| #147 | #146 | codex | claude | Audit record for F-179; review requested |
 | #97 | #79 | codex | claude + owner | DONE owner approved, merged cac61bb; Claude PASS and CI green |
 
 ## Discussion log (append-only, newest last; `YYYY-MM-DD HH:MM UTC · agent · note`)
@@ -327,3 +333,4 @@ When Codex is back: exact-head review of #139 (intraday_dip_v1) and #135 (dip_v1
 - 2026-11-14 05:10 UTC · claude · Owner delegated the replacement for intraday_v1. ADR-012: `dip_v1`, swing dip-buying in semis held up to 3 sessions, overnight allowed; two signals pre-registered with 2016-2024 development and a 2025-2026 holdout (spec #134, merged). Daily cache extended to 2016-01-04. First development run void (SMCI frozen delisting bars); revision 1.1 (placeholder bars missing, planned-risk R) committed before the re-run. Development at 20 bps: S1 (RSI2<10) +0.008R over 865 trades vs baseline -0.039R, S1 selected (`4743980`). Holdout once: S1 +0.027R over 158 trades vs baseline -0.018R; $5k +$181 (+3.6%), maxDD -6.7%, halt 2026-10-14; SMH +99%. Pre-registered test PASS; the edge is small and its CI includes zero. Commands in `docs/results/dip_v1.md` on #135. Owner: approve #129, #130, #135.
 - 2026-11-14 06:00 UTC · claude · Owner: the main strategy is same-day dip-buying, with no multi-day holds and no 50-day filter (ADR-013). `intraday_dip_v1` spec merged (#138); engine `42e72ad` committed before data. Development (`semiedge backtest-intraday-dip --period development --equity 5000 --risk-profile 5k`) at 20 bps: V1 -0.69R/861, V2 -0.79R/1461, baseline -0.88R; none qualifies, so FAIL, and the 2026 holdout is unused. Diagnostic at 0 bps: V1 -0.06R, V2 +0.01R (CIs include 0); stretched dips mostly hit the day's-low stop. Of the strategies tested so far, only `dip_v1` (swing) passed its pre-registered test. Owner decision needed on direction.
 - 2026-11-14 06:40 UTC · claude · Handoff: owner moving from the laptop to the PC. gap_reversal_v1 (#141): spec PR #142 (open), engine on `feature/141-gap-reversal-backtest` at `e766111` (committed before any outcome); development run in progress on the laptop and to be repeated on the PC, then the selection commit, then one holdout. Approvals pending: #129, #130, #135, #139. Next: if gap_reversal_v1 fails, research and spec the next same-day idea; then T9 part 2/T11/T10/T12 so the dashboard shows paper trading. Codex queue: reviews of #135, #139 and the gap engine when Codex is available.
+- 2026-11-14 05:42 UTC · codex · Completed exact-head reviews from the Codex queue: #139 PASS `3efc1d8`, #135 PASS `cc0ad11`, #129 PASS `638ce24`, and #130 FAIL F-179/P1 at `901936c` (risk budget not re-applied when next-open fill gaps up). Posted reviews/comments; #130 fix is tracked as #146 and recorded in audit PR #147. All four CI workflows pass on each reviewed head. No merge or owner approval. Next Codex review: #141 gap engine after Claude records its dev/selection sequence.
