@@ -111,6 +111,17 @@ validated enums, numbers, or a component name that matches a strict pattern. Str
 developer toolbar is hidden (`client.toolbarMode = "viewer"`), and the theme in
 `.streamlit/config.toml` matches the desk's palette.
 
+## Charts
+
+The Charts page (#116) reads the local price cache read-only (`ParquetBarStore`, the configured
+SIP feed and split adjustment) and needs no state database, so it works before the bot has run a
+session. It draws daily candles with the 20- and 50-day averages and volume for any cached
+symbol, over 3 months, 6 months or a year. Averages are computed on the full cached history and
+undefined values are left out, never filled in; a malformed bar is skipped. The chart is a plain
+Vega-Lite spec built by `semiedge.dashboard.charts`, so the base install tests it. 5-minute
+candles follow when the intraday data is cached. When the state database is missing, the other
+pages keep their "Dashboard unavailable" error and point to the Charts page.
+
 ## Dependencies and validation
 
 `dashboard = ["streamlit>=1.40"]` is an optional dependency and its resolved packages

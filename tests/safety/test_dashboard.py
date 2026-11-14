@@ -59,9 +59,14 @@ class FakeUI:
     def html(self, markup):
         self.output.append("html:" + markup)
 
-    def radio(self, label, options):
-        assert self.page in options
-        return self.page
+    def radio(self, label, options, **kwargs):
+        if label == "Page":
+            assert self.page in options
+            return self.page
+        return options[kwargs.get("index", 0)]
+
+    def selectbox(self, label, options, index=0):
+        return options[index]
 
     def button(self, label):
         return False
