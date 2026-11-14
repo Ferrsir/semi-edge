@@ -31,6 +31,23 @@ Void run, kept for the record: engine `76d6ed5` (revision 1.0) selected S1 on a 
 that came from three SMCI trades on frozen delisting bars (+363R to +440R). See revision 1.1 in
 the spec.
 
-## Holdout 2025-01-02..2026-11-13
+## Holdout 2025-01-02..2026-11-13 (run once, S1, after `4743980` recorded the selection)
 
-Not run yet. This file, with the S1 selection above, is committed before the holdout run.
+`semiedge backtest-dip --period holdout --variant S1 --equity 5000 --risk-profile 5k`
+
+| run | bps | trades | win % | mean R | 95% CI |
+|---|---|---|---|---|---|
+| S1 signal study | 10 | 158 | 62.7 | +0.053 | -0.036..+0.142 |
+| S1 signal study | 20 | 158 | 62.0 | +0.027 | -0.063..+0.116 |
+| S1 signal study | 30 | 158 | 60.8 | +0.000 | -0.088..+0.089 |
+| baseline | 20 | 3863 | 51.7 | -0.018 | -0.035..-0.001 |
+
+$5,000 portfolio, S1, every account model alike: 74 trades at 20 bps, net **+$181 (+3.63%)**,
+maximum drawdown -6.66%, 5% drawdown halt on 2026-10-14 (+$267 at 10 bps, +$161 at 30 bps).
+SMH buy-and-hold over the same period: +99.06%.
+
+**Pass test: PASS** (at least 60 trades; mean R above 0 and above the baseline; positive
+$5,000 net). Reading: the dip condition beats buying any uptrend day in both periods, by about
+0.05R per trade, but S1's own edge is small, its interval includes zero at 20 bps in both
+periods, and it earns a small fraction of holding SMH. It is a candidate for paper trading, not
+evidence of a profitable system (ground rule 7).
