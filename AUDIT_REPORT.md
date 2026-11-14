@@ -23,9 +23,9 @@ Running record of independently verified findings. Each entry names the severity
 reproduction, impact, fix and test evidence. **Confirmed** findings were reproduced; **Speculative**
 concerns are risks that have not been demonstrated and must not be read as bugs.
 
-Severity: **P0** could place unintended orders / reach a live endpoint / lose money uncontrolled Â·
-**P1** wrong trading decision, wrong P&L, or broken build/safety guarantee Â· **P2** robustness or
-diagnosability gap with a workaround Â· **P3** hygiene.
+Severity: **P0** could place unintended orders / reach a live endpoint / lose money uncontrolled ·
+**P1** wrong trading decision, wrong P&L, or broken build/safety guarantee · **P2** robustness or
+diagnosability gap with a workaround · **P3** hygiene.
 
 Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 
@@ -33,14 +33,14 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 
 ## Confirmed findings
 
-### F-001 Â· P1 Â· `.gitignore` excluded the `semiedge.data` source package
+### F-001 · P1 · `.gitignore` excluded the `semiedge.data` source package
 - **Where:** `.gitignore` rule `data/` (unanchored); affects `src/semiedge/data/**`.
-- **Reproduce:** `git check-ignore -v src/semiedge/data/schema.py` â†’ matched `data/`.
+- **Reproduce:** `git check-ignore -v src/semiedge/data/schema.py` → matched `data/`.
   `git ls-files src/semiedge/data` at commit `1ebc169` returned nothing, although that commit's
   message and `phase1-interfaces.md` state `semiedge.data.schema` is implemented.
 - **Impact:** every fresh clone (CI, deployment, the other agent) lacked the bar-frame contract;
-  `semiedge.config.models` imports it, so configuration loading â€” including the paper-only safety
-  guard â€” failed with `ImportError`. Any new module under `src/semiedge/data/` (calendar, store,
+  `semiedge.config.models` imports it, so configuration loading — including the paper-only safety
+  guard — failed with `ImportError`. Any new module under `src/semiedge/data/` (calendar, store,
   validation) would also have been silently dropped from commits by `git add -A`.
   Codex hit this independently and had recreated a reduced stand-in `schema.py` to restore imports.
 - **Fix (implemented):** anchor the rules to the repository root (`/data/`, `/logs/`); restore the
@@ -50,7 +50,7 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
   `git check-ignore --no-index` over every source/test/config file;
   `test_data_package_importable` imports the contract.
 
-### F-002 Â· P2 Â· Duplicate YAML keys silently applied the last value (found by Codex)
+### F-002 · P2 · Duplicate YAML keys silently applied the last value (found by Codex)
 - **Where:** `semiedge.config.loader._read_yaml` (used `yaml.safe_load`).
 - **Reproduce:** a `risk.yaml` containing `max_position_pct: 0.01` then `max_position_pct: 0.05`
   loaded as `0.05`.
@@ -61,7 +61,7 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Test evidence:** `tests/unit/test_config_audit.py::test_duplicate_yaml_values_are_rejected`,
   `test_empty_or_nonstring_key_configuration_is_invalid`.
 
-### F-003 Â· P1 Â· Safety flags and numeric limits accepted coerced / non-finite values (found by Codex)
+### F-003 · P1 · Safety flags and numeric limits accepted coerced / non-finite values (found by Codex)
 - **Where:** `semiedge.config.models._Frozen`, `semiedge.safety.modes.validate_safety_flags`.
 - **Reproduce:** `order_submission_permitted(PAPER, enable_order_submission="false", ...)` treated
   the non-empty string as truthy; `RiskLimits(allow_leverage=0)`, `max_positions=2.0`,
@@ -73,7 +73,7 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Test evidence:** `tests/safety/test_safety_audit.py::test_raw_guard_rejects_non_boolean_flags`
   (14 cases), `tests/unit/test_config_audit.py` non-finite and coercion cases.
 
-### F-004 Â· P2 Â· Secrets could leak through tracebacks, nested extras and JSON escaping (found by Codex)
+### F-004 · P2 · Secrets could leak through tracebacks, nested extras and JSON escaping (found by Codex)
 - **Where:** `semiedge.logconfig.SecretRedactionFilter` / `configure_logging`.
 - **Reproduce:** `logger.exception(...)` with the secret in the exception message, in a nested
   `extra={"details": {...}}`, or containing a newline (JSON-escaped form) rendered unredacted;
@@ -83,17 +83,17 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
   JSON-escaped form of each secret, drop the length floor.
 - **Test evidence:** `tests/safety/test_safety_audit.py::test_configured_logging_redacts_nested_fields_and_exception` (6 cases).
 
-### F-005 Â· P3 Â· Non-paper endpoint rejection echoed the URL, including userinfo (found by Codex)
+### F-005 · P3 · Non-paper endpoint rejection echoed the URL, including userinfo (found by Codex)
 - **Where:** `semiedge.safety.broker.assert_paper_client`.
 - **Fix (implemented):** the message names only the allowed paper URL.
 - **Test evidence:** `test_endpoint_rejection_does_not_echo_url_credentials`.
 
-### F-006 Â· P3 Â· `ruff format` (>=0.17) rewrote Python blocks inside Markdown specs
+### F-006 · P3 · `ruff format` (>=0.17) rewrote Python blocks inside Markdown specs
 - **Where:** `pyproject.toml` `[tool.ruff]`.
 - **Impact:** `ruff format --check .` in CI would fail once specs are merged; specs lost alignment.
 - **Fix (implemented):** `extend-exclude = ["*.md"]`.
 
-### F-007 Â· Confirmed Â· P2 Â· Bar schema accepted invalid index units and optional dtypes
+### F-007 · Confirmed · P2 · Bar schema accepted invalid index units and optional dtypes
 - **Where:** `semiedge.data.schema.validate_bar_frame`.
 - **Reproduction:** `f = empty_bar_frame(); f.index = f.index.as_unit("us");
   f["vwap"] = pd.Series(dtype="str"); validate_bar_frame(f)` returned successfully.
@@ -106,7 +106,7 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Test evidence:** `tests/unit/data/test_schema_audit.py` (five regression cases), run with
   `.venv/Scripts/python -m pytest -q tests/unit/data/test_schema_audit.py`.
 
-### F-008 Â· P2 Â· Missing app configuration sections silently selected defaults (Codex, #37)
+### F-008 · P2 · Missing app configuration sections silently selected defaults (Codex, #37)
 - **Where:** `semiedge.config.loader.load_app_config`.
 - **Reproduce:** replace `app.yaml` with `{}`, `data: {}`, or `scanner: {}` and run
   `.venv/Scripts/python -m pytest -q tests/unit/test_config.py -k missing_app_sections`.
@@ -118,7 +118,7 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Regression:** `test_missing_app_sections_fail_closed` covers each missing-section combination;
   existing repository-config loading covers the valid configuration.
 
-### F-009 Â· P1 Â· Bar store spliced split/dividend adjustment bases into one series (Claude, PR #36)
+### F-009 · P1 · Bar store spliced split/dividend adjustment bases into one series (Claude, PR #36)
 - **Where:** `semiedge.data.store.ParquetBarStore.write` (merge path) for `adjustment != raw`;
   `config/app.yaml` uses `adjustment: split`.
 - **Reproduce:** store split-adjusted bars through 2024-05-31, then write post-split (restated,
@@ -136,7 +136,7 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
   `tests/unit/data/test_store.py::test_disjoint_adjusted_append_rejected`,
   `test_dividend_rebase_detected_on_anchor_close`, `test_backfill_checks_latest_shared_session`.
 
-### F-010 Â· P2 Â· Alpaca adapter returned in-progress (partial) daily bars (Claude, PR #36)
+### F-010 · P2 · Alpaca adapter returned in-progress (partial) daily bars (Claude, PR #36)
 - **Where:** `semiedge.data.alpaca_source.AlpacaMarketDataSource.get_daily_bars`.
 - **Reproduce:** fake client returning a 2024-03-12 bar with `now = 2024-03-12 15:00 UTC`
   (11:00 ET, session open); before the fix the partial bar was returned for IEX, SIP and
@@ -150,14 +150,14 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Regression:** `test_in_progress_session_bar_is_not_returned` (3 feeds),
   `test_early_close_session_is_returned_once_closed`.
 
-### F-011 Â· P3 Â· Store logged an OHLCV correction when nothing stored changed (Claude, PR #36)
+### F-011 · P3 · Store logged an OHLCV correction when nothing stored changed (Claude, PR #36)
 - **Where:** `ParquetBarStore.write`.
 - **Reproduce:** write a correction, then rewrite the original rows with an older `fetched_at`; the
   older rows lose the merge but the WARNING was still emitted.
 - **Fix:** compare stored rows with the merged result. **Regression:**
   `tests/integration/data/test_adapters_store.py::test_roundtrip_merge_summary` (older refetch).
 
-### F-012 Â· P1 Â· Adjusted refetch with an interior gap kept a stored row on the old basis (Claude review, PR #36)
+### F-012 · P1 · Adjusted refetch with an interior gap kept a stored row on the old basis (Claude review, PR #36)
 - **Where:** `semiedge.data.store._check_adjustment_basis` (head `492b75e`).
 - **Reproduce:** store split-adjusted bars 2024-01-02..2024-06-28, then write the same range
   restated /10 (post-split) but missing one interior session (vendor gap). Before the fix the write
@@ -176,7 +176,7 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
   `test_same_basis_refetch_with_interior_gap_keeps_stored_session`.
 
 
-### F-024 Â· P1 Â· Fetch-time tie-breaking kept stored rows that the basis check never anchored (Codex review, PR #36)
+### F-024 · P1 · Fetch-time tie-breaking kept stored rows that the basis check never anchored (Codex review, PR #36)
 - **Where:** `semiedge.data.store.ParquetBarStore.write` / `_check_adjustment_basis` (head `b2c43f0`).
 - **Reproduce:** write split-adjusted 2024-01-02..03 (closes 100) at fetched_at Jan 4, refetch Jan 3
   unchanged at Jan 6, then write both sessions rebased /10 at Jan 5. The check only anchored stored
@@ -193,7 +193,7 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
   (all three fail on `b2c43f0`); same-basis out-of-order and full newer replacement stay accepted
   (`test_same_basis_out_of_order_refetch_is_accepted`, `test_newer_rebased_refetch_replacing_everything_is_accepted`).
 
-### F-026 Â· P2 Â· Validated finite target multiple produced an eligible signal with an infinite target (Codex review, PR #48)
+### F-026 · P2 · Validated finite target multiple produced an eligible signal with an infinite target (Codex review, PR #48)
 - **Where:** `semiedge.strategy.momentum_v1._evaluate_symbol` (head `38b7865`).
 - **Reproduce:** `target_atr_multiple=1.7e308` (accepted by `MomentumV1Params`) on the standard eligible
   fixture gave `eligible=True`, `proposed_target=inf`.
@@ -207,14 +207,14 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Regression:** `tests/unit/strategy/test_momentum_v1_evaluate.py::test_non_finite_proposed_target_makes_symbol_ineligible`,
   `test_overflowing_atr_makes_symbol_ineligible` (fails on `92e9b48`).
 
-### F-027 Â· P3 Â· Oversized integer sizing input raised OverflowError (Codex review, PR #48)
+### F-027 · P3 · Oversized integer sizing input raised OverflowError (Codex review, PR #48)
 - **Where:** `semiedge.risk.sizing._positive_finite`.
 - **Reproduce:** `propose_position_size(10**1000, 100, 95, ...)` raised instead of returning the
   documented invalid result.
 - **Fix:** float conversion failures return `shares=0`, `binding_constraint="invalid"` with a reason.
 - **Regression:** `tests/safety/test_position_sizing.py::test_integer_too_large_for_float_is_invalid_not_an_exception`.
 
-### F-030 Â· P2 Â· `semiedge account` let paper-client construction errors escape unsanitised (Codex review, PR #50)
+### F-030 · P2 · `semiedge account` let paper-client construction errors escape unsanitised (Codex review, PR #50)
 - **Where:** `semiedge.cli._cmd_account` (head `c1f8cf8`).
 - **Reproduce:** patch `cli.paper_account_client` to raise `ValueError("FAKE_SECRET_SENTINEL")`;
   `cli.main(["account"])` raised uncaught, so the traceback printed the sentinel.
@@ -224,116 +224,116 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Regression:** `tests/integration/broker/test_cli_account.py::test_account_client_construction_errors_are_sanitised`
   (3 exception types; fails on `c1f8cf8`).
 
-### F-037 Â· P2 Â· `StateReader.orders` had two incompatible signatures (Codex review, PR #62)
-- **Where:** `docs/specifications/phase2-4-interfaces.md` Â§5.1, Â§7 (head `4f8eb8d`).
+### F-037 · P2 · `StateReader.orders` had two incompatible signatures (Codex review, PR #62)
+- **Where:** `docs/specifications/phase2-4-interfaces.md` §5.1, §7 (head `4f8eb8d`).
 - **Reproduce:** `StateStore.orders(*, statuses, symbol, kinds)` vs `ReadOnlyStateStore.orders(limit)`;
-  Â§7 requires both to satisfy one `StateReader` for `diff_state` / `reconcile --dry-run`.
+  §7 requires both to satisfy one `StateReader` for `diff_state` / `reconcile --dry-run`.
 - **Impact:** dry-run reconciliation could not be implemented against the spec without an
   undocumented adapter; the two paths could diverge.
 - **Fix (spec):** one `@runtime_checkable StateReader` Protocol in `semiedge.state.models`:
   `orders(*, statuses, symbol, kinds, limit) -> list[OrderRecord]` (limit `None` or int > 0, newest
   first when set), `fills`, `positions`, `active_halts`, `corporate_action_adjustments`,
   `store_id`; identical on both stores.
-- **Acceptance:** signature equality + equal results on one DB (Â§5.4); `diff_state` on both stores
-  gives equal reports for every reconcile scenario (Â§7).
+- **Acceptance:** signature equality + equal results on one DB (§5.4); `diff_state` on both stores
+  gives equal reports for every reconcile scenario (§7).
 
-### F-038 Â· P2 Â· No deduplication between fallback and activity fill sources (Codex review, PR #62)
-- **Where:** Â§5.2 `fills`, Â§6.4, Â§7 (head `4f8eb8d`).
-- **Reproduce:** activities unavailable â†’ cumulative 30 ingested as `cid:30`; activities recover â†’
+### F-038 · P2 · No deduplication between fallback and activity fill sources (Codex review, PR #62)
+- **Where:** §5.2 `fills`, §6.4, §7 (head `4f8eb8d`).
+- **Reproduce:** activities unavailable → cumulative 30 ingested as `cid:30`; activities recover →
   the same execution arrives as activity `A(30)` with a different key and passes key idempotency:
   local 60 vs broker 30.
 - **Impact:** spurious reconciliation halt and oversized protection attempts (refused by the
   gateway's no-short guard).
-- **Fix (spec):** per-order cumulative watermark `W = max(Î£ activity qty, max provisional cum_qty)`;
+- **Fix (spec):** per-order cumulative watermark `W = max(Σ activity qty, max provisional cum_qty)`;
   broker cumulative `filled_qty` is the upper bound; activity rows are authoritative (`final`);
-  fallback rows record only `B âˆ’ W` as `provisional`; on recovery, provisional rows covered by
+  fallback rows record only `B − W` as `provisional`; on recovery, provisional rows covered by
   activities become `superseded` (kept, excluded) in one transaction; exceeding the broker
-  cumulative â†’ `StateStoreError` + FILL_MISMATCH halt.
-- **Acceptance:** fallback 30 â†’ `A(30)` â†’ `B(20)` â‡’ local 50, no halt, one superseded row; replay
-  idempotent; activities above broker cumulative â†’ error, nothing written (Â§5.4, Â§6.5, Â§7).
+  cumulative → `StateStoreError` + FILL_MISMATCH halt.
+- **Acceptance:** fallback 30 → `A(30)` → `B(20)` ⇒ local 50, no halt, one superseded row; replay
+  idempotent; activities above broker cumulative → error, nothing written (§5.4, §6.5, §7).
 
-### F-039 Â· P2 Â· Split recovery contradicted fill-derived quantity and was not idempotent (Codex review, PR #62)
-- **Where:** Â§7, Â§9.4 (head `4f8eb8d`).
-- **Reproduce:** 4:1 split, broker 100 â†’ 400 with no executions; Â§7 declares any qty â‰  entry âˆ’ exit
-  fills a POSITION_QTY_MISMATCH halt; Â§9.4 rescaled levels but had no quantity adjustment record
+### F-039 · P2 · Split recovery contradicted fill-derived quantity and was not idempotent (Codex review, PR #62)
+- **Where:** §7, §9.4 (head `4f8eb8d`).
+- **Reproduce:** 4:1 split, broker 100 → 400 with no executions; §7 declares any qty ≠ entry − exit
+  fills a POSITION_QTY_MISMATCH halt; §9.4 rescaled levels but had no quantity adjustment record
   or event identity, so a restart could rescale again.
 - **Impact:** every held split either halted or risked double rescaling.
-- **Fix (spec):** verified split (Â§14 event with `event_id`, knowledge-verified `fetched_at â‰¤ now`)
+- **Fix (spec):** verified split (§14 event with `event_id`, knowledge-verified `fetched_at ≤ now`)
   applied at reconcile step 3b, before the generic check, via
   `StateStore.apply_corporate_action_adjustment`: new table `corporate_action_adjustments`
   UNIQUE `(symbol, event_id)`; one transaction scales qty, divides avg price/stop/target, records
-  the non-fill delta used in expected qty; re-application is a no-op. Unverified or inexact â†’
+  the non-fill delta used in expected qty; re-application is a no-op. Unverified or inexact →
   POSITION_QTY_MISMATCH halt.
-- **Acceptance:** 100 â†’ 400 reconciles without halt; second run and restart do not rescale;
-  unverified 100 â†’ 400 halts (Â§5.4, Â§7, Â§9.4).
+- **Acceptance:** 100 → 400 reconciles without halt; second run and restart do not rescale;
+  unverified 100 → 400 halts (§5.4, §7, §9.4).
 
-### F-040 Â· P2 Â· `slippage_bps` domain allowed zero/negative sell fills (Codex review, PR #62)
-- **Where:** Â§3.1, Â§3.2 (head `4f8eb8d`).
-- **Reproduce:** `slippage_bps=10000` (valid under `>= 0`) â†’ sell fill `openÂ·(1âˆ’1) = 0`; larger â†’
+### F-040 · P2 · `slippage_bps` domain allowed zero/negative sell fills (Codex review, PR #62)
+- **Where:** §3.1, §3.2 (head `4f8eb8d`).
+- **Reproduce:** `slippage_bps=10000` (valid under `>= 0`) → sell fill `open·(1−1) = 0`; larger →
   negative; `nan`/`inf` unrestricted.
 - **Impact:** nonsensical P&L instead of a fail-closed error.
 - **Fix (spec):** `BacktestSettings` validator: finite `0 <= slippage_bps < 10000`; every computed
   fill price finite and `> 0`, every cost finite, else `ValueError` naming the trade. Input-domain
   validation only; no cost value or risk limit changed.
-- **Acceptance:** `10000`, `1e6`, `nan`, `inf` â†’ `ConfigError`; cost overflow â†’ `ValueError` (Â§3.8).
+- **Acceptance:** `10000`, `1e6`, `nan`, `inf` → `ConfigError`; cost overflow → `ValueError` (§3.8).
 - **Also clarified (same review):** entry gap invalidation uses the slipped fill (open 99, target
-  100, 200 bps â†’ 100.98 â‡’ invalidated); end-of-window liquidation costs replace the last equity
+  100, 200 bps → 100.98 ⇒ invalidated); end-of-window liquidation costs replace the last equity
   point (zero positions/exposure); levels must be finite `0 < stop < entry_reference < target`
-  (R07, F-026 boundary); Â§6.4 states the narrow `unknown â†’ staged` recovery exception.
+  (R07, F-026 boundary); §6.4 states the narrow `unknown → staged` recovery exception.
 
-### F-042 Â· P3 Â· Corporate-action contract did not match the split core (Claude review of #61, fixed in #62)
-- **Where:** `phase2-4-interfaces.md` Â§14 `CorporateAction`, Â§9.4, Â§5.
-- **Issue:** Â§14 used a float `ratio` and `fetched_at`, while `semiedge.data.splits` (#61) needs exact
-  integer share counts and a separate `known_at`. A float like 0.333â€¦ can't round-trip to an exact
+### F-042 · P3 · Corporate-action contract did not match the split core (Claude review of #61, fixed in #62)
+- **Where:** `phase2-4-interfaces.md` §14 `CorporateAction`, §9.4, §5.
+- **Issue:** §14 used a float `ratio` and `fetched_at`, while `semiedge.data.splits` (#61) needs exact
+  integer share counts and a separate `known_at`. A float like 0.333… can't round-trip to an exact
   1:3, and using `fetched_at` as `known_at` misstates point-in-time knowledge. The branch name was also wrong.
 - **Fix (spec):** `CorporateAction` carries `new_shares`, `old_shares` and `known_at`, with the ratio
   derived exactly as a `Fraction`. Adjustment rows store share counts. A verified split requires
-  `known_at â‰¤ now`. Â§14 imports `semiedge.data.splits` and documents the two meanings of
+  `known_at ≤ now`. §14 imports `semiedge.data.splits` and documents the two meanings of
   "split-adjusted".
 
-### F-043 Â· P2 Â· Split verification needed a read missing from `StateReader` (Codex re-review, PR #62)
+### F-043 · P2 · Split verification needed a read missing from `StateReader` (Codex re-review, PR #62)
 - **Fix (spec):** `data_source()` is part of `StateReader`, implemented identically by both stores and
-  used by Â§9.4 verification. Parity acceptance covers matching and mismatching source classes.
+  used by §9.4 verification. Parity acceptance covers matching and mismatching source classes.
 
-### F-044 Â· P2 Â· Available but incomplete fill activities left confirmed fills unaccounted (Codex re-review, PR #62)
-- **Example:** provisional 30, broker cumulative 50, activities `[A(30)]` â†’ watermark 30, then a
+### F-044 · P2 · Available but incomplete fill activities left confirmed fills unaccounted (Codex re-review, PR #62)
+- **Example:** provisional 30, broker cumulative 50, activities `[A(30)]` → watermark 30, then a
   reconciliation halt. Likewise an empty activities response with `B > 0`.
 - **Fix (spec):** ingestion step 2 always inserts a provisional remainder when `B > W`, whether
   activities were available or not, priced at the broker's order-level average. Order notional is
   defined while provisional rows are active. Acceptance covers partial, empty and catch-up
   responses, plus replay.
 
-### F-045 Â· P3 Â· Acceptance example used the removed float split API (Codex re-review, PR #62)
+### F-045 · P3 · Acceptance example used the removed float split API (Codex re-review, PR #62)
 - **Fix (spec):** the example uses `new_shares`/`old_shares`; a 1:3 case was added.
 
-### F-046 Â· P3 Â· Ambiguous F-044 acceptance sequence (Codex re-review, PR #62)
-- **Fix (spec):** one monotonic sequence on a fresh DB (empty at B=40 â†’ [A(30)] at B=50 â†’
+### F-046 · P3 · Ambiguous F-044 acceptance sequence (Codex re-review, PR #62)
+- **Fix (spec):** one monotonic sequence on a fresh DB (empty at B=40 → [A(30)] at B=50 →
   [A(30), C(20)] at B=50), with replay and provisional-notional assertions at every stage.
 
-### F-061 Â· P2 Â· R02 did not validate position entry prices (Codex review, PR #69)
+### F-061 · P2 · R02 did not validate position entry prices (Codex review, PR #69)
 - **Reproduce:** a `PositionView("ZZZ", 1, nan, 100.0)` passed R02, so the proposal could be approved.
 - **Fix:** R02 requires `avg_entry_price` (as well as `mark_price`) to be finite and > 0.
-- **Regression:** `test_f061_position_entry_price_must_be_finite_positive` (nan, Â±inf, 0, negative).
+- **Regression:** `test_f061_position_entry_price_must_be_finite_positive` (nan, ±inf, 0, negative).
 
-### F-062 Â· P2 Â· `max_positions=3.5` via `model_construct` passed construction (Codex review, PR #69)
+### F-062 · P2 · `max_positions=3.5` via `model_construct` passed construction (Codex review, PR #69)
 - **Reproduce:** with three positions, R09 evaluated `3 < 3.5` and approved a fourth.
 - **Fix:** the constructor requires `max_positions` to be a positive builtin int.
 - **Regression:** `test_f062_max_positions_must_be_a_positive_int` (3.5, 4.0, True, 0, -1).
 
-### F-063 Â· P3 Â· Risk-manager tests missed pending orders and batch exhaustion (Codex review, PR #69)
+### F-063 · P3 · Risk-manager tests missed pending orders and batch exhaustion (Codex review, PR #69)
 - **Fix:** tests for batch approvals exhausting gross exposure and cash with exact sizes, equal-rank
   symbol ties, a rejected earlier duplicate, and a property test with pending BUY/SELL orders.
 
-### F-096 Â· P3 Â· Backtest entry could be stopped out better than its open (Claude review of #75; fixed in #80)
-- **Fix:** ADR-008 also invalidates the entry when `open_d â‰¤ stop`. Regression: `test_f096_open_below_stop_invalidates_even_if_slipped_fill_is_above`.
+### F-096 · P3 · Backtest entry could be stopped out better than its open (Claude review of #75; fixed in #80)
+- **Fix:** ADR-008 also invalidates the entry when `open_d ≤ stop`. Regression: `test_f096_open_below_stop_invalidates_even_if_slipped_fill_is_above`.
 
-### F-130 Â· P2 Â· ADR-008 broke the stated backtest/paper parity (Codex review, PR #80)
-- **Fix (spec):** ADR-008 is a backtest-only conservative adjustment. Â§6.3 documents the parity
-  exception (paper has no trustworthy opening price at fill time), and the Â§10 parity test excludes
-  exactly that case. Â§19 item 4 and ADR-008 are updated.
-- **F-131 (P2, Codex re-review):** the Â§18 checklist still claimed unconditional parity; it now carries the same exception.
+### F-130 · P2 · ADR-008 broke the stated backtest/paper parity (Codex review, PR #80)
+- **Fix (spec):** ADR-008 is a backtest-only conservative adjustment. §6.3 documents the parity
+  exception (paper has no trustworthy opening price at fill time), and the §10 parity test excludes
+  exactly that case. §19 item 4 and ADR-008 are updated.
+- **F-131 (P2, Codex re-review):** the §18 checklist still claimed unconditional parity; it now carries the same exception.
 
-### F-120 Â· P2 Â· Recovery `unknown â†’ staged` wrote a supplied broker id and trusted stale lookups (Codex review, PR #78)
+### F-120 · P2 · Recovery `unknown → staged` wrote a supplied broker id and trusted stale lookups (Codex review, PR #78)
 - **Reproduce (9060783):** recovery with `broker_order_id="known-broker-order"` succeeded and
   stored that id. 404 lookup timestamps from before the submission attempt were accepted, and
   so were lookups with no spacing evidence.
@@ -343,7 +343,7 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
   be at least that far apart; without it, recovery is refused.
 - **Regression:** `tests/safety/test_state_review_fixes.py::test_f120_*`.
 
-### F-121 Â· P2 Â· Weighted fill average could overflow to inf and be committed (Codex review, PR #78)
+### F-121 · P2 · Weighted fill average could overflow to inf and be committed (Codex review, PR #78)
 - **Reproduce (9060783):** a 2-share activity at 1.5e308 gave a `fsum` of inf, so inf was
   committed as `filled_avg_price` and `get_order` could no longer decode the row.
 - **Fix:** averages are computed exactly with `Fraction`. Every derived persisted price
@@ -353,34 +353,34 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Regression:** `test_f121_weighted_average_never_overflows`,
   `test_f121_non_finite_derived_split_price_rolls_back` (asserts an unchanged DB snapshot).
 
-### F-122 Â· P2 Â· Unknown target status raised without a RECONCILIATION halt (Codex review, PR #78)
+### F-122 · P2 · Unknown target status raised without a RECONCILIATION halt (Codex review, PR #78)
 - **Reproduce (9060783):** `transition_order(cid, "done", ...)` raised `StateStoreError`, but
   no halt row was recorded.
 - **Fix:** an unknown status is now an `illegal_transition` through the halting error path.
   The halt is written after a rollback, and also when an outer transaction swallows the error.
 - **Regression:** `test_f122_*`.
 
-### F-123 Â· P2 Â· `ingest_order_fills` updated `orders` outside `transition_order` (Codex review, PR #78)
+### F-123 · P2 · `ingest_order_fills` updated `orders` outside `transition_order` (Codex review, PR #78)
 - **Reproduce (9060783):** `store.py` had two `UPDATE orders` sites, and `transition_order`
-  could not record a `filled_qty` increase. Both contradict Â§5.1 ("no other UPDATE path";
+  could not record a `filled_qty` increase. Both contradict §5.1 ("no other UPDATE path";
   "filled_qty may only increase").
 - **Fix:** `_apply_transition` is now the only `UPDATE orders` path. `transition_order` uses it
-  after validating the edge, and it accepts any `filled_qty` â‰¥ the stored value that equals the
+  after validating the edge, and it accepts any `filled_qty` ≥ the stored value that equals the
   ingested-fill watermark; a decrease halts. Ingestion records fills through the same path with
   the status unchanged (`event="fills_ingested"`, from/to = current status). The spec is
   unchanged: the implementation now conforms to it.
 - **Regression:** `test_f123_orders_rows_have_exactly_one_update_path` (AST) and
   `test_f123_ingestion_records_filled_qty_through_the_transition_path`.
 
-### F-140 Â· P2 Â· Recovery spacing could round to zero (Codex re-review, PR #78)
-- **Reproduce:** `monitor_cycle_seconds=1e-10` became `timedelta(0)`, so two identical post-submission lookups allowed `unknown â†’ staged`.
-- **Fix:** the cycle must be finite and â‰¥ 1 s, and lookups must be strictly increasing and at least one cycle apart.
+### F-140 · P2 · Recovery spacing could round to zero (Codex re-review, PR #78)
+- **Reproduce:** `monitor_cycle_seconds=1e-10` became `timedelta(0)`, so two identical post-submission lookups allowed `unknown → staged`.
+- **Fix:** the cycle must be finite and ≥ 1 s, and lookups must be strictly increasing and at least one cycle apart.
 - **Regression:** two new cases in `test_f120_recovery_needs_post_submission_spaced_evidence`.
 - **F-141 (P2) / F-142 (P3), Codex re-review:** `timedelta` rounding (a 1.0000004 s cycle accepted 1 s gaps) and overflow (1e308) are avoided by comparing `total_seconds()` with the unrounded cycle; regressions added.
-- **F-143 (P2), Codex re-review:** `total_seconds()` float rounding accepted a 1,000,002 Âµs gap for a 1.000002 s cycle; the comparison is now exact (integer microseconds vs `Fraction(cycle)`). Regression `test_f143_spacing_uses_exact_microseconds`.
-- **F-144 (P2), Codex re-review:** `fromisoformat` truncated a 7-digit fraction, inflating a 0.9999991 s gap to 1 s. Lookup timestamps must now match an exact ISO form (â‰¤ 6 fractional digits, `Z`/`Â±HH:MM` offset). Regression `test_f144_lookup_timestamps_must_not_lose_precision`.
+- **F-143 (P2), Codex re-review:** `total_seconds()` float rounding accepted a 1,000,002 µs gap for a 1.000002 s cycle; the comparison is now exact (integer microseconds vs `Fraction(cycle)`). Regression `test_f143_spacing_uses_exact_microseconds`.
+- **F-144 (P2), Codex re-review:** `fromisoformat` truncated a 7-digit fraction, inflating a 0.9999991 s gap to 1 s. Lookup timestamps must now match an exact ISO form (≤ 6 fractional digits, `Z`/`±HH:MM` offset). Regression `test_f144_lookup_timestamps_must_not_lose_precision`.
 
-### F-077 Â· P2 Â· A truncated diff could hide excluded reviewer-config changes (Codex review, PR #73)
+### F-077 · P2 · A truncated diff could hide excluded reviewer-config changes (Codex review, PR #73)
 - **Reproduce:** pad an earlier file so that a later `z/.claude/settings.json` change falls beyond
   `MAX_DIFF_CHARS`. The sanitized review copy omits that path, so the change was in neither the prompt nor the copy.
 - **Fix:** if the diff is truncated and any changed path has an excluded component (case-insensitive),
@@ -388,9 +388,9 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **Regression:** `tests/governance/test_ai_review.py::test_truncated_diff_hiding_excluded_config_fails_closed`
   (the reviewer ran on `fcdb423`); a large ordinary diff is still reviewed.
 
-### F-078 / F-079 Â· P2 Â· Rename sources and Git-quoted paths bypassed the F-077 guard (Codex re-review, PR #73)
-- **Reproduce:** `.claude/settings.json â†’ ordinary.txt` showed only the destination in `--name-only`.
-  `.claude/Ã©.json` was reported quoted (`".claude/ÃƒÂ©.json"`), so the component check missed it.
+### F-078 / F-079 · P2 · Rename sources and Git-quoted paths bypassed the F-077 guard (Codex re-review, PR #73)
+- **Reproduce:** `.claude/settings.json → ordinary.txt` showed only the destination in `--name-only`.
+  `.claude/é.json` was reported quoted (`".claude/Ã©.json"`), so the component check missed it.
 - **Fix:** the guard lists paths with `git diff --no-renames --name-only -z` (both rename endpoints,
   NUL-delimited, unquoted).
 - **Regression:** `test_f078_renamed_excluded_config_fails_closed`, `test_f079_git_quoted_excluded_path_fails_closed`.
@@ -400,8 +400,8 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 ## Speculative concerns (not demonstrated; tracked for the relevant phase)
 
 - **S-001 Survivorship/selection bias.** `config/universe.yaml` is today's hand-picked list. Any
-  backtest on it overstates performance; reports must label this (Phase 2, #15â€“#17).
-- **S-002 Bull-market dependence.** `momentum_v1` requires `SMH > SMA50`; results from 2016â€“2026
+  backtest on it overstates performance; reports must label this (Phase 2, #15–#17).
+- **S-002 Bull-market dependence.** `momentum_v1` requires `SMH > SMA50`; results from 2016–2026
   are dominated by a historic semiconductor bull run. Walk-forward and sub-period analysis must
   include 2018 Q4, 2020 Q1 and 2022 drawdowns (#17).
 - **S-003 Feed mixing.** Volume conditions are not comparable across IEX and SIP; the data layer
@@ -409,14 +409,14 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **S-004 Pending-order exposure.** `max_gross_exposure_pct` says "incl. pending orders"; the
   risk manager (#19) must count open buy orders at their limit/notional, not only filled positions.
 
-### F-009 Â· P2 Â· SDK coercion bypasses strict account blocking-flag validation (Codex, PR #39)
+### F-009 · P2 · SDK coercion bypasses strict account blocking-flag validation (Codex, PR #39)
 - **Where:** PR #39 head `ad383a7232317819d49f973ad5321ff23885efe7`, `src/semiedge/broker/account.py`, `fetch_account_snapshot` / `_flag`.
 - **Reproduce:** using `tests/integration/broker/conftest.py`'s real paper-factory client and fake HTTP transport, parameterize `account_payload[field] = value` for each of `trading_blocked`, `account_blocked`, `trade_suspended_by_user` and values `0`, `"false"`; return the normal clock payload and empty positions. `fetch_account_snapshot(client)` accepts all six, reports the flag as `False` and `is_tradable=True`. Temporary probe command: `.venv/Scripts/python -m pytest -q tests/integration/broker/test_review_probe.py` (6 passed confirming acceptance).
 - **Impact:** malformed blocking states are silently normalized by the SDK before strict `_flag` validation, violating the fail-closed contract. No order or live-endpoint bypass demonstrated.
 - **Fix requested:** validate original payload types before SDK coercion via a reviewed adapter/strict response model; add the six fake-transport integration regressions expecting `BrokerDataError`, preserving paper-only and read-only guards.
 - **Review:** FAIL posted at https://github.com/Ferrsir/semi-edge/pull/39#issuecomment-6533090862. Full existing suite: 406 passed, 1 opt-in smoke skipped; ruff check/format and mypy passed. Offline fixtures only.
-- **Fix (implemented, Claude, branch `feature/13-paper-account`):** `fetch_account_snapshot` no longer uses the SDK model methods. It sends the same three `GET` requests through the paper-factory client's own `get("/account" | "/clock" | "/positions")` (no new client, no new endpoint) and validates the decoded JSON with exact types before anything can coerce it: block flags, `is_open` and (when present) `pattern_day_trader` must be JSON booleans (`0`, `1`, `"false"`, `"true"`, `null`, missing â†’ `BrokerDataError`); text must be exact `str`; timestamps must be RFC 3339 strings with an explicit offset (an epoch number or offset-less string, which the SDK would accept, is rejected); responses must be an exact `dict`/`list`. `ReadOnlyTradingClient` now declares only `get(path: Literal["/account", "/clock", "/positions"])`; the safety suite's strict client answers only `get` with one allowlisted path, and the AST scan permits only `client.get("<allowlisted literal>")`, so the read-only surface is unchanged in effect. Paper endpoint guards are untouched and still run before any request.
-- **Test evidence:** `tests/integration/broker/test_account_sdk.py::test_sdk_coercible_blocking_flags_fail_closed` holds the six requested regressions (each flag Ã— `0`, `"false"`, real paper-factory `TradingClient` + `FakeAlpacaTransport`), plus missing/`null`/other malformed flags, SDK-coercible clock/`pattern_day_trader`/position fields and non-object bodies; with the previous `account.py` restored, 38 of the 42 cases selected by `-k "coercible or malformed_or_missing"` fail, including all six F-009 cases (accepted as tradable). Full suite `.venv/Scripts/python -m pytest -q`: 539 passed, 1 opt-in paper smoke skipped; `ruff check .`, `ruff format --check .`, `mypy` clean. Offline only, fake credentials.
+- **Fix (implemented, Claude, branch `feature/13-paper-account`):** `fetch_account_snapshot` no longer uses the SDK model methods. It sends the same three `GET` requests through the paper-factory client's own `get("/account" | "/clock" | "/positions")` (no new client, no new endpoint) and validates the decoded JSON with exact types before anything can coerce it: block flags, `is_open` and (when present) `pattern_day_trader` must be JSON booleans (`0`, `1`, `"false"`, `"true"`, `null`, missing → `BrokerDataError`); text must be exact `str`; timestamps must be RFC 3339 strings with an explicit offset (an epoch number or offset-less string, which the SDK would accept, is rejected); responses must be an exact `dict`/`list`. `ReadOnlyTradingClient` now declares only `get(path: Literal["/account", "/clock", "/positions"])`; the safety suite's strict client answers only `get` with one allowlisted path, and the AST scan permits only `client.get("<allowlisted literal>")`, so the read-only surface is unchanged in effect. Paper endpoint guards are untouched and still run before any request.
+- **Test evidence:** `tests/integration/broker/test_account_sdk.py::test_sdk_coercible_blocking_flags_fail_closed` holds the six requested regressions (each flag × `0`, `"false"`, real paper-factory `TradingClient` + `FakeAlpacaTransport`), plus missing/`null`/other malformed flags, SDK-coercible clock/`pattern_day_trader`/position fields and non-object bodies; with the previous `account.py` restored, 38 of the 42 cases selected by `-k "coercible or malformed_or_missing"` fail, including all six F-009 cases (accepted as tradable). Full suite `.venv/Scripts/python -m pytest -q`: 539 passed, 1 opt-in paper smoke skipped; `ruff check .`, `ruff format --check .`, `mypy` clean. Offline only, fake credentials.
 
 
 ### F-010 ? P2 ? Shared paper endpoint guard trusted URL display instead of type (Codex, #40)
@@ -552,18 +552,17 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - Proposed P2 contract clarification: a raw split-ratio discontinuity in already split-adjusted bars remains inconsistent even if explained by a matching split. The old section14 wording conflicted with its no-false-stop/breakout acceptance. A hand-written mixed snapshot fails the new proposed check; a complete normalized refetch passes. This is a proposed data-policy tightening for Claude review, not a claimed defect in a previously shipped checker. It is not activated in scanner/engine consumers by this core PR.
 - Evidence:66 focused safety tests pass; initial full suite1244 passed/1 credentialed smoke skipped; post-rebase1273 passed/1 skipped; Ruff/format/mypy/Bandit clean. Fixtures include reverse-split feature breakout and a same-basis stop-level harness, not a complete backtest lifecycle. #18 remains open for verified knowledge-source provisioning, coverage policy and scanner/backtest/engine integration. All fixtures hand-written.
 ## PR #77 review fixes (F-110..F-113)
-- **F-110 / P2:** apply the existing Â§14 split-after-fetched_at refusal before discarding events beyond the stored last session. This deliberately implements review option (a), with no new as_of argument: announced future splits also require refetch under the conservative existing rule. Removed the contradictory prefix exemption. The exact Jan2..5/Jan8 regression fails on 96d6c65 and passes now.
+- **F-110 / P2:** apply the existing §14 split-after-fetched_at refusal before discarding events beyond the stored last session. This deliberately implements review option (a), with no new as_of argument: announced future splits also require refetch under the conservative existing rule. Removed the contradictory prefix exemption. The exact Jan2..5/Jan8 regression fails on 96d6c65 and passes now.
 - **F-111 / P2:** on a split ex-date compare the log price return to no basis change and to the raw split basis change. At least as close to the raw change means mixed-basis suspicion and full refetch, even below the 35% generic threshold. Three fractional forward/reverse split regressions with a +0.5% market return fail on 96d6c65 and pass now; adjusted controls stay consistent. Log returns use the difference of price logs, avoiding ratio-underflow errors.
 - **F-112 / P3:** sum distinct same-day cash dividend amounts with `math.fsum` before testing the price-return explanation. Overflow remains unexplained/fail-closed; ALL-adjusted history cannot use cash dividends as an explanation. The 40+5 /100-to-55 regression fails on 96d6c65 and passes now. Fixed 1e-6 cash matching remains best-effort and conservatively rejects some market-return cases, documented explicitly.
 - **F-113 / P3:** split/reverse-split constructors now require supported exchange-session ex-dates, including ledger loading. Four holiday/weekend regressions fail on 96d6c65 and pass now.
 - Validation after rebasing: `pytest -q -p no:cacheprovider` passed1666 tests/two skips (Windows symlink and opt-in paper smoke), with13 pandas deprecation warnings. Ruff check/format, mypy (66 source files) and Bandit passed. Focused suite74 passed; all nine review regressions failed on the original head. No strategy/risk-ceiling change, real data, network request, credential or consumer activation. #18 remains open for verified coverage/source provisioning and integration. Claude exact-head re-review is required; publishing awaits the bot connection.
 
-## F-179 / P1 â€” intraday fill sizing can exceed the configured risk budget (#130)
+
+## F-179 / P1 - intraday fill sizing can exceed the configured risk budget (#130)
 
 - **Where:** `src/semiedge/backtest/intraday.py`, pending-entry fill in `replay`.
 - **Reproduce by inspection:** `_admit` sizes `p.shares` using signal-bar close minus stop. At the next open, `replay` recalculates the actual `risk = fill - stop` and builds the target from that risk, but only reduces shares for the position cap and available cash. A next-bar gap up widens per-share stop risk without reducing quantity.
 - **Impact:** simulated stop loss can exceed `p.equity * max_risk_per_trade_pct`, contrary to `intraday_v1` sizing (`R = entry - stop`). Portfolio risk and reported results can therefore be understated.
 - **Required fix:** at fill, cap shares again by `floor(p.equity * limits.max_risk_per_trade_pct / risk)` and refuse the entry when fewer than one share remains. Add a gap-up regression asserting the stop loss remains within budget.
 - **Evidence/status:** exact-head Codex review of `901936cf40bab7b92b86b7f8809c77e3065067b3`; finding and inline remediation request posted on PR #130. Four CI workflows pass, but the PR is not ready to merge. No backtest rerun or results-tuning was performed by the reviewer.
-
-
