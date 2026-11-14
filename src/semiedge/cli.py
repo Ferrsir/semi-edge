@@ -446,6 +446,127 @@ def _cmd_data_status(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _read_intraday_caches(
+    data_dir: Path, config: AppConfig, symbols: tuple[str, ...]
+) -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
+    """Read the cached 5-minute and daily frames; a corrupt file is an error, never skipped."""
+    feed, adjustment = config.data.daily_feed, config.data.adjustment
+    intraday_store = IntradayBarStore(data_dir)
+    daily_store = ParquetBarStore(data_dir)
+    intraday: dict[str, pd.DataFrame] = {}
+    daily: dict[str, pd.DataFrame] = {}
+    try:
+        for symbol in symbols:
+            series = intraday_store.read(symbol, feed=feed, adjustment=adjustment)
+            if series is not None:
+                intraday[symbol] = series.frame
+            stored = daily_store.read(symbol, feed=feed, adjustment=adjustment)
+            if stored is not None:
+                daily[symbol] = stored.frame
+    except (OSError, ValueError) as exc:
+        raise CommandError(EXIT_DATA, f"Cache rejected: {type(exc).__name__}") from None
+    return intraday, daily
+
+
+def _intraday_summary_lines(
+    args: argparse.Namespace, sessions: int, labels: list[str], runs: list[Any]
+) -> list[str]:
+    lines = [
+        f"intraday_v1 backtest {args.start}..{args.end}, {sessions} sessions, "
+        f"start equity {args.equity:,.0f}, profile {args.risk_profile or 'default'}",
+        *labels,
+        "",
+        f"{'account':<13}{'slip':>5}{'trades':>8}{'win%':>7}{'exp R':>8}{'net $':>11}"
+        f"{'net %':>8}{'maxDD %':>9}{'w/o best5':>11}   A / B / C net $",
+    ]
+    for r in runs:
+        s_all = r.summary()
+        a = s_all["all"]
+        per = " / ".join(
+            f"{s_all[x].get('net_pnl', 0):,.0f}({s_all[x].get('trades', 0)})"
+            for x in ("A", "B", "C")
+        )
+        lines.append(
+            f"{r.account:<13}{r.slippage_bps:>5.0f}{a.get('trades', 0):>8}"
+            f"{a.get('win_rate', 0) * 100:>7.1f}{a.get('expectancy_r', 0):>8.3f}"
+            f"{a.get('net_pnl', 0):>11,.0f}{a.get('net_return_pct', 0):>8.2f}"
+            f"{s_all['max_drawdown_pct']:>9.2f}"
+            f"{s_all['net_without_best_5_sessions']:>11,.0f}   {per}"
+        )
+    return lines
+
+
+def _cmd_backtest_intraday(args: argparse.Namespace) -> int:
+    """Replay intraday_v1 on cached 5-minute bars: 3 account models x 3 slippages (#130)."""
+    from semiedge.backtest.intraday import prepare_sessions, run_matrix  # noqa: PLC0415
+    from semiedge.config.loader import load_risk_profile  # noqa: PLC0415
+
+    settings, config, _ = _load(args)
+    config_dir = args.config_dir or settings.config_dir
+    try:
+        profile = None if args.risk_profile in (None, "default") else args.risk_profile
+        limits = load_risk_profile(config_dir, profile)
+    except ConfigError as exc:
+        raise CommandError(EXIT_CONFIG, f"Risk profile rejected: {exc}") from None
+    if not (args.equity > 0 and math.isfinite(args.equity)):
+        raise CommandError(EXIT_CONFIG, "--equity must be a positive number")
+    if args.start > args.end:
+        raise CommandError(EXIT_CONFIG, "--start must not be after --end")
+    if args.output is not None and args.output.exists():
+        raise CommandError(EXIT_DATA, "Backtest failed: output_path_exists.")
+    calendar = TradingCalendar(config.data.calendar)
+    tradable = config.universe.tradable_symbols
+    benchmark = config.universe.regime_benchmark
+    intraday, daily = _read_intraday_caches(settings.data_dir, config, (*tradable, benchmark))
+    if benchmark not in intraday:
+        raise CommandError(EXIT_DATA, f"No cached 5-minute bars for {benchmark}.")
+    prepared = prepare_sessions(
+        intraday,
+        daily,
+        tradable=tradable,
+        benchmark=benchmark,
+        start=args.start,
+        end=args.end,
+        calendar=calendar,
+    )
+    if not prepared:
+        raise CommandError(EXIT_DATA, "No sessions in the requested window.")
+    runs = run_matrix(prepared, start_equity=args.equity, limits=limits)
+    gaps = sum(len(p.gap_symbols) for p in prepared)
+    command = (
+        f"semiedge backtest-intraday --start {args.start} --end {args.end} "
+        f"--equity {args.equity:g} --risk-profile {args.risk_profile or 'default'}"
+    )
+    report = {
+        "strategy": "intraday_v1",
+        "command": command,
+        "start": args.start.isoformat(),
+        "end": args.end.isoformat(),
+        "sessions": len(prepared),
+        "start_equity": args.equity,
+        "risk_profile": args.risk_profile or "default",
+        "limits": limits.model_dump(mode="json"),
+        "labels": [
+            "SURVIVORSHIP-BIASED UNIVERSE: current hand-picked list, not point-in-time",
+            "EARNINGS BLACKOUT NOT APPLIED: no point-in-time earnings history",
+            f"DATA GAPS: {gaps} symbol-sessions with a missing 5-minute bar "
+            "(no trades after a gap)",
+            "5-MINUTE SIP BARS, split-adjusted; fills at the next bar's open plus slippage",
+        ],
+        "runs": [r.to_dict() for r in runs],
+    }
+    path = args.output / "intraday_backtest.json" if args.output else None
+    if path is not None:
+        args.output.mkdir(parents=True, exist_ok=False)
+        path.write_text(json.dumps(report, indent=1, default=str), encoding="utf-8")
+    lines = _intraday_summary_lines(args, len(prepared), report["labels"], runs)
+    lines += ["", f"Command: {command}"]
+    if path is not None:
+        lines.append(f"Report: {path}")
+    sys.stdout.write("\n".join(lines) + "\n")
+    return EXIT_OK
+
+
 def _cmd_data_fetch_intraday(args: argparse.Namespace) -> int:
     """Fetch completed 5-minute bars and replace each symbol's intraday file (#118)."""
     settings, config, _ = _load(args)
@@ -962,6 +1083,15 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - one flat parse
     data_commands.add_parser(
         "status", parents=[common], help="cache summary and freshness per symbol"
     ).set_defaults(handler=_cmd_data_status)
+    bti = commands.add_parser(
+        "backtest-intraday", parents=[common], help="replay intraday_v1 on cached 5-minute bars"
+    )
+    bti.add_argument("--start", type=_iso_date, metavar="YYYY-MM-DD", required=True)
+    bti.add_argument("--end", type=_iso_date, metavar="YYYY-MM-DD", required=True)
+    bti.add_argument("--equity", type=float, default=5000.0)
+    bti.add_argument("--risk-profile", default="5k", help="risk_<name>.yaml; 'default' = risk.yaml")
+    bti.add_argument("--output", type=Path, help="new output directory (existing paths refused)")
+    bti.set_defaults(handler=_cmd_backtest_intraday)
     intraday = data_commands.add_parser(
         "fetch-intraday",
         parents=[common],
