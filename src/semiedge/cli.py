@@ -633,7 +633,12 @@ def _dip_summary_lines(report: dict[str, Any]) -> list[str]:
         )
     if "selection" in report:
         sel = report["selection"]
-        lines += ["", f"Selection (20 bps): {sel['selected'] or 'none qualifies'}", *sel["notes"]]
+        bps = report.get("decision_bps", 20)
+        lines += [
+            "",
+            f"Selection ({bps:g} bps): {sel['selected'] or 'none qualifies'}",
+            *sel["notes"],
+        ]
     if "holdout" in report:
         h = report["holdout"]
         lines += ["", f"Holdout pass test: {'PASS' if h['passed'] else 'FAIL'}", *h["failed"]]
@@ -671,7 +676,7 @@ def _idip_report(
         for v in (*variants, "baseline"):
             trades = idip.signal_study(sessions, v, slippage_bps=slip)
             study[f"{v}@{slip:g}"] = idip.study_stats(trades)
-    at20 = {v: study[f"{v}@20"] for v in (*variants, "baseline")}
+    at20 = {v: study[f"{v}@{idip.SELECTION_SLIPPAGE:g}"] for v in (*variants, "baseline")}
     runs = [
         idip.replay(
             sessions,
@@ -700,6 +705,7 @@ def _idip_report(
     report["runs"] = [r.to_dict() for r in runs]
     report["smh_buy_and_hold_pct"] = idip.smh_change_pct(intraday, benchmark, start, end)
     report["window"] = [start.isoformat(), end.isoformat()]
+    report["decision_bps"] = idip.SELECTION_SLIPPAGE
     return report
 
 
@@ -715,6 +721,13 @@ def _cmd_backtest_gap_reversal(args: argparse.Namespace) -> int:
     from semiedge.backtest import gap_reversal  # noqa: PLC0415
 
     return _run_intraday_family(args, gap_reversal, "gap_reversal_v1", "backtest-gap-reversal")
+
+
+def _cmd_backtest_orb_inplay(args: argparse.Namespace) -> int:
+    """orb_inplay_v1 on cached 5-minute bars: signal study and $5k runs (#145)."""
+    from semiedge.backtest import orb_inplay  # noqa: PLC0415
+
+    return _run_intraday_family(args, orb_inplay, "orb_inplay_v1", "backtest-orb-inplay")
 
 
 def _run_intraday_family(args: argparse.Namespace, idip: Any, strategy: str, prog: str) -> int:
@@ -1405,6 +1418,17 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - one flat parse
     btg.add_argument("--risk-profile", default="5k", help="risk_<name>.yaml; 'default' = risk.yaml")
     btg.add_argument("--output", type=Path, help="new output directory (existing paths refused)")
     btg.set_defaults(handler=_cmd_backtest_gap_reversal)
+    bto = commands.add_parser(
+        "backtest-orb-inplay",
+        parents=[common],
+        help="orb_inplay_v1 on cached 5-minute bars (spec periods only)",
+    )
+    bto.add_argument("--period", choices=("development", "holdout"), required=True)
+    bto.add_argument("--variant", choices=("O1", "O2"), help="required for the holdout")
+    bto.add_argument("--equity", type=float, default=5000.0)
+    bto.add_argument("--risk-profile", default="5k", help="risk_<name>.yaml; 'default' = risk.yaml")
+    bto.add_argument("--output", type=Path, help="new output directory (existing paths refused)")
+    bto.set_defaults(handler=_cmd_backtest_orb_inplay)
     intraday = data_commands.add_parser(
         "fetch-intraday",
         parents=[common],
