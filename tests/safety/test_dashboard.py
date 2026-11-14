@@ -56,9 +56,8 @@ class FakeUI:
     def columns(self, spec, **kwargs):
         return [self for _ in spec]
 
-    def vega_lite_chart(self, spec, **kwargs):
-        sessions = [row["session"] for row in spec["data"]["values"]]
-        self.output.append("chart:" + ",".join(sessions))
+    def html(self, markup):
+        self.output.append("html:" + markup)
 
     def radio(self, label, options):
         assert self.page in options
@@ -95,7 +94,7 @@ def test_pages_and_single_halt(tmp_path, monkeypatch, source, page):
     render(ui, source=source, now=NOW)
     render(ui, source=source, now=NOW)
     text = "\n".join(ui.output)
-    assert "Mode SCANNER" in text
+    assert "Mode SCANNER" in text or "· SCANNER ·" in text  # Overview: inside the desk
     assert (SYNTHETIC_BANNER in text) == (source == "synthetic")
     reader = ReadOnlyStateStore(path)
     assert len(reader.active_halts()) == (1 if page == "Operations" else 0)
@@ -278,30 +277,22 @@ def _rich_db(tmp_path, *, interval=60, age=timedelta(seconds=45), snapshots=5):
     return path
 
 
-def test_overview_shows_glance_chart_and_formatted_values(tmp_path, monkeypatch):
+def test_overview_shows_desk_and_formatted_records(tmp_path, monkeypatch):
     _rich_db(tmp_path)
     monkeypatch.setenv("SEMIEDGE_DATA_DIR", str(tmp_path))
     ui = FakeUI("Overview")
     render(ui, source="synthetic", now=NOW)
     text = "\n".join(ui.output)
-    assert ui.output.index(SYNTHETIC_BANNER) < ui.output.index("Overview")  # banner first
-    assert "At a glance" in text
+    [desk] = [line for line in ui.output if line.startswith("html:")]
+    assert ui.output.index(SYNTHETIC_BANNER) < ui.output.index(desk)  # banner first
+    assert "Total equity" in desk
+    assert "$100,400" in desk  # latest equity, dollars
+    assert "+400.00 since Nov 09" in desk  # change since the first snapshot
+    assert "PAPER · RUNNING" in desk
+    assert "Records" in text
     assert "Equity by session" in text
-    assert "Heartbeats" in text
-    assert "100,400.00" in text  # money with separators
-    assert "+100.00 (+0.10%)" in text  # change since previous close
-    assert "2026-11-13 21:00 UTC" in text  # readable timestamps
-    assert "000000+00:00" not in text  # no raw ISO microseconds
-    assert "chart:2026-11-09" in text
-    assert "45 s" in text
-
-
-def test_short_equity_history_has_no_chart(tmp_path, monkeypatch):
-    _rich_db(tmp_path, snapshots=3)
-    monkeypatch.setenv("SEMIEDGE_DATA_DIR", str(tmp_path))
-    ui = FakeUI("Overview")
-    render(ui, source="synthetic", now=NOW)
-    assert not any(line.startswith("chart:") for line in ui.output)
+    assert "2026-11-13 21:00 UTC" in text  # readable timestamps in the records tables
+    assert "000000+00:00" not in text
 
 
 def test_stale_alert_names_component_age_and_interval(tmp_path, monkeypatch):
@@ -375,18 +366,3 @@ def test_streamlit_toolbar_is_viewer_only():
         Path(semiedge.dashboard.__file__).parents[3] / ".streamlit" / "config.toml"
     ).read_text()
     assert 'toolbarMode = "viewer"' in config
-
-
-def test_equity_chart_spec_keeps_distinct_sessions_and_needs_no_extra():
-    """F-175/F-176: sessions with the same month/day stay separate; the spec is a plain dict."""
-    from semiedge.dashboard.format import equity_chart_spec
-
-    rows = [
-        {"session": day, "equity": 100_000.0 + i}
-        for i, day in enumerate(["2025-11-13", "2025-11-14", "2026-11-13", "2026-11-16"])
-    ]
-    spec = equity_chart_spec(rows, color="#3987e5", min_points=4)
-    assert [v["session"] for v in spec["data"]["values"]] == [r["session"] for r in rows]
-    assert spec["encoding"]["x"]["field"] == "session"
-    assert spec["encoding"]["y"]["scale"] == {"zero": False}
-    assert equity_chart_spec(rows[:3], color="#3987e5", min_points=4) is None

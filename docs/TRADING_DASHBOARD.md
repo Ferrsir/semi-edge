@@ -42,7 +42,7 @@ validated enums, numbers, or a component name that matches a strict pattern. Str
 developer toolbar is hidden (`client.toolbarMode = "viewer"`).
 
 Overview, Signals, Positions, Trade history and Operations render persisted records
-in plain-text tables. Signals select the newest run that actually contains evaluations,
+in plain-text tables (Overview also shows the desk; see below). Signals select the newest run that actually contains evaluations,
 irrespective of the job kind. Trade history is limited to the newest 500 orders/fills;
 operations to 100 runs/reconciliations/errors. Protection uses all persisted protection
 orders, showing their actual statuses and levels rather than assuming protection exists.
@@ -62,11 +62,54 @@ Labels and reproducing command precede every report's values. Unknown schemas,
 missing labels/commands, non-finite values, oversized files and source mismatches
 produce explicit errors. No returns, benchmark values or demo account numbers are
 generated. No file is executed. External text uses plain-text widgets and the shared
-untrusted-text normalizer; there is no HTML or Markdown interpretation.
+untrusted-text normalizer, except on the desk, which escapes it (see Rendering and escaping).
 
 Operations requires an actor, reason and exact typed `HALT`. Its only mutation calls
 `request_manual_halt`, which inserts one idempotent manual halt. This stops new entries;
 exits and protective stops continue. There are no order controls or halt removal controls.
+
+## Layout and formatting
+
+Overview is the desk (#108), an all-dark screen modelled on an owner-supplied reference:
+- a status header (PAPER plus RUNNING, HALTED or STALE HEARTBEAT) and the latest scan session;
+- a hero card with total equity, the change and percentage since the first snapshot, the closed
+  trade record, and an equity curve;
+- tiles for signals evaluated, filtered out and orders placed;
+- one card per pipeline stage: scanner, rules, risk manager, orders and stop guard;
+- a signal funnel: filtered by a hard rule, not ordered because the risk check said no, ordered;
+- "Where the bot is trading": open positions with entry, stop, target, sessions held, and whether a
+  live stop order exists;
+- closed trades with realized P&L from exit fills against the average entry price;
+- the most common rejection reasons in the latest scan, and the heartbeat strip.
+
+Every figure comes from the state database. When something is missing, the desk says so or shows
+an empty state, and never fills in a number. The records tables follow the desk under "Records".
+The synthetic banner stays the first thing on every page.
+
+Tables show readable values. Times are `YYYY-MM-DD HH:MM UTC`, money has thousands separators and
+two decimals, ranks and quantities are whole numbers, eligibility is yes/no, and ages read like
+`45 s` or `22 min`. A missing value shows as `—`. Signals show close, ATR, stop, target and
+rejection reasons as columns instead of the raw payload JSON.
+
+## Rendering and escaping
+
+The desk is the only HTML the dashboard renders. The owner approved this exception to the
+plain-text rule on 2026-11-13 (#108); every other page still uses plain-text widgets.
+`semiedge.dashboard.desk` builds it as one fragment for `st.html`:
+- every string from the database or a broker goes through `UntrustedText` cleaning and then
+  `html.escape`; symbols must also match the store's symbol pattern, or render as `?`;
+- numbers are formatted by the desk itself;
+- the stylesheet is a fixed constant;
+- the equity curve and icons are SVG built from numbers and fixed paths, embedded as
+  `data:image/svg+xml` images (Streamlit's sanitizer drops inline `<svg>`, and an SVG loaded as
+  an image cannot run script).
+
+`tests/safety/test_dashboard_desk.py` feeds script tags, event-handler attributes and style
+breakouts through every text field and checks that no real tag carries a handler or a non-data
+`src`. Widgets that render Markdown (subheaders, captions, alerts) only receive fixed text,
+validated enums, numbers, or a component name that matches a strict pattern. Streamlit's
+developer toolbar is hidden (`client.toolbarMode = "viewer"`), and the theme in
+`.streamlit/config.toml` matches the desk's palette.
 
 ## Dependencies and validation
 

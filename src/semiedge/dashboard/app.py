@@ -1,9 +1,10 @@
 """Thin Streamlit renderer; run through ``semiedge dashboard``.
 
-External text reaches the page only through plain-text widgets (``st.text``, dataframes) after
-``display``. Widgets that render Markdown (``subheader``, ``caption``, ``warning``, ``error``)
-receive fixed strings, validated enums, numbers, or a component name that passed
-``safe_component``.
+External text reaches the page through plain-text widgets (``st.text``, dataframes) after
+``display``, or through ``semiedge.dashboard.desk``, which HTML-escapes every value before it
+builds the desk markup for ``st.html`` (#108). Widgets that render Markdown (``subheader``,
+``caption``, ``warning``, ``error``) receive fixed strings, validated enums, numbers, or a
+component name that passed ``safe_component``.
 """
 
 from __future__ import annotations
@@ -18,13 +19,8 @@ from typing import Any
 
 import pandas as pd
 
-from semiedge.dashboard.format import (
-    SECTION_LABELS,
-    equity_chart_spec,
-    stale_message,
-    summary_rows,
-    table_rows,
-)
+from semiedge.dashboard.desk import render_desk
+from semiedge.dashboard.format import SECTION_LABELS, stale_message, table_rows
 from semiedge.dashboard.viewmodel import (
     display,
     load_backtests,
@@ -33,9 +29,6 @@ from semiedge.dashboard.viewmodel import (
 )
 from semiedge.reporting import SYNTHETIC_BANNER
 from semiedge.state.halt_control import request_manual_halt
-
-EQUITY_LINE_COLOR = "#3987e5"  # dataviz reference blue, dark step; validated on the dark surface
-MIN_CHART_POINTS = 4  # below this a table says more than a line
 
 
 def _plain(st: Any, value: object) -> None:
@@ -65,30 +58,14 @@ def _section(st: Any, value: object, *, label: str | None = None) -> None:
         _plain(st, value)
 
 
-def _equity_chart(st: Any, equity: list[dict[str, Any]]) -> None:
-    spec = equity_chart_spec(equity, color=EQUITY_LINE_COLOR, min_points=MIN_CHART_POINTS)
-    if spec is None:
-        return
-    st.subheader("Equity")
-    st.vega_lite_chart(spec, width="stretch")
-
-
 def _overview(st: Any, view: Any, root: Path, source: Any) -> None:
     section = view.sections["Overview"]
     for heartbeat in section["heartbeats"]:
         if heartbeat["freshness"] == "stale":
             st.error(stale_message(heartbeat))
-    glance, chart = st.columns([2, 3], gap="large")
-    with glance:
-        st.subheader("At a glance")
-        rows = summary_rows(section, positions=view.sections["Positions"], last_run=view.last_run)
-        st.dataframe(
-            pd.DataFrame([{k: display(v) for k, v in r.items()} for r in rows]),
-            hide_index=True,
-            width="stretch",
-        )
-    with chart:
-        _equity_chart(st, section["equity"])
+    if view.desk is not None:
+        st.html(render_desk(view.desk))
+    st.subheader("Records")
     _section(st, section)
     try:
         reports = load_backtests(root, source=source)
@@ -148,8 +125,9 @@ def render(st: Any, *, source: Any = "cache", now: datetime | None = None) -> No
         st.warning(SYNTHETIC_BANNER)
     page = st.sidebar.radio("Page", list(view.sections))
     st.sidebar.button("Refresh")
-    st.header(page)
-    st.caption(f"Mode {view.mode} · data source {view.source}")
+    if page != "Overview" or view.desk is None:  # the desk carries its own header
+        st.header(page)
+        st.caption(f"Mode {view.mode} · data source {view.source}")
     if page == "Overview":
         _overview(st, view, root, source)
     elif page == "Operations":

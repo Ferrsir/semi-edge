@@ -1968,6 +1968,11 @@ URL never appear in logs or payloads; `@everyone` in a symbol/broker message is 
   rendered first, above any number.
 - All text originating outside the code (broker messages, symbols from files) is rendered as
   plain text (`st.text` / escaped), never `unsafe_allow_html`.
+- Exception, owner-approved 2026-11-13 (#108): the Overview desk is one `st.html` fragment
+  built by `semiedge.dashboard.desk`. Every external string is cleaned by `UntrustedText`
+  and HTML-escaped, symbols must match the store's symbol pattern, the stylesheet is a
+  constant, and SVG appears only as `data:image/svg+xml` images built from numbers. A
+  safety test feeds injection strings through every desk field.
 
 Acceptance: `streamlit.testing.v1.AppTest` smoke test per page on a fixture DB (real and
 synthetic); halt button inserts exactly one `halts` row with `kind='manual'`; a static test

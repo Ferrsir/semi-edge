@@ -111,6 +111,15 @@ class ReadOnlyStateStore(StateReaderBase):
             params=(run_id,),
         )
 
+    def risk_decisions(self, session: str) -> pd.DataFrame:
+        """Risk-manager verdicts for one decision session, for the dashboard desk (#108)."""
+        return pd.read_sql_query(
+            "SELECT symbol, approved, approved_shares, reasons_json FROM risk_decisions "
+            "WHERE session = ? ORDER BY id",
+            self._connection(),
+            params=(str(session),),
+        )
+
     def recent_runs(self, limit: int = 100) -> pd.DataFrame:
         """Persisted run metadata, newest first, for operational monitoring."""
         return pd.read_sql_query(
