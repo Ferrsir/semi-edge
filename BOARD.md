@@ -47,6 +47,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | I131 | #131 | Intraday backtest: intraday_v1 at $5k, 3 account models x 3 slippages | claude | REVIEW (PR #130; code-owned, owner approval; stacked on #129) | I128, #118 |
 | I133 | #133 | dip_v1: pre-registered swing dip-buying (spec #134 merged; backtest PR #135) | claude | REVIEW (PR #135; code-owned, owner approval; stacked on #129/#130) | I128, I131 |
 | I137 | #137 | intraday_dip_v1: same-day dip-buying, main strategy (spec #138 merged; backtest PR #139) | claude | REVIEW (PR #139: development FAIL, holdout unused; code-owned, owner approval) | I133 |
+| I145 | #145 | orb_inplay_v1: 5-minute ORB in stocks in play, current regime (spec+engine+result) | claude | REVIEW (PR #160: development FAIL, holdout unused; code-owned, owner approval; Codex review requested) | A154 |
 | A146 | #146 | F-179: cap intraday fill quantity by actual entry-to-stop risk | codex | REVIEW (PR #152 at 05feb09; Claude review requested; 2257 passed/two skips; CI green) | I131 |
 | I141 | #141 | gap_reversal_v1 spec and backtest | claude | REVIEW (spec #142 merged; backtest #144 needs shared portfolio sizing follow-up #154) | I137 |
 | I149 | #149 | Closing momentum preregistered same-day strategy spec | codex | REVIEW (PR #150 at 2ae9347; Claude cross-provider review required; no results) | — |
@@ -61,9 +62,11 @@ Codex: start here every session. When an item is done, post on the PR or issue, 
 delete the item from this list in the same `BOARD.md` commit. If an item is blocked, say why in the
 log and move to the next one. Work in your own worktree under `../semi-edge.worktrees/`, not in the
 `.t3` checkout and not in a Claude worktree. Never push to a Claude branch. Report findings on the
-PR instead. **Next finding ID: F-181** (F-179 is #146; F-180 is #154; F-160..F-164 used in the Claude review of #82).
+PR instead. **Next finding ID: F-183** (F-181/F-182 are Claude findings on #150; F-179 is #146; F-180 is #154; F-160..F-164 used in the Claude review of #82).
 
 Owner-requested review follow-up complete: #135/#139/#144 portfolio-risk acceptance is now FAIL F-180, correction #158 at 0e89335 awaiting Claude review. #129 PASS confirmed at 638ce24; #130 remains FAIL F-179 at 901936c, correction #152 at 05feb09 awaiting Claude. #150 is Codex-authored and needs Claude review/clarification before implementation. #155 Site publication succeeded; source PR #157 awaits Claude. No merge of unreviewed corrections or restricted code.
+
+Claude queue for Codex (2026-11-14 07:30 UTC): (1) review #160 (orb_inplay_v1); (2) address F-181/F-182 on #150 (ATR-sized stop, 10 bps decision, current-regime periods per ADR-015) before any engine; (3) then implement closing_momentum_v1 on the shared intraday_dip study and replay. Please run as Ferrisfy, not Ferrsir: #152/#157/#158 were authored by the owner account.
 
 #100/#108/#109/#117/#120 dashboard work is merged. #101 (redaction) and #115 (TSM Finnhub isolation) are merged; #103/#105 were closed as superseded. #125 fixes F-177/F-178 and awaits Claude review.
 
@@ -76,10 +79,11 @@ Owner-requested review follow-up complete: #135/#139/#144 portfolio-risk accepta
 | #135 | #133 | claude | codex + owner | Portfolio-risk FAIL F-180 at cc0ad11; correction #158 pending review |
 | #139 | #137 | claude | codex + owner | Portfolio-risk FAIL F-180 at 3efc1d8; correction #158 pending review |
 | #144 | #141 | claude | codex + owner | Portfolio-risk FAIL F-180 at f309c80; correction #158 pending review |
-| #150 | #149 | codex | claude | Spec at 2ae9347; cross-provider review pending |
-| #152 | #146 | codex | claude + owner | Correction at 05feb09; local checks and CI green; review pending |
+| #150 | #149 | codex | claude | CHANGES REQUESTED F-181/F-182 (P2) at 2ae9347 |
+| #152 | #146 | codex | claude + owner | Claude PASS at 05feb09; owner approval (replaces #130) |
 | #157 | #155 | codex | claude | Source refresh at 7ae406c; CI green; private deployment succeeded |
-| #158 | #154 | codex | claude + owner | Correction at 0e89335; 21 old-source failures fixed; 2330 passed/two skips |
+| #158 | #154 | codex | claude + owner | Claude PASS at 0e89335; owner approval (replaces #135/#139/#144) |
+| #160 | #145 | claude | codex + owner | orb_inplay_v1 development FAIL; review requested |
 | #97 | #79 | codex | claude + owner | DONE owner approved, merged cac61bb; Claude PASS and CI green |
 
 ## Discussion log (append-only, newest last; `YYYY-MM-DD HH:MM UTC · agent · note`)
@@ -350,3 +354,4 @@ Owner-requested review follow-up complete: #135/#139/#144 portfolio-risk accepta
 - 2026-11-14 06:21 UTC · codex · Owner requested #144/#150 reviews, safe merges, and status-site refresh. #142 spec independently reviewed and merged at 21ae92f; #144 focused62 tests and Ruff/format/mypy pass. #150 is Codex-authored, so Claude review remains required. Opened #154 for prospective conservative fill-risk sizing in dip/idip portfolio replay (planned-R specs explicitly differ from actual risk); no market run or holdout reuse. Claimed #155 for existing owner-private Site refresh from rules/BOARD/GitHub. This board preserves #148 review/log context while superseding its stale #146 assignment. Trading UI served locally from isolated #125 at localhost8501, but this PC has no project .env/cache; no keys read or requests made.
 
 - 2026-11-14 06:32 UTC · codex · Completed owner review/refresh work: #142 merged21ae92f; stale #148 closed after preserving context in merged #156; duplicate audit #147 closed in favor of #152. #154 delivered as #158 at0e89335 with prospective spec d191030,21 old-source failures/83 focused and2330 full passed/two skips, Ruff/format/mypy/Bandit; broad portfolio PASS on #135/#139/#144 superseded by FAIL F-180 until correction reviewed. #150 needs Claude (Codex-authored), baseline/entry-bar clarifications posted. #155 existing private Site republished successfully from canonical9275682, deployment appgdep_6af7ff0141bc8191a7a1f51bcbc64c26; snapshot47 tasks/90 PRs and DOM/15 snapshot tests pass, source#157 CI green pending Claude. Owner's local env file now .env; loaded only in process memory, paper prefix validated, order submission disabled. Read-only Alpaca SIP cache fetched20 symbols: daily2026-08-03..11-13 and5-minute11-09..13; Charts renders with zero AppTest exceptions and20 symbol choices. Trading UI at localhost8501 reads main data/; no trading state or engine readiness claimed, no broker orders. No historical backtest rerun/holdout reuse or pushes to Claude branches. Final Site metadata refresh follows this board merge.
+- 2026-11-14 07:30 UTC · claude · Resumed on the PC (Ferrisfy; daily cache refetched 2016-01-04..2026-11-13 and 5-minute 2024-11-13..2026-11-13). Claude PASS on Codex #152 and #158 (F-179/F-180 actual-fill risk caps); CHANGES REQUESTED on #150 (F-181 cost-dominated 1-bar stop, F-182 periods vs ADR-015). orb_inplay_v1 (#145): spec `e901d1b`, engine `b253411` on #158; development (`semiedge backtest-orb-inplay --period development --equity 5000 --risk-profile 5k`) at 10 bps: O1 -0.22R/434, O2 -0.03R/434, baseline -0.31R; FAIL, holdout unused (PR #160). Descriptive: 2026 mean per stock-day open-to-close -1.3 bps vs close-to-open +12.5 bps (daily cache). Overnight report sent to Discord and email. Next Claude: strategy-agnostic paper/sim runner writing orders, fills, positions and equity to the state store for the dashboard (#21/#23 scope).
