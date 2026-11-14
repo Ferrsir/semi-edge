@@ -117,6 +117,37 @@ including pending orders) and its halts, including `daily_loss_halt_pct` (no new
 1% loss on the day) and `drawdown_halt_pct` (5%). The ceilings in `config/risk.yaml` stay as they
 are (owner, 2026-11-14).
 
+## Accounts, profiles and run modes
+
+Added 2026-11-14 (owner, #128), before any intraday result was examined.
+
+**Starting equity** is an input to every run. The owner's target is about $5,000, so results
+show how the strategy would behave with a similar amount of real money.
+
+**Risk profiles.** `config/risk.yaml` holds the $100k defaults above. `config/risk_5k.yaml` holds
+the $5k profile: 1% risk per trade, 25% per position, 3 positions, 75% gross exposure, and the same
+1% daily-loss and 5% drawdown halts. A run names its profile; nothing falls back silently. On a
+$5k account, a single share above $1,250 cannot be bought, and such a trigger is skipped with the
+reason `position_cap`.
+
+**Account models.** Every backtest reports all three; the simulator and paper runs use one:
+- `unrestricted`: no account rule beyond the risk limits (the best case).
+- `margin_pdt`: a margin account under $25,000 of equity at the start of the session. Every
+  completed entry is a day trade, because every position closes the same day. An entry that would
+  be the fourth day trade within the current and four previous sessions is refused
+  (`pdt_limit`). At or above $25,000 there is no limit.
+- `cash`: no margin and no pattern-day-trader rule, but a buy can use only settled cash. Sale
+  proceeds settle on the next session (T+1), so money from a trade closed today cannot fund
+  another entry until tomorrow (`unsettled_cash`).
+
+**Run modes** share the signal, fill and exit rules of this spec:
+- `backtest`: historical 5-minute bars, all three account models side by side.
+- `sim`: a local forward test on live 5-minute bars, with fills simulated by these rules. It never
+  sends an order anywhere, and it can start with any equity.
+- `alpaca_paper`: real paper orders through the paper-only client. Alpaca applies its own account
+  rules there (including the pattern-day-trader check under $25,000), which corresponds to
+  `margin_pdt`.
+
 ## Costs
 
 Slippage 10 bps against the trade on every fill (`config/backtest.yaml`), no commissions.
