@@ -96,3 +96,12 @@ once on 2026. It replaces `dip_v1` (ADR-012) as the main strategy; `dip_v1`'s re
 record. ADR-010's same-day rule applies again. Risk limits are unchanged (`5k` profile, ADR-011).
 At $5,000 the pattern-day-trader rule allows 3 day trades in 5 sessions in a margin account; a
 cash account has no day-trade limit but trades only settled cash. Both are reported.
+
+ADR-014 (2026-11-14, #141): after `intraday_dip_v1` failed (#139), the owner asked for a same-day
+strategy that fits moves like NVDA on 2026-11-12: it opened 13% below the previous close on news
+of the CEO's resignation and recovered most of the way within the session. The candidate is
+`gap_reversal_v1` (`docs/specifications/gap_reversal_v1.md`): a gap down of at least 1 daily ATR,
+bought only after a reclaim (of VWAP, or of the 15-minute high), with a half-gap target and the
+day's-low stop, flat by 15:55. The idea came from inspecting 2026-10-26..2026-11-13, so that
+window is excluded from both test periods and the disclosure is in the spec. R16 is unchanged:
+live trading skips earnings gaps that the backtest includes.
