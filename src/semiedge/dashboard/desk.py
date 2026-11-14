@@ -342,7 +342,14 @@ def _status(desk: Desk) -> tuple[str, str]:
         return "HALTED", "bad"
     if desk.stale_components:
         return "STALE HEARTBEAT", "warn"
-    return "RUNNING" if desk.mode != UNAVAILABLE else "NO RUN YET", "ok"
+    if any(
+        component == "engine" and freshness == "fresh"
+        for component, freshness, _ in desk.heartbeats
+    ):
+        return "RUNNING", "ok"
+    if desk.mode.upper().startswith("UNAVAILABLE"):
+        return "NO RUN YET", "warn"
+    return "STATUS UNKNOWN", "warn"
 
 
 def _hero(desk: Desk) -> str:
@@ -562,12 +569,12 @@ def render_desk(desk: Desk) -> str:
         f"<style>{DESK_CSS}</style>"
         '<div class="se-desk">'
         '<header class="top"><div class="brand"><span class="mark">SE</span><div>'
-        "<b>SEMI-EDGE</b><small>momentum desk</small></div></div>"
+        "<b>SEMI-EDGE</b><small>trading desk</small></div></div>"
         f'<div class="pills">{synthetic}<span class="pill {tone}">PAPER · {status}</span></div>'
         "</header>"
         f'<div class="rule"><span class="chip">SESSION {session}</span>'
-        f"<span>momentum_v1 · {_t(desk.mode)} · "
-        "buys breakouts that pass every rule and the risk check</span>"
+        f"<span>Mode {_t(desk.mode)} · "
+        "read-only status and recorded trading activity</span>"
         "</div>"
         f"{_hero(desk)}{_tiles(desk)}{_pipeline(desk)}{_funnel(desk)}"
         f"{_positions(desk)}{_trades(desk)}{_reasons(desk)}{_system(desk)}"

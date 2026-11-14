@@ -71,7 +71,9 @@ exits and protective stops continue. There are no order controls or halt removal
 ## Layout and formatting
 
 Overview is the desk (#108), an all-dark screen modelled on an owner-supplied reference:
-- a status header (PAPER plus RUNNING, HALTED or STALE HEARTBEAT) and the latest scan session;
+- a status header (PAPER plus HALTED, STALE HEARTBEAT, RUNNING only with a fresh engine heartbeat,
+  STATUS UNKNOWN when runtime evidence is incomplete, or NO RUN YET before a run) and the latest
+  scan session;
 - a hero card with total equity, the change and percentage since the first snapshot, the closed
   trade record, and an equity curve;
 - tiles for signals evaluated, filtered out and orders placed;
@@ -84,7 +86,8 @@ Overview is the desk (#108), an all-dark screen modelled on an owner-supplied re
 
 Every figure comes from the state database. When something is missing, the desk says so or shows
 an empty state, and never fills in a number. The records tables follow the desk under "Records".
-The synthetic banner stays the first thing on every page.
+The synthetic banner stays the first thing on every page. The desk does not name an active strategy
+until the dashboard can establish which strategy is active.
 
 Tables show readable values. Times are `YYYY-MM-DD HH:MM UTC`, money has thousands separators and
 two decimals, ranks and quantities are whole numbers, eligibility is yes/no, and ages read like

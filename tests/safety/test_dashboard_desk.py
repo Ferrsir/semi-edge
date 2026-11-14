@@ -5,7 +5,7 @@ import re
 
 import pytest
 
-from semiedge.dashboard.desk import Desk, OpenPosition, Trade, collect_desk, render_desk
+from semiedge.dashboard.desk import Desk, OpenPosition, Trade, _status, collect_desk, render_desk
 
 pytestmark = pytest.mark.safety
 
@@ -63,6 +63,33 @@ def _visible(markup):
     return html.unescape(re.sub(r"<[^>]+>", " ", body))
 
 
+def test_status_requires_a_fresh_engine_heartbeat():
+    assert _status(_desk(heartbeats=(), stale_components=())) == ("STATUS UNKNOWN", "warn")
+    assert _status(_desk(heartbeats=(("notifier", "fresh", 1.0),), stale_components=())) == (
+        "STATUS UNKNOWN",
+        "warn",
+    )
+    assert _status(_desk(heartbeats=(("engine", "fresh", 1.0),), stale_components=())) == (
+        "RUNNING",
+        "ok",
+    )
+    assert _status(
+        _desk(heartbeats=(("engine", "stale", 1000.0),), stale_components=("engine",))
+    ) == (
+        "STALE HEARTBEAT",
+        "warn",
+    )
+
+
+def test_status_without_a_recorded_run_is_no_run_yet():
+    desk = _desk(mode="unavailable: no recorded run", heartbeats=(), stale_components=())
+    assert _status(desk) == ("NO RUN YET", "warn")
+
+
+def test_halt_takes_precedence_over_heartbeat_status():
+    assert _status(_desk(halted=True, heartbeats=(), stale_components=())) == ("HALTED", "bad")
+
+
 def test_desk_shows_the_numbers_it_was_given():
     markup = render_desk(_desk())
     seen = _visible(markup)
@@ -81,6 +108,8 @@ def test_desk_shows_the_numbers_it_was_given():
     assert "no breakout" in seen
     assert "risk: max positions" in seen
     assert "PAPER · STALE HEARTBEAT" in seen
+    assert "momentum_v1" not in seen
+    assert "momentum desk" not in seen
 
 
 @pytest.mark.parametrize("attack", ATTACKS)
