@@ -453,6 +453,11 @@ def replay(  # noqa: PLR0912, PLR0915 - one pass over the bars keeps the event o
                     continue
                 shares = min(
                     pend.shares,
+                    # Keep planned-R statistics while capping actual slipped
+                    # entry-to-stop portfolio risk after a gap (#154).
+                    math.floor(
+                        pend.equity * limits.max_risk_per_trade_pct / (fill - pend.sig.stop)
+                    ),
                     math.floor(pend.equity * limits.max_position_pct / fill),
                     math.floor(cash / fill),
                 )
