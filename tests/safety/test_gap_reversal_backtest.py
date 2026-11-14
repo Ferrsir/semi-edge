@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
@@ -10,7 +11,9 @@ import pytest
 
 from semiedge import cli
 from semiedge.backtest import gap_reversal as gr
+from semiedge.backtest.intraday_dip import DaySession
 from semiedge.backtest.intraday_signals import SessionBars, vwap
+from semiedge.config.loader import load_risk_profile
 
 N = 78
 
@@ -39,6 +42,27 @@ def test_gap_day_signals_for_each_variant_and_the_baseline():
     (g2,) = sig["G2"][3]  # first close above the 15-minute high of 90.5
     assert g2.stop == pytest.approx(88.5)  # the low of the day so far
     assert base.score == pytest.approx(-2.0)
+
+
+@pytest.mark.parametrize("account", ["unrestricted", "margin_pdt", "cash"])
+def test_gap_reversal_portfolio_caps_actual_fill_risk(config_dir: Path, account):
+    b = _gap_day()
+    b.o[4], b.h[4], b.lo[4], b.c[4] = 94.5, 94.6, 94.0, 94.5
+    b.lo[5] = 88.5
+    signal = replace(gr.session_signals(b, 100.0, 5.0)["G2"][3][0], symbol="NVDA")
+    ds = DaySession(date(2026, 3, 2), N, {"NVDA": b}, {"G2": {3: [signal]}})
+    limits = load_risk_profile(config_dir, "5k")
+    (t,) = gr.replay(
+        [ds],
+        variant="G2",
+        start_equity=5000.0,
+        limits=limits,
+        account=account,
+        slippage_bps=0.0,
+    ).trades
+    assert t.shares * (t.entry - t.stop) <= 50.0
+    assert t.shares == 8
+    assert t.r_multiple == pytest.approx((t.exit - t.entry) / signal.r0, abs=1e-4)
 
 
 def test_no_signal_without_a_gap_of_one_atr():

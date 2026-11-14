@@ -523,6 +523,9 @@ def replay(  # noqa: PLR0912, PLR0915 - one pass over the sessions keeps the eve
                 continue
             shares = min(
                 pend.shares,
+                # Planned R remains the reporting denominator; actual fill risk
+                # additionally limits quantity after a next-open gap (#154).
+                math.floor(pend.equity * limits.max_risk_per_trade_pct / (fill - pend.stop)),
                 math.floor(pend.equity * limits.max_position_pct / fill),
                 math.floor(cash / fill),
             )

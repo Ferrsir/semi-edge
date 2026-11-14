@@ -251,6 +251,33 @@ def test_portfolio_sizes_by_risk_and_caps(limits_5k):
     assert r.summary()["net_pnl"] == 0.0
 
 
+@pytest.mark.parametrize("account", ["unrestricted", "margin_pdt", "cash"])
+@pytest.mark.parametrize("slip", [0.0, 20.0])
+def test_gap_up_fill_caps_stop_risk_but_preserves_planned_r(limits_5k, account, slip):
+    p = _panel(10)
+    _signal(p, "NVDA", 1)  # planned R = 4; stop = 96
+    for values in (p.o, p.h, p.lo, p.c):
+        values["NVDA"][2:] = 110.0
+    p.lo["NVDA"][2] = 96.0
+    (t,) = _replay(p, limits_5k, account=account, slip=slip).trades
+    assert t.shares * (t.entry - t.stop) <= 50.0
+    assert t.shares == 3
+    assert t.reason == "stop"
+    assert t.r_multiple == pytest.approx((t.exit - t.entry) / 4.0, abs=1e-4)
+
+
+@pytest.mark.parametrize("account", ["unrestricted", "margin_pdt", "cash"])
+def test_gap_up_fill_refuses_a_share_over_budget(limits_5k, account):
+    p = _panel(10)
+    _signal(p, "NVDA", 1)
+    for values in (p.o, p.h, p.lo, p.c):
+        values["NVDA"][2:] = 160.0  # actual R = 64 > $50 budget
+    r = _replay(p, limits_5k, account=account)
+    assert r.trades == []
+    assert r.refusals["fill_over_cap"] == 1
+    assert all(equity == 5000.0 for _, equity in r.session_equity)
+
+
 def test_max_positions_and_ranking(limits_5k):
     syms = ("AMD", "AVGO", "MU", "NVDA")
     p = _panel(10, syms)

@@ -231,6 +231,32 @@ def test_portfolio_sizing_and_round_trip(limits_5k):
     assert r.summary()["net_pnl"] == 24.0
 
 
+@pytest.mark.parametrize("account", ["unrestricted", "margin_pdt", "cash"])
+@pytest.mark.parametrize("slip", [0.0, 20.0])
+def test_gap_up_fill_caps_stop_risk_but_preserves_planned_r(limits_5k, account, slip):
+    b = _flat()
+    for values in (b.o, b.h, b.lo, b.c):
+        values[11:] = 110.0
+    b.lo[12] = 99.0
+    ds = _session({"NVDA": b}, [_sig(target=150.0)])
+    (t,) = _replay([ds], limits_5k, account=account, slip=slip).trades
+    assert t.shares * (t.entry - t.stop) <= 50.0
+    assert t.shares == 4
+    assert t.reason == "stop"
+    assert t.r_multiple == pytest.approx(t.exit - t.entry, abs=1e-4)  # planned R0 = 1
+
+
+@pytest.mark.parametrize("account", ["unrestricted", "margin_pdt", "cash"])
+def test_gap_up_fill_refuses_a_share_over_budget(limits_5k, account):
+    b = _flat()
+    for values in (b.o, b.h, b.lo, b.c):
+        values[11:] = 160.0
+    r = _replay([_session({"NVDA": b}, [_sig(target=250.0)])], limits_5k, account=account)
+    assert r.trades == []
+    assert r.refusals["fill_over_cap"] == 1
+    assert r.session_equity == [("2026-03-02", 5000.0)]
+
+
 def test_several_trades_a_day_in_one_symbol(limits_5k):
     b = _flat()
     b.h[14] = b.h[30] = 102.5
