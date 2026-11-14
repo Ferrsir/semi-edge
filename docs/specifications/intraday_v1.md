@@ -25,11 +25,14 @@ reported separately, and the tests in "What would falsify it" exist to try to re
 - Bars: 5-minute OHLCV, SIP feed (`data.daily_feed` stays `sip`; IEX volume is not comparable),
   regular session 09:30–16:00 America/New_York only. A bar is labelled by its start time and is
   complete when its end time plus `bar_settle_seconds` (10) has passed.
-- Daily bars (already cached) supply the prior day's high and ATR.
+- Daily bars (already cached) supply the prior day's high and ATR. Both bar sizes use the same
+  adjustment (`adjustment: split`), so `PDH` and today's 5-minute prices are on one basis; a split
+  on session `d` without a matching adjusted series makes the symbol ineligible that day.
 - A missing 5-minute bar for a symbol, before or at the decision bar, makes that symbol
   ineligible for the rest of the day (fail closed, reason `intraday_gap`). A missing SMH bar makes
-  every symbol ineligible. On early-close sessions every time below that is later than
-  `close − 5 min` moves to `close − 5 min`.
+  every symbol ineligible. On early-close sessions the session has fewer bars; every window below
+  that would end after `close − 30 min` ends at `close − 30 min`, and the flat-by time moves to
+  `close − 5 min`.
 
 ## Notation
 
@@ -82,20 +85,22 @@ Decision bars `b_3 … b_72` (the signal bar ends by 15:30).
 
 Decision bars `b_12 … b_66` (the signal bar ends between 10:30 and 15:00).
 - Trend: `C(b_j) > VWAP_j` for every `j` in `k−6 … k−1` (the prior 30 minutes held above VWAP),
-  and `HOD_{k−1}` was set within `b_{k−12} … b_{k−1}` (a new high within the last hour).
+  and the latest bar whose high equals `HOD_{k−1}` is one of `b_{max(1,k−12)} … b_{k−1}` (a new
+  high within the last hour).
 - Pullback that holds: `L(b_k) ≤ VWAP_k · 1.002`, `C(b_k) > VWAP_k` and `C(b_k) > O(b_k)`.
 - Stop: `L(b_k)`.
 
 ## Entries, exits and how many trades
 
 - **Entry:** a market order at the open of `b_{k+1}`; in backtests that open is the fill price,
-  plus slippage. If the fill is at or below the stop (`R = entry − stop ≤ 0`), the entry is
-  cancelled.
+  plus slippage. With `R = entry − stop`, the entry is cancelled (a backtest skips it, live it is
+  never sent) if `R ≤ 0` or `R < 0.0005 · entry` (a stop that close cannot survive the spread).
 - **One trigger per setup per symbol per day.** A symbol can therefore trade up to three times in
   a day, once per setup, never with two positions open at once. A stop-out does not re-arm the
   setup that lost.
-- **Target:** `entry + 2 · R`, a limit order in the same bracket as the stop. If one bar touches
-  both, the backtest assumes the stop was hit first (conservative).
+- **Target:** `entry + 2 · R`, a limit order in the same bracket as the stop. Stop and target are
+  live from the entry bar itself (after its open). If one bar touches both, the backtest assumes
+  the stop was hit first (conservative).
 - **Stop fills:** in a backtest, a bar whose low reaches the stop fills at the stop minus slippage,
   or at that bar's open if it opened below the stop. Live, the stop and target go in as a bracket
   with the entry, as the order lifecycle (T9) already requires.
@@ -134,7 +139,8 @@ on its own and for all three together:
 - net expectancy per trade at 10 bps is not clearly above zero, or turns negative at 20 bps;
 - the result depends on a handful of days (removing the best 5 sessions removes the edge);
 - out-of-sample windows do not resemble in-sample windows;
-- small changes to `1.5`, `0.25`, `1.0`, `1.002` or `2` (the sensitivity grid in T7) flip the sign.
+- small changes to `1.5`, `0.25`, `1.0`, `1.002`, `0.0005` or `2` (the sensitivity grid in T7)
+  flip the sign.
 
 A setup that fails is dropped, however good the headline number looks. If all three fail, the
 strategy is not used.
