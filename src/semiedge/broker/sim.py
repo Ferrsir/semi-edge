@@ -51,7 +51,7 @@ class SimBar:
 
 @dataclass
 class _Order:
-    request: OrderRequest
+    ask: OrderRequest  # the order as sent
     broker_id: str
     submitted_at: datetime
     status: BrokerOrderStatus = BrokerOrderStatus.ACCEPTED
@@ -114,50 +114,50 @@ class SimGateway:
             raise ValueError("bars must arrive in time order")
         self._bar, self._bars = bar_start, bars
         slip = self.slippage_bps / 10_000.0
-        for order in self._live(lambda o: o.request.order_class == "simple"):
-            bar = bars.get(order.request.symbol)
+        for order in self._live(lambda o: o.ask.order_class == "simple"):
+            bar = bars.get(order.ask.symbol)
             if bar is None:
                 continue  # no trade for that symbol in this bar: the market order waits
-            if order.request.side is OrderSide.BUY:
+            if order.ask.side is OrderSide.BUY:
                 self._fill(order, bar.o * (1 + slip), bar_start)
             else:
                 self._fill(order, bar.o * (1 - slip), bar_start)
-        for order in self._live(lambda o: o.request.order_class == "oco"):
+        for order in self._live(lambda o: o.ask.order_class == "oco"):
             if order.live_from_bar is not None and bar_start >= order.live_from_bar:
-                self._check_protection(order, bars.get(order.request.symbol), gaps=True)
+                self._check_protection(order, bars.get(order.ask.symbol), gaps=True)
         for sym, bar in bars.items():
             self._last_close[sym] = bar.c
 
     # ------------------------------------------------------------------ BrokerGateway
 
-    def send_order(self, request: OrderRequest) -> BrokerOrder:
-        if self.parse_client_order_id(request.client_order_id) is None:
+    def send_order(self, req: OrderRequest) -> BrokerOrder:
+        if self.parse_client_order_id(req.client_order_id) is None:
             raise OrderRejected("client_order_id is not ours", duplicate_client_order_id=False)
-        if request.client_order_id in self._orders:
+        if req.client_order_id in self._orders:
             raise OrderRejected("client_order_id must be unique", duplicate_client_order_id=True)
-        if request.side is OrderSide.BUY:
-            estimate = self._last_close.get(request.symbol)
+        if req.side is OrderSide.BUY:
+            estimate = self._last_close.get(req.symbol)
             if estimate is None:
                 raise OrderRejected("no price for symbol", duplicate_client_order_id=False)
-            if request.qty * estimate > self._buying_power():
+            if req.qty * estimate > self._buying_power():
                 raise OrderRejected("insufficient buying power", duplicate_client_order_id=False)
         else:
-            held = self._positions.get(request.symbol)
+            held = self._positions.get(req.symbol)
             available = (held.qty if held else 0) - open_sell_qty(
-                [self._view(o) for o in self._orders.values()], request.symbol
+                [self._view(o) for o in self._orders.values()], req.symbol
             )
-            if request.qty > available:
+            if req.qty > available:
                 raise OrderRejected(
                     "sell exceeds position (no shorting)", duplicate_client_order_id=False
                 )
         now = self.clock.now()
         self._seq += 1
-        order = _Order(request, f"sim-{self._seq}", now, updated_at=now)
-        self._orders[request.client_order_id] = order
-        if request.order_class == "oco":
-            held = self._positions[request.symbol]
+        order = _Order(req, f"sim-{self._seq}", now, updated_at=now)
+        self._orders[req.client_order_id] = order
+        if req.order_class == "oco":
+            held = self._positions[req.symbol]
             if self._bar is not None and held.opened_bar == self._bar:
-                self._check_protection(order, self._bars.get(request.symbol), gaps=False)
+                self._check_protection(order, self._bars.get(req.symbol), gaps=False)
             # live from the next bar (bar starts are whole minutes, so +1 microsecond is "after")
             order.live_from_bar = (
                 datetime.min.replace(tzinfo=UTC)
@@ -265,7 +265,7 @@ class SimGateway:
         if bar is None:
             return
         slip = self.slippage_bps / 10_000.0
-        stop, limit = order.request.stop_price, order.request.limit_price
+        stop, limit = order.ask.stop_price, order.ask.limit_price
         if stop is None or limit is None:  # pragma: no cover - OrderRequest guarantees both
             return
         if gaps and (bar.o <= stop or bar.o >= limit):
@@ -280,7 +280,7 @@ class SimGateway:
         self._fill(order, price * (1 - slip), self._bar)
 
     def _fill(self, order: _Order, price: float, bar_start: datetime) -> None:
-        req = order.request
+        req = order.ask
         qty = req.qty
         if req.side is OrderSide.BUY:
             self.cash -= qty * price
@@ -318,7 +318,7 @@ class SimGateway:
         )
 
     def _view(self, order: _Order) -> BrokerOrder:
-        req = order.request
+        req = order.ask
         return BrokerOrder(
             broker_order_id=order.broker_id,
             client_order_id=req.client_order_id,
