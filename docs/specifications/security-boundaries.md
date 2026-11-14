@@ -12,6 +12,23 @@ values reject cycles, unsupported objects, nonfinite floats, non-string/collidin
 depth above32 and more than100000 nodes. Errors never include the rejected value. It neither
 silently truncates data nor calls arbitrary object string representations.
 
+F-102 follow-up: normalized exact aliases `pass`, `passwd`, `pwd`, `auth`, `credentials`,
+`cookie`, `set-cookie`, `signature` and `sig` are credential fields too. Existing substring
+over-redaction is retained (including benign names containing `key`); short aliases are exact
+so `signal_count` and `author` remain diagnostics. Percent-encoded ASCII bytes are decoded only
+in field names for this decision. Untrusted values/bodies are never URL-decoded for rendering.
+
+Free text masks URL userinfo through the last `@` in the authority, percent-encoded assignment
+delimiters, entire bracketed credential collections, repeated quoted prefixes followed directly
+by a value, and PEM private-key blocks (including RSA/EC/OpenSSH/encrypted labels). No collection
+is evaluated: a linear scanner tracks brackets, quotes and escapes, with depth capped at32.
+Unbalanced, mismatched or deeper collections mask the remaining text. A missing matching PEM
+end marker does the same. Unquoted cookie headers containing name=value pairs are masked to
+the line end, including semicolon-separated values; ambiguous trailing text may be over-redacted.
+Well-formed collection replacements remain quoted so direct JSON text retains its envelope.
+These are bounded grammar rules, not complete detection of arbitrary secret encodings. Register
+all configured secret values and apply redaction at every credential-bearing consumer boundary.
+
 `UntrustedText` accepts exactly broker/discord/news/ai/file sources and exact strings. Both its
 constructor and factory first limit normalization input to8000 codepoints, normalize NFC, strip
 control/format/surrogate/private-use/line-separator/paragraph-separator characters except newline,
