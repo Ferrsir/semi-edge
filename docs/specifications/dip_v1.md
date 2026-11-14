@@ -1,6 +1,6 @@
 # Specification: `dip_v1`
 
-Status: **Specified, not implemented (issue #133).** It is the candidate to replace `intraday_v1`,
+Status: **Specified (revision 1.1), being implemented (issue #133).** It is the candidate to replace `intraday_v1`,
 which showed no edge on real data (PR #130). The owner delegated the choice of strategy
 (2026-11-14, ADR-012). Every rule, number, test period and pass test below is fixed before any
 `dip_v1` result has been computed (ground rule 3). Changing one after results are seen needs a new
@@ -33,6 +33,9 @@ intraday dip variant is deferred and was not tested.
   A symbol is eligible once it has 60 completed sessions.
 - Dividends are not included (label: price returns only; at most a few dividends fall inside a
   three-session hold).
+- **A placeholder bar is a missing bar** (revision 1.1): a session whose high equals its low
+  and whose volume is under 1,000 shares did not trade normally (SMCI's 2018–2020 delisting,
+  VRT's pre-merger SPAC shares) and is treated exactly like a missing bar.
 
 ## Periods (fixed now)
 
@@ -113,7 +116,9 @@ because gross exposure stays at or below 75% of equity.
 
 1. **Signal study (the edge test).** Every signal is taken as its own one-share trade, with no
    positions limit, sizing, halts or account rules, and is scored in R
-   (`(exit - fill) / (fill - stop)`). It isolates whether the signal has an edge.
+   (revision 1.1: `(exit - fill) / (C(t) - stop)`, where `C(t) - stop = 2 * ATR14(t)` is the risk
+   planned at the signal; the portfolio runs report R the same way). It isolates whether the
+   signal has an edge.
 2. **Portfolio runs.** The $5,000 account through all three account models, at all three
    slippages, with the limits above. They show what the account would have experienced.
 
@@ -152,6 +157,24 @@ buying and holding SMH over the same period.
 An entry is refused unless verified earnings data shows no earnings release from the entry session
 through session 4 (R16 and `earnings_blackout_sessions` stay unchanged). Orders are placed through
 the paper client only.
+
+## Revision 1.1 (2026-11-14, before any valid result)
+
+The first development run (engine `76d6ed5`) is void. Its mean R came from three one-share
+trades in SMCI scoring +363R to +440R. SMCI's feed has 349 frozen bars (high = low, zero volume)
+for its 2018–2020 delisting. The zero ATR put the stop at the price, and the jump when trading
+resumed divided by that near-zero risk. Without its top five trades, every variant and the
+baseline had a negative mean R. Two measurement fixes, with no change to any signal, threshold,
+exit, sizing rule, period or gate:
+
+1. Placeholder bars count as missing (see "Data").
+2. R is measured against the risk planned at the signal, `2 * ATR14(t)`, not `fill - stop`.
+   With the old definition, an open that gapped to just above the stop could still turn a small
+   bounce into tens of R and dominate the mean.
+
+The development run is repeated once under revision 1.1, and the selection is taken from that
+run. The void run's numbers are kept in the record (PR #135); they selected S1, a result that is
+discarded.
 
 ## Implementation plan (separate PRs)
 
