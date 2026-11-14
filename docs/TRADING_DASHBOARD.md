@@ -121,8 +121,10 @@ SIP feed and split adjustment) and needs no state database, so it works before t
 session. It draws daily candles with the 20- and 50-day averages and volume for any cached
 symbol, over 3 months, 6 months or a year. Averages are computed on the full cached history and
 undefined values are left out, never filled in; a malformed bar is skipped. The chart is a plain
-Vega-Lite spec built by `semiedge.dashboard.charts`, so the base install tests it. 5-minute
-candles follow when the intraday data is cached. When the state database is missing, the other
+Vega-Lite spec built by `semiedge.dashboard.charts`, so the base install tests it. Choosing
+"5-minute" (#121) shows one session's regular-hours 5-minute candles from the intraday cache in
+New York time, with the running VWAP, the opening range (09:30-09:45 high and low, only when all
+three bars exist) and the prior day's high from the daily cache: the levels `intraday_v1` trades. When the state database is missing, the other
 pages keep their "Dashboard unavailable" error and point to the Charts page.
 
 ## Dependencies and validation

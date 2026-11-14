@@ -193,3 +193,194 @@ def summary(rows: list[dict[str, Any]]) -> dict[str, str]:
             + ("n/a" if last["sma50"] is None else f"{last['sma50']:,.2f}")
         ),
     }
+
+
+# ------------------------------------------------------------------ 5-minute bars (#121)
+
+NY = "America/New_York"
+VWAP_HUE = "#9085e9"  # dataviz reference violet (dark step): distinct from candles and averages
+LEVEL_HUE = "#94a0b4"
+
+
+def cached_intraday_symbols(root: Path) -> list[str]:
+    from semiedge.data.intraday import IntradayBarStore  # noqa: PLC0415 - keeps daily use light
+
+    return IntradayBarStore(root).symbols(feed=DAILY_FEED, adjustment=DAILY_ADJUSTMENT)
+
+
+def load_intraday(root: Path, symbol: str) -> pd.DataFrame | None:
+    from semiedge.data.intraday import IntradayBarStore  # noqa: PLC0415
+
+    if not _SYMBOL.fullmatch(symbol):
+        raise ValueError("invalid symbol")
+    series = IntradayBarStore(root).read(symbol, feed=DAILY_FEED, adjustment=DAILY_ADJUSTMENT)
+    return None if series is None else series.frame
+
+
+def intraday_sessions(frame: pd.DataFrame) -> list[str]:
+    """Sessions present in a 5-minute frame, newest first, as ISO dates (New York)."""
+    days = sorted({ts.tz_convert(NY).date() for ts in frame.index}, reverse=True)
+    return [d.isoformat() for d in days]
+
+
+def intraday_rows(frame: pd.DataFrame, session: str) -> list[dict[str, Any]]:
+    """One session's 5-minute bars with the running VWAP, labelled in New York time."""
+    local = pd.DatetimeIndex(frame.index).tz_convert(NY)
+    mask = [d.isoformat() == session for d in local.date]
+    day = frame.loc[mask]
+    rows: list[dict[str, Any]] = []
+    cum_pv = cum_v = 0.0
+    for stamp, (_, bar) in zip(local[mask], day.iterrows(), strict=True):
+        values = [_finite(bar[k]) for k in ("open", "high", "low", "close", "volume")]
+        if any(x is None for x in values):
+            continue
+        o, h, lo, c, v = (float(x) for x in values if x is not None)
+        cum_pv += (h + lo + c) / 3 * v
+        cum_v += v
+        rows.append(
+            {
+                "time": stamp.strftime("%H:%M"),
+                "open": o,
+                "high": h,
+                "low": lo,
+                "close": c,
+                "volume": v,
+                "direction": "up" if c >= o else "down",
+                "vwap": cum_pv / cum_v if cum_v > 0 else None,
+            }
+        )
+    return rows
+
+
+def session_levels(rows: list[dict[str, Any]], prior_high: float | None) -> dict[str, float | None]:
+    """The strategy's reference levels for one session (spec ``intraday_v1``).
+
+    The opening range is the first three 5-minute bars (09:30-09:45) and is only defined when
+    all three exist; the prior-day high comes from the daily cache.
+    """
+    first = rows[:3]
+    complete = [r["time"] for r in first] == ["09:30", "09:35", "09:40"]
+    return {
+        "OR high": max(r["high"] for r in first) if complete else None,
+        "OR low": min(r["low"] for r in first) if complete else None,
+        "Prior-day high": prior_high,
+    }
+
+
+def prior_day_high(daily: pd.DataFrame | None, session: str) -> float | None:
+    """The daily high of the last cached session before ``session``."""
+    if daily is None:
+        return None
+    earlier = daily.loc[[pd.Timestamp(ts).date().isoformat() < session for ts in daily.index]]
+    if earlier.empty:
+        return None
+    return _finite(earlier["high"].iloc[-1])
+
+
+def intraday_spec(
+    rows: list[dict[str, Any]], *, title: str, levels: dict[str, float | None]
+) -> dict[str, Any] | None:
+    """5-minute candles with VWAP and dashed reference levels over a volume panel."""
+    if not rows:
+        return None
+    x = {
+        "field": "time",
+        "type": "ordinal",
+        "sort": None,
+        "title": None,
+        "axis": {"labelAngle": 0, "labelOverlap": True},
+    }
+    color = {
+        "field": "direction",
+        "type": "nominal",
+        "scale": {"domain": ["up", "down"], "range": [UP, DOWN]},
+        "legend": None,
+    }
+    tooltip = [
+        {"field": "time", "type": "ordinal", "title": "Bar (New York)"},
+        {"field": "open", "type": "quantitative", "format": ",.2f", "title": "Open"},
+        {"field": "high", "type": "quantitative", "format": ",.2f", "title": "High"},
+        {"field": "low", "type": "quantitative", "format": ",.2f", "title": "Low"},
+        {"field": "close", "type": "quantitative", "format": ",.2f", "title": "Close"},
+        {"field": "vwap", "type": "quantitative", "format": ",.2f", "title": "VWAP"},
+        {"field": "volume", "type": "quantitative", "format": ",.0f", "title": "Volume"},
+    ]
+    price_y = {"type": "quantitative", "scale": {"zero": False}, "title": None}
+    level_rows = [{"level": k, "price": v} for k, v in levels.items() if v is not None]
+    layers: list[dict[str, Any]] = [
+        {
+            "mark": {"type": "rule"},
+            "encoding": {
+                "x": x,
+                "y": {"field": "low", **price_y},
+                "y2": {"field": "high"},
+                "color": color,
+            },
+        },
+        {
+            "mark": {"type": "bar", "size": 4},
+            "encoding": {
+                "x": x,
+                "y": {"field": "open", **price_y},
+                "y2": {"field": "close"},
+                "color": color,
+                "tooltip": tooltip,
+            },
+        },
+        {
+            "mark": {"type": "line", "strokeWidth": 1.5, "color": VWAP_HUE},
+            "encoding": {"x": x, "y": {"field": "vwap", **price_y}},
+        },
+    ]
+    if level_rows:
+        layers += [
+            {
+                "data": {"values": level_rows},
+                "mark": {"type": "rule", "strokeDash": [4, 4], "color": LEVEL_HUE},
+                "encoding": {"y": {"field": "price", **price_y}},
+            },
+            {
+                "data": {"values": level_rows},
+                "mark": {
+                    "type": "text",
+                    "align": "left",
+                    "dx": 4,
+                    "dy": -6,
+                    "color": LEVEL_HUE,
+                    "fontSize": 11,
+                },
+                "encoding": {
+                    "y": {"field": "price", **price_y},
+                    "x": {"value": 0},
+                    "text": {"field": "level"},
+                },
+            },
+        ]
+    return {
+        "title": {"text": title, "anchor": "start", "color": "#e8ecf3"},
+        "data": {"values": rows},
+        "vconcat": [
+            {"height": 320, "layer": layers},
+            {
+                "height": 80,
+                "mark": {"type": "bar", "size": 4, "opacity": 0.7},
+                "encoding": {
+                    "x": {**x, "axis": None},
+                    "y": {
+                        "field": "volume",
+                        "type": "quantitative",
+                        "title": None,
+                        "axis": {"format": "~s"},
+                    },
+                    "color": color,
+                    "tooltip": tooltip,
+                },
+            },
+        ],
+        "spacing": 6,
+        "config": {
+            "background": "transparent",
+            "view": {"stroke": None},
+            "axis": {"gridColor": "#1f2838", "labelColor": "#94a0b4", "domainColor": "#1f2838"},
+        },
+    }
