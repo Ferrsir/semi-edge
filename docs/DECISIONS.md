@@ -82,3 +82,29 @@ account models (`unrestricted`, `margin_pdt`, `cash`) because a real account of 
 by the pattern-day-trader rule or by T+1 settlement. Spec: `intraday_v1.md`, "Accounts, profiles
 and run modes", written before any intraday result.
 
+
+ADR-012 (2026-11-14, #133): after `intraday_v1` showed no edge on real data (#130: every $5k run
+hit the 5% drawdown halt; expectancy -0.01R to -0.18R even before slippage), the owner asked for
+dip-buying that sells later the same day or the next day, and delegated the choice ("choose
+whichever will yield the best results"). The lead chose a swing variant, `dip_v1`
+(`docs/specifications/dip_v1.md`): daily bars, holds of up to three sessions, a wide 2-ATR stop
+and a bounce exit. It supersedes ADR-010's "flat by 15:55" rule for this strategy, so positions
+may be held overnight. The reasons were fixed before any test: slippage on tight intraday stops
+cost 0.3–0.9R per trade in #130, overnight holds are not day trades under the PDT rule at $5k, and
+daily bars give about ten years of history. "Best results" cannot be known in advance, and
+picking whichever variant tests best would overfit. So two dip signals are pre-registered, one is
+selected on 2016–2024 only, and 2025–2026 is held out and run once against a baseline of buying
+any day in an uptrend. The intraday dip variant is deferred, not tested. Risk limits are
+unchanged (the `5k` profile, ADR-011).
+
+ADR-013 (2026-11-14, #137): owner decision: SEMI-EDGE's main strategy is same-day dip-buying,
+traded at high frequency between the open and the close, with no multi-day holds and no 50-day
+filter ("we are DAY TRADING ... we just need the signal that a stock is low and that it should
+go back up"). The strategy is `intraday_dip_v1` (`docs/specifications/intraday_dip_v1.md`): a
+stock stretched below today's VWAP prints a reversal bar; the target is VWAP, the stop is the
+day's low, and everything is flat by 15:55. Two stretch signals are pre-registered (distance
+below VWAP; drop relative to SMH since the open), selected on 2024-12-16..2025-12-31 and tested
+once on 2026. It replaces `dip_v1` (ADR-012) as the main strategy; `dip_v1`'s results stay on
+record. ADR-010's same-day rule applies again. Risk limits are unchanged (`5k` profile, ADR-011).
+At $5,000 the pattern-day-trader rule allows 3 day trades in 5 sessions in a margin account; a
+cash account has no day-trade limit but trades only settled cash. Both are reported.
