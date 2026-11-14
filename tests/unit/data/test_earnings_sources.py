@@ -490,7 +490,8 @@ def test_well_formed_cache_still_loads(tmp_path: Path) -> None:
     for source in (FINNHUB, ALPHAVANTAGE):
         snap, attempts = load_snapshot(provider.cache_path(source), source)
         assert snap is not None
-        assert set(attempts) == {"date", "count", "last_attempt_at"}
+        assert {"date", "count", "last_attempt_at"} <= set(attempts)
+        assert set(attempts) <= {"date", "count", "last_attempt_at", "requested"}
 
 
 # ------------------------------------------------------------------ #114: per-symbol parse failures
@@ -525,3 +526,24 @@ def test_every_symbol_unparseable_still_fails_the_snapshot(tmp_path: Path) -> No
 def test_an_http_failure_on_one_symbol_still_fails_the_whole_snapshot(tmp_path: Path) -> None:
     http = FakeHttp({"NVDA": (500, b"")})
     assert _provider(tmp_path, http, FrozenClock(START)).refresh()[0].error == "http_500"
+
+
+def test_a_left_out_symbol_does_not_force_a_refetch_the_same_day(tmp_path: Path) -> None:
+    """Without the requested list, 15 of 16 covered looked like a changed universe every refresh."""
+    clock = FrozenClock(START)
+    http = FakeHttp({"NVDA": (200, _TAIWAN_ROW)})
+    provider = _provider(tmp_path, http, clock)
+    provider.refresh()
+    calls = len(http.calls)
+    clock.advance(timedelta(hours=1))
+    assert provider.refresh()[0].action == "skipped_fresh"
+    assert len(http.calls) == calls  # no new requests
+
+
+@pytest.mark.parametrize("requested", ["NVDA", ["nvda"], ["NVDA", "AMD"], [1]])
+def test_malformed_requested_list_counts_as_missing(tmp_path: Path, requested: object) -> None:
+    provider, fh, _ = _fresh_cache(tmp_path)
+    fh["attempts"] = {**fh["attempts"], "requested": requested}  # type: ignore[dict-item]
+    path = provider.cache_path(FINNHUB)
+    path.write_text(json.dumps(fh), encoding="utf-8")
+    assert load_snapshot(path, FINNHUB) == (None, {})

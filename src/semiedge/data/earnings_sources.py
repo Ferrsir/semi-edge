@@ -170,6 +170,7 @@ def _snapshot_to_json(snap: SourceSnapshot, attempts: Mapping[str, Any]) -> dict
 
 
 _ATTEMPT_KEYS = frozenset({"date", "count", "last_attempt_at"})
+_OPTIONAL_ATTEMPT_KEYS = frozenset({"requested"})  # symbols the last fetch asked for (#114)
 
 
 def _req(raw: Mapping[str, Any], key: str, kind: type | tuple[type, ...]) -> Any:
@@ -202,7 +203,7 @@ def _attempts_from_json(raw: Any) -> dict[str, Any]:
         raise EarningsDataError("cache attempts missing")
     if not raw:
         return {}
-    if set(raw) != _ATTEMPT_KEYS:
+    if not _ATTEMPT_KEYS <= set(raw) <= _ATTEMPT_KEYS | _OPTIONAL_ATTEMPT_KEYS:
         raise EarningsDataError("cache attempts malformed")
     date.fromisoformat(_req(raw, "date", str))
     if _req(raw, "count", int) < 0:
@@ -210,6 +211,10 @@ def _attempts_from_json(raw: Any) -> dict[str, Any]:
     last = datetime.fromisoformat(_req(raw, "last_attempt_at", str))
     if last.tzinfo is None:
         raise EarningsDataError("cache last_attempt_at must be timezone-aware")
+    if "requested" in raw:
+        requested = _req(raw, "requested", list)
+        if [_symbol(r) for r in requested] != sorted(set(requested)):
+            raise EarningsDataError("cache attempts requested list malformed")
     return dict(raw)
 
 
@@ -344,7 +349,7 @@ class EarningsProvider:
                 snap is not None
                 and snap.status == "ok"
                 and snap.fetched_at.astimezone(UTC).date() == now.date()
-                and snap.symbols == wanted
+                and self._covers_request(snap, attempts, wanted)
             ):
                 return RefreshOutcome(source, "skipped_fresh", "ok", None)
             count = int(attempts.get("count", 0)) if attempts.get("date") == today else 0
@@ -368,6 +373,8 @@ class EarningsProvider:
                     )
         prior = int(attempts.get("count", 0)) if attempts.get("date") == today else 0
         new_attempts = {"date": today, "count": prior + 1, "last_attempt_at": now.isoformat()}
+        if wanted is not None:
+            new_attempts["requested"] = sorted(wanted)
         try:
             fresh = self._fetch_finnhub(key, now) if source == FINNHUB else self._fetch_av(key, now)
         except _FetchError as exc:
@@ -378,6 +385,18 @@ class EarningsProvider:
         _save(path, fresh, new_attempts)
         log.info("earnings refresh ok", extra={"source": source, "events": len(fresh.events)})
         return RefreshOutcome(source, "fetched", "ok", None)
+
+    @staticmethod
+    def _covers_request(
+        snap: SourceSnapshot, attempts: Mapping[str, Any], wanted: frozenset[str] | None
+    ) -> bool:
+        """Fresh for this universe: it covers every wanted symbol, or the last fetch asked for exactly
+        this universe and only unparseable symbols are missing (#114). A changed universe refetches."""
+        if snap.symbols == wanted:
+            return True
+        if wanted is None or snap.symbols is None or not snap.symbols <= wanted:
+            return False
+        return attempts.get("requested") == sorted(wanted)
 
     @staticmethod
     def _status(snap: SourceSnapshot | None) -> Literal["ok", "error", "missing"]:
