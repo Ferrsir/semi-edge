@@ -71,6 +71,13 @@ Exactly as in `intraday_dip_v1`:
 
 Ranking when signals exceed free slots: the largest gap in ATRs first, then symbol.
 
+Prospective portfolio safety amendment (#154, F-180; 2026-11-14), before any new
+market-data run: the shared replay also applies the actual slipped-fill risk cap
+specified in `intraday_dip_v1`'s safety amendment. Planned-R statistics and the
+independent one-share study remain unchanged. Existing portfolio results were
+produced before this amendment and are not revalidated by it; no holdout rerun is
+authorized.
+
 ## Runs and gates
 
 Signal study and portfolio runs, as in `intraday_dip_v1`, with R measured against the planned
