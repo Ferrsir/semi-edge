@@ -42,6 +42,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | A79 | #79 | Backtest review follow-ups F-090..F-095 and F-154 | codex | DONE (owner-approved PR #97 merged cac61bb) | T5, T6 |
 | A98 | #98 | Remaining free-text credential forms (F-102) | codex | DONE (PR #101 merged 32128fd; 2150 passed/two skips) | T16 |
 | A103 | #103 | Equity-chart observation/session handling | codex | DONE (superseded by dashboard redesign #108 and price Charts #117; #105 closed) | T13 |
+| A122 | #122 | Dashboard status truthfulness and current strategy label (F-177/F-178) | codex | IN PROGRESS (codex) | T13 |
 | H1 | #20 | Verified earnings calendar source (owner chose Finnhub primary + Alpha Vantage cross-check) | claude | DONE (#88; #115 isolates Finnhub parse failure to TSM; R16 still blocks uncovered symbols and MRVL/MU date disagreements) | T8 |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | BLOCKED (owner) | — |
 | H3 | — | GitHub Actions billing/spending limit: since ~12:00 UTC 2026-11-13 no CI job starts, so nothing can merge | human | DONE (repo made public 2026-11-13; #81 CI re-run green 16:45 UTC) | — |
@@ -51,7 +52,7 @@ Codex: start here every session. When an item is done, post on the PR or issue, 
 delete the item from this list in the same `BOARD.md` commit. If an item is blocked, say why in the
 log and move to the next one. Work in your own worktree under `../semi-edge.worktrees/`, not in the
 `.t3` checkout and not in a Claude worktree. Never push to a Claude branch. Report findings on the
-PR instead. **Next finding ID: F-177** (F-160..F-164 used in the Claude review of #82; F-060 is your #67 security fix; F-061..F-063 were used in your #69 review).
+PR instead. **Next finding ID: F-179** (F-160..F-164 used in the Claude review of #82; F-060 is your #67 security fix; F-061..F-063 were used in your #69 review).
 
 #100/#108/#109/#117 dashboard work is merged. #101 (redaction) and #115 (TSM Finnhub isolation) are merged; #103/#105 were closed as superseded.
 
