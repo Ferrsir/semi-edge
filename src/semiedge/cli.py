@@ -55,6 +55,7 @@ from semiedge.data.alpaca_source import AlpacaMarketDataSource, MarketDataError
 from semiedge.data.calendar import TradingCalendar
 from semiedge.data.earnings import EarningsDataError
 from semiedge.data.earnings_sources import EarningsProvider, EarningsProviderSettings
+from semiedge.data.intraday import IntradayBarStore
 from semiedge.data.schema import DataFeed, DataSource
 from semiedge.data.source import MarketDataSource
 from semiedge.data.store import ParquetBarStore
@@ -431,7 +432,88 @@ def _cmd_data_status(args: argparse.Namespace) -> int:
                 "fresh": last_session == last,
             }
         )
-    _print_json({"last_completed_session": last.isoformat(), "series": series})
+    try:
+        intraday = IntradayBarStore(settings.data_dir).summary(
+            feed=config.data.daily_feed, adjustment=config.data.adjustment
+        )
+    except Exception as exc:  # a tampered or unreadable cache file fails the whole status
+        raise CommandError(
+            EXIT_DATA, f"The 5-minute cache failed validation ({type(exc).__name__})."
+        ) from None
+    _print_json(
+        {"last_completed_session": last.isoformat(), "series": series, "intraday_5min": intraday}
+    )
+    return EXIT_OK
+
+
+def _cmd_data_fetch_intraday(args: argparse.Namespace) -> int:
+    """Fetch completed 5-minute bars and replace each symbol's intraday file (#118)."""
+    settings, config, _ = _load(args)
+    universe = config.universe.all_symbols
+    symbols = list(dict.fromkeys(args.symbols or universe))
+    unknown = [s for s in symbols if s not in universe]
+    if unknown:
+        raise CommandError(
+            EXIT_CONFIG, f"{len(unknown)} requested symbol(s) are not in the configured universe"
+        )
+    calendar = TradingCalendar(config.data.calendar)
+    now = utcnow()
+    end = _completed_session(calendar, config, args.end, now, "--end")
+    if args.start > end:
+        raise CommandError(EXIT_CONFIG, "--start must not be after --end")
+    try:
+        source = market_data_source(settings, config)
+    except (MissingCredentialsError, SafetyViolation):
+        raise
+    except Exception as exc:  # sanitised: SDK constructor errors may carry key material
+        raise CommandError(
+            EXIT_DATA, f"Cannot create the market data client ({type(exc).__name__})."
+        ) from None
+    if not isinstance(source, AlpacaMarketDataSource):
+        raise CommandError(EXIT_CONFIG, "5-minute bars need the Alpaca data source.")
+    try:
+        frames = source.get_intraday_bars(symbols, args.start, end)
+    except MarketDataError:
+        raise CommandError(EXIT_DATA, "Market data request failed; nothing was stored.") from None
+    except Exception as exc:  # sanitised: vendor errors may carry URLs or response bodies
+        raise CommandError(
+            EXIT_DATA, f"Market data request failed ({type(exc).__name__}); nothing was stored."
+        ) from None
+    store = IntradayBarStore(settings.data_dir)
+    stored: dict[str, dict[str, object]] = {}
+    for symbol in symbols:
+        frame = frames.get(symbol)
+        if frame is None or frame.empty:
+            stored[symbol] = {"rows": 0, "first_bar": None, "last_bar": None}
+            continue
+        try:
+            store.replace(
+                symbol,
+                frame,
+                feed=source.feed,
+                adjustment=source.adjustment,
+                source=source.source,
+                fetched_at=now,
+                calendar=calendar,
+            )
+        except ValueError as exc:  # includes DataSchemaError; messages name symbol and times
+            raise CommandError(EXIT_DATA, f"Refused to store {symbol}: {exc}") from None
+        stored[symbol] = {
+            "rows": len(frame),
+            "first_bar": frame.index[0].isoformat(),
+            "last_bar": frame.index[-1].isoformat(),
+        }
+    _print_json(
+        {
+            "start": args.start.isoformat(),
+            "end": end.isoformat(),
+            "bar_minutes": 5,
+            "feed": source.feed.value,
+            "adjustment": source.adjustment.value,
+            "fetched_at": now.isoformat(),
+            "symbols": stored,
+        }
+    )
     return EXIT_OK
 
 
@@ -843,7 +925,7 @@ def _cmd_earnings_status(args: argparse.Namespace) -> int:
     return EXIT_OK if all_verified else EXIT_DATA
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - one flat parser table
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--config-dir", type=Path, help="configuration directory")
     parser = argparse.ArgumentParser(prog="semiedge", description=__doc__)
@@ -880,6 +962,15 @@ def build_parser() -> argparse.ArgumentParser:
     data_commands.add_parser(
         "status", parents=[common], help="cache summary and freshness per symbol"
     ).set_defaults(handler=_cmd_data_status)
+    intraday = data_commands.add_parser(
+        "fetch-intraday",
+        parents=[common],
+        help="fetch completed 5-minute regular-session bars; replaces each symbol's 5-minute file",
+    )
+    intraday.add_argument("--symbols", nargs="+", metavar="SYMBOL")
+    intraday.add_argument("--start", type=_iso_date, metavar="YYYY-MM-DD", required=True)
+    intraday.add_argument("--end", type=_iso_date, metavar="YYYY-MM-DD")
+    intraday.set_defaults(handler=_cmd_data_fetch_intraday)
 
     scan = commands.add_parser("scan", parents=[common], help="ranked momentum_v1 report")
     scan.add_argument("--source", choices=("cache", "synthetic"), default="cache")

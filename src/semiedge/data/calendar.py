@@ -31,6 +31,10 @@ class TradingCalendar:
     def session_close(self, session: date) -> datetime:
         return pd.Timestamp(self._calendar.session_close(session)).to_pydatetime()
 
+    def session_open(self, session: date) -> datetime:
+        """Regular-session open as a UTC datetime (09:30 New York, or a late open if any)."""
+        return pd.Timestamp(self._calendar.session_open(session)).to_pydatetime()
+
     def previous_session(self, session: date) -> date:
         return pd.Timestamp(self._calendar.previous_session(session)).date()
 
