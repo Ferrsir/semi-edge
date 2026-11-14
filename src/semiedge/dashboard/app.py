@@ -19,6 +19,14 @@ from typing import Any
 
 import pandas as pd
 
+from semiedge.dashboard.charts import (
+    RANGES,
+    cached_symbols,
+    candle_rows,
+    candle_spec,
+    load_daily,
+    summary,
+)
 from semiedge.dashboard.desk import render_desk
 from semiedge.dashboard.format import SECTION_LABELS, stale_message, table_rows
 from semiedge.dashboard.viewmodel import (
@@ -106,25 +114,66 @@ def _operations(st: Any, view: Any, path: Path, now: datetime | None) -> None:
                 st.text(f"Manual halt recorded: {halt_id}")
 
 
+PAGES = ["Overview", "Signals", "Positions", "Trade history", "Operations", "Charts"]
+
+
+def _charts(st: Any, root: Path) -> None:
+    """Daily candles from the price cache (#116); needs no state database."""
+    st.header("Charts")
+    symbols = cached_symbols(root)
+    if not symbols:
+        st.text("No cached daily bars yet. Run `semiedge data fetch` to fill the cache.")
+        return
+    st.caption("Daily bars from the local cache · consolidated tape (SIP) · split-adjusted")
+    default = symbols.index("SMH") if "SMH" in symbols else 0
+    symbol = st.selectbox("Symbol", symbols, index=default)
+    span = st.radio("Range", list(RANGES), index=1, horizontal=True)
+    try:
+        frame = load_daily(root, symbol)
+    except (OSError, ValueError) as exc:
+        st.text("Price data unavailable")
+        st.text(display(exc))
+        return
+    if frame is None:
+        st.text("No cached bars for this symbol.")
+        return
+    rows = candle_rows(frame, RANGES[span])
+    spec = candle_spec(rows, title=symbol)
+    if spec is None:
+        st.text("No usable bars in this range.")
+        return
+    read = summary(rows)
+    st.text(display(read["last"]))
+    st.text(display(read["averages"]))
+    st.vega_lite_chart(spec, width="stretch")
+    st.caption("5-minute candles appear here once the intraday data is cached.")
+
+
 def render(st: Any, *, source: Any = "cache", now: datetime | None = None) -> None:
     st.set_page_config(page_title="SEMI-EDGE", layout="wide")
     st.sidebar.text("SEMI-EDGE · PAPER only")
     root = source_root(Path(os.environ.get("SEMIEDGE_DATA_DIR", "data")), source)
     path = root / "state" / "semiedge.sqlite3"
+    if source == "synthetic":
+        st.warning(SYNTHETIC_BANNER)
+    page = st.sidebar.radio("Page", PAGES)
+    st.sidebar.button("Refresh")
+    if page == "Charts":  # reads the price cache only, so it works before the bot has ever run
+        _charts(st, root)
+        return
     try:
         view = load_view(path, source=source, now=now or datetime.now(UTC))
     except (OSError, ValueError, RuntimeError) as exc:
         st.header("Dashboard unavailable")
         st.text(display(exc))
+        if not path.exists():
+            st.text("The bot has not run a session yet, so there is no state database.")
+            st.text("The Charts page works from the price cache in the meantime.")
         return
     except Exception:
         st.header("Dashboard unavailable")
         st.text("The state database cannot be decoded.")
         return
-    if view.source == "synthetic":
-        st.warning(SYNTHETIC_BANNER)
-    page = st.sidebar.radio("Page", list(view.sections))
-    st.sidebar.button("Refresh")
     if page != "Overview" or view.desk is None:  # the desk carries its own header
         st.header(page)
         st.caption(f"Mode {view.mode} · data source {view.source}")
