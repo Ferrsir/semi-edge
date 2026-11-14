@@ -399,7 +399,7 @@ def test_cli_development_run_writes_a_report(config_dir: Path, tmp_path: Path, m
     out = tmp_path / "report"
     args = ["backtest-intraday-dip", "--config-dir", str(config_dir), "--period", "development"]
     assert cli.main([*args, "--output", str(out)]) == 0
-    report = json.loads((out / "intraday_dip_backtest.json").read_text(encoding="utf-8"))
+    report = json.loads((out / "intraday_dip_v1_backtest.json").read_text(encoding="utf-8"))
     assert report["command"] == (
         "semiedge backtest-intraday-dip --period development --equity 5000 --risk-profile 5k"
     )

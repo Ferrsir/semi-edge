@@ -656,10 +656,14 @@ def _dip_summary_lines(report: dict[str, Any]) -> list[str]:
 
 
 def _idip_report(
-    args: argparse.Namespace, sessions: Any, limits: Any, intraday: Any, benchmark: str
+    args: argparse.Namespace,
+    sessions: Any,
+    limits: Any,
+    *,
+    intraday: Any,
+    benchmark: str,
+    idip: Any,
 ) -> dict[str, Any]:
-    from semiedge.backtest import intraday_dip as idip  # noqa: PLC0415
-
     start, end = idip.DEVELOPMENT if args.period == "development" else idip.HOLDOUT
     variants = list(idip.VARIANTS) if args.variant is None else [args.variant]
     study: dict[str, dict[str, Any]] = {}
@@ -701,8 +705,19 @@ def _idip_report(
 
 def _cmd_backtest_intraday_dip(args: argparse.Namespace) -> int:
     """intraday_dip_v1 on cached 5-minute bars: signal study and $5k runs (#137)."""
-    from semiedge.backtest import intraday_dip as idip  # noqa: PLC0415
+    from semiedge.backtest import intraday_dip  # noqa: PLC0415
 
+    return _run_intraday_family(args, intraday_dip, "intraday_dip_v1", "backtest-intraday-dip")
+
+
+def _cmd_backtest_gap_reversal(args: argparse.Namespace) -> int:
+    """gap_reversal_v1 on cached 5-minute bars: signal study and $5k runs (#141)."""
+    from semiedge.backtest import gap_reversal  # noqa: PLC0415
+
+    return _run_intraday_family(args, gap_reversal, "gap_reversal_v1", "backtest-gap-reversal")
+
+
+def _run_intraday_family(args: argparse.Namespace, idip: Any, strategy: str, prog: str) -> int:
     settings, config, _ = _load(args)
     limits = _risk_limits(args, args.config_dir or settings.config_dir)
     if not (args.equity > 0 and math.isfinite(args.equity)):
@@ -726,9 +741,9 @@ def _cmd_backtest_intraday_dip(args: argparse.Namespace) -> int:
         end=end,
         calendar=TradingCalendar(config.data.calendar),
     )
-    body = _idip_report(args, sessions, limits, intraday, benchmark)
+    body = _idip_report(args, sessions, limits, intraday=intraday, benchmark=benchmark, idip=idip)
     command = (
-        f"semiedge backtest-intraday-dip --period {args.period}"
+        f"semiedge {prog} --period {args.period}"
         + (f" --variant {args.variant}" if args.variant else "")
         + f" --equity {args.equity:g} --risk-profile {args.risk_profile or 'default'}"
     )
@@ -743,7 +758,7 @@ def _cmd_backtest_intraday_dip(args: argparse.Namespace) -> int:
         ),
     ]
     report = {
-        "strategy": "intraday_dip_v1",
+        "strategy": strategy,
         "period": args.period,
         "command": command,
         "start_equity": args.equity,
@@ -754,9 +769,9 @@ def _cmd_backtest_intraday_dip(args: argparse.Namespace) -> int:
     }
     if args.output is not None:
         args.output.mkdir(parents=True, exist_ok=False)
-        path = args.output / "intraday_dip_backtest.json"
+        path = args.output / f"{strategy}_backtest.json"
         path.write_text(json.dumps(report, indent=1, default=str), encoding="utf-8")
-    report["strategy_title"] = "intraday_dip_v1"
+    report["strategy_title"] = strategy
     sys.stdout.write("\n".join(_dip_summary_lines(report)) + "\n")
     return EXIT_OK
 
@@ -1379,6 +1394,17 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - one flat parse
     )
     btid.add_argument("--output", type=Path, help="new output directory (existing paths refused)")
     btid.set_defaults(handler=_cmd_backtest_intraday_dip)
+    btg = commands.add_parser(
+        "backtest-gap-reversal",
+        parents=[common],
+        help="gap_reversal_v1 on cached 5-minute bars (spec periods only)",
+    )
+    btg.add_argument("--period", choices=("development", "holdout"), required=True)
+    btg.add_argument("--variant", choices=("G1", "G2"), help="required for the holdout")
+    btg.add_argument("--equity", type=float, default=5000.0)
+    btg.add_argument("--risk-profile", default="5k", help="risk_<name>.yaml; 'default' = risk.yaml")
+    btg.add_argument("--output", type=Path, help="new output directory (existing paths refused)")
+    btg.set_defaults(handler=_cmd_backtest_gap_reversal)
     intraday = data_commands.add_parser(
         "fetch-intraday",
         parents=[common],

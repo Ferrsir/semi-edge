@@ -226,7 +226,7 @@ class StudyTrade:
 
 
 def signal_study(
-    sessions: list[DaySession], variant: Variant, *, slippage_bps: float
+    sessions: list[DaySession], variant: str, *, slippage_bps: float
 ) -> list[StudyTrade]:
     slip = slippage_bps / 10_000.0
     trades: list[StudyTrade] = []
@@ -382,7 +382,7 @@ class RunResult:
 def replay(  # noqa: PLR0912, PLR0915 - one pass over the bars keeps the event order explicit
     sessions: list[DaySession],
     *,
-    variant: Variant,
+    variant: str,
     start_equity: float,
     limits: RiskLimits,
     account: AccountModel,
