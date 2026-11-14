@@ -117,3 +117,11 @@ bought only after a reclaim (of VWAP, or of the 15-minute high), with a half-gap
 day's-low stop, flat by 15:55. The idea came from inspecting 2026-10-26..2026-11-13, so that
 window is excluded from both test periods and the disclosure is in the spec. R16 is unchanged:
 live trading skips earnings gaps that the backtest includes.
+
+ADR-015 (2026-11-14, #145): owner decisions overnight: keep working toward a same-day strategy
+that works in a backtest, and test only the current market regime. The candidate is
+`orb_inplay_v1` (`docs/specifications/orb_inplay_v1.md`), the 5-minute opening-range breakout
+in stocks in play from Zarattini, Barbon and Aziz (2024), long-only. Periods: development
+2026-01..06, holdout 2026-07-01..10-23, with the inspected 10-26..11-13 window excluded. The
+decision cost is 10 bps a side for this spec only; the rationale is in the spec. Risk limits are
+unchanged.
