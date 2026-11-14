@@ -6,6 +6,8 @@ Invariants (enforced here, tested in tests/safety/):
   always a :class:`SafetyViolation` in this MVP.
 * ``ALLOW_LIVE_TRADING=true`` is always a :class:`SafetyViolation`.
 * Order submission requires ``paper`` mode AND ``ENABLE_ORDER_SUBMISSION=true``.
+* ``sim`` mode (#162) simulates fills on live bars and never submits an order:
+  ``ENABLE_ORDER_SUBMISSION=true`` with ``sim`` is a :class:`SafetyViolation`.
 * Every check fails closed: unknown or inconsistent flags raise.
 """
 
@@ -20,11 +22,12 @@ class TradingMode(StrEnum):
     SCANNER = "scanner"
     BACKTEST = "backtest"
     PAPER = "paper"
+    SIM = "sim"  # simulated fills on live bars; never sends an order (intraday_execution.md)
     LIVE = "live"  # Named for architecture only. Unsupported; can never be activated in the MVP.
 
 
 SUPPORTED_MODES: frozenset[TradingMode] = frozenset(
-    {TradingMode.SCANNER, TradingMode.BACKTEST, TradingMode.PAPER}
+    {TradingMode.SCANNER, TradingMode.BACKTEST, TradingMode.PAPER, TradingMode.SIM}
 )
 
 

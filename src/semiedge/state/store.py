@@ -280,7 +280,7 @@ class StateStore(StateReaderBase):
         self,
         path: Path,
         *,
-        data_source: Literal["real", "synthetic"],
+        data_source: Literal["real", "synthetic", "sim"],
         now: datetime,
     ) -> None:
         """Take the writer lock (§5.3), create or migrate the DB and set the PRAGMAs.
@@ -292,7 +292,9 @@ class StateStore(StateReaderBase):
         file that is not a SEMI-EDGE state DB is refused with :class:`StateStoreError`.
         """
         if data_source not in DATA_SOURCES:
-            raise StateStoreError(f"data_source must be 'real' or 'synthetic', got {data_source!r}")
+            raise StateStoreError(
+                f"data_source must be 'real', 'synthetic' or 'sim', got {data_source!r}"
+            )
         if not isinstance(path, Path):
             raise StateStoreError("path must be a pathlib.Path")
         self._depth = 0
@@ -1593,8 +1595,8 @@ def _configure(conn: sqlite3.Connection) -> None:
 
 
 def _migrate(
-    conn: sqlite3.Connection, data_source: Literal["real", "synthetic"], now: datetime
-) -> tuple[str, Literal["real", "synthetic"]]:
+    conn: sqlite3.Connection, data_source: Literal["real", "synthetic", "sim"], now: datetime
+) -> tuple[str, Literal["real", "synthetic", "sim"]]:
     """Create or migrate inside one transaction; forward only; refuse unknown newer versions."""
     ts = ts_text(now, "now")
     try:

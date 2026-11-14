@@ -37,6 +37,7 @@ from semiedge.dashboard.charts import (
 from semiedge.dashboard.desk import render_desk
 from semiedge.dashboard.format import SECTION_LABELS, stale_message, table_rows
 from semiedge.dashboard.viewmodel import (
+    SIM_BANNER,
     display,
     load_backtests,
     load_view,
@@ -242,6 +243,8 @@ def render(st: Any, *, source: Any = "cache", now: datetime | None = None) -> No
     path = root / "state" / "semiedge.sqlite3"
     if source == "synthetic":
         st.warning(SYNTHETIC_BANNER)
+    if source == "sim":
+        st.warning(SIM_BANNER)
     page = st.sidebar.radio("Page", PAGES)
     st.sidebar.button("Refresh")
     toggle = getattr(st.sidebar, "toggle", None)
@@ -261,7 +264,7 @@ def render(st: Any, *, source: Any = "cache", now: datetime | None = None) -> No
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--source", choices=("cache", "synthetic"), default="cache")
+    parser.add_argument("--source", choices=("cache", "synthetic", "sim"), default="cache")
     args = parser.parse_args()
     render(importlib.import_module("streamlit"), source=args.source)
 

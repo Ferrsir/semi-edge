@@ -178,6 +178,8 @@ def test_limits_property_returns_the_validated_limits() -> None:
         (TradingMode.LIVE, "none", False),
         (TradingMode.BACKTEST, "backtest_unavailable", True),
         (TradingMode.PAPER, "backtest_unavailable", False),
+        (TradingMode.SIM, "none", True),
+        (TradingMode.SIM, "backtest_unavailable", False),  # the earnings waiver is backtest-only
     ],
 )
 def test_r01_mode(mode: TradingMode, waiver: str, ok: bool) -> None:
