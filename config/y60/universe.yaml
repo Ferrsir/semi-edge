@@ -1,0 +1,70 @@
+# Y60: the swing_v1 R3 replication universe (docs/specifications/swing_v1_y60.md, #180).
+# 60 volatile US-listed growth stocks outside U80 and X60, fixed in the spec before any of
+# their bars was fetched. Used only with --config-dir config/y60 to fetch data.
+
+regime_benchmark: QQQ
+comparison_benchmarks: [SPY, QQQ]
+
+members:
+  - {symbol: "ROKU", name: "ROKU", group: y60, role: tradable}
+  - {symbol: "PYPL", name: "PYPL", group: y60, role: tradable}
+  - {symbol: "ZM", name: "ZM", group: y60, role: tradable}
+  - {symbol: "DOCU", name: "DOCU", group: y60, role: tradable}
+  - {symbol: "TWLO", name: "TWLO", group: y60, role: tradable}
+  - {symbol: "OKTA", name: "OKTA", group: y60, role: tradable}
+  - {symbol: "SPOT", name: "SPOT", group: y60, role: tradable}
+  - {symbol: "PINS", name: "PINS", group: y60, role: tradable}
+  - {symbol: "SNAP", name: "SNAP", group: y60, role: tradable}
+  - {symbol: "RBLX", name: "RBLX", group: y60, role: tradable}
+  - {symbol: "U", name: "U", group: y60, role: tradable}
+  - {symbol: "COIN", name: "COIN", group: y60, role: tradable}
+  - {symbol: "HOOD", name: "HOOD", group: y60, role: tradable}
+  - {symbol: "SOFI", name: "SOFI", group: y60, role: tradable}
+  - {symbol: "AFRM", name: "AFRM", group: y60, role: tradable}
+  - {symbol: "UPST", name: "UPST", group: y60, role: tradable}
+  - {symbol: "DKNG", name: "DKNG", group: y60, role: tradable}
+  - {symbol: "ABNB", name: "ABNB", group: y60, role: tradable}
+  - {symbol: "DASH", name: "DASH", group: y60, role: tradable}
+  - {symbol: "LYFT", name: "LYFT", group: y60, role: tradable}
+  - {symbol: "ETSY", name: "ETSY", group: y60, role: tradable}
+  - {symbol: "EBAY", name: "EBAY", group: y60, role: tradable}
+  - {symbol: "MELI", name: "MELI", group: y60, role: tradable}
+  - {symbol: "SE", name: "SE", group: y60, role: tradable}
+  - {symbol: "BABA", name: "BABA", group: y60, role: tradable}
+  - {symbol: "JD", name: "JD", group: y60, role: tradable}
+  - {symbol: "PDD", name: "PDD", group: y60, role: tradable}
+  - {symbol: "BIDU", name: "BIDU", group: y60, role: tradable}
+  - {symbol: "NIO", name: "NIO", group: y60, role: tradable}
+  - {symbol: "RIVN", name: "RIVN", group: y60, role: tradable}
+  - {symbol: "ENPH", name: "ENPH", group: y60, role: tradable}
+  - {symbol: "FSLR", name: "FSLR", group: y60, role: tradable}
+  - {symbol: "ISRG", name: "ISRG", group: y60, role: tradable}
+  - {symbol: "DXCM", name: "DXCM", group: y60, role: tradable}
+  - {symbol: "MRNA", name: "MRNA", group: y60, role: tradable}
+  - {symbol: "VRTX", name: "VRTX", group: y60, role: tradable}
+  - {symbol: "REGN", name: "REGN", group: y60, role: tradable}
+  - {symbol: "ILMN", name: "ILMN", group: y60, role: tradable}
+  - {symbol: "ALGN", name: "ALGN", group: y60, role: tradable}
+  - {symbol: "TTD", name: "TTD", group: y60, role: tradable}
+  - {symbol: "HUBS", name: "HUBS", group: y60, role: tradable}
+  - {symbol: "VEEV", name: "VEEV", group: y60, role: tradable}
+  - {symbol: "BILL", name: "BILL", group: y60, role: tradable}
+  - {symbol: "GTLB", name: "GTLB", group: y60, role: tradable}
+  - {symbol: "PATH", name: "PATH", group: y60, role: tradable}
+  - {symbol: "ESTC", name: "ESTC", group: y60, role: tradable}
+  - {symbol: "CFLT", name: "CFLT", group: y60, role: tradable}
+  - {symbol: "S", name: "S", group: y60, role: tradable}
+  - {symbol: "FTNT", name: "FTNT", group: y60, role: tradable}
+  - {symbol: "AKAM", name: "AKAM", group: y60, role: tradable}
+  - {symbol: "ADSK", name: "ADSK", group: y60, role: tradable}
+  - {symbol: "EA", name: "EA", group: y60, role: tradable}
+  - {symbol: "TTWO", name: "TTWO", group: y60, role: tradable}
+  - {symbol: "RDDT", name: "RDDT", group: y60, role: tradable}
+  - {symbol: "CVNA", name: "CVNA", group: y60, role: tradable}
+  - {symbol: "W", name: "W", group: y60, role: tradable}
+  - {symbol: "CHWY", name: "CHWY", group: y60, role: tradable}
+  - {symbol: "Z", name: "Z", group: y60, role: tradable}
+  - {symbol: "EXPE", name: "EXPE", group: y60, role: tradable}
+  - {symbol: "MSTR", name: "MSTR", group: y60, role: tradable}
+  - {symbol: SPY, name: SPDR S&P 500 ETF, group: benchmark, role: benchmark}
+  - {symbol: QQQ, name: Invesco QQQ Trust, group: benchmark, role: benchmark}

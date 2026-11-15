@@ -303,6 +303,8 @@ def test_gates_and_selection():
     results["T1"]["failures"] = ["mean R not above 0"]
     assert swing.select(results)[0] == ["R2", "R3"]
     assert len(swing.X60) == 60
+    assert len(swing.Y60) == 60
+    assert not set(swing.Y60) & (set(swing.X60) | set(swing.U80_EXTRA))
     assert not set(swing.X60) & set(swing.U80_EXTRA)
     dev, hold = swing.SAMPLES["development"], swing.SAMPLES["holdout"]
     assert dev[3] < hold[2]

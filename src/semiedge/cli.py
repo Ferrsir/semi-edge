@@ -971,9 +971,11 @@ def _cmd_backtest_swing(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0
             raise CommandError(EXIT_CONFIG, f"at most {swing.MAX_SELECTED} candidates")
         names = tuple(dict.fromkeys(args.candidates))
     universe, index, start, end = swing.SAMPLES[args.sample]
-    symbols = (
-        (*config.universe.tradable_symbols, *swing.U80_EXTRA) if universe == "U80" else swing.X60
-    )
+    symbols = {
+        "U80": (*config.universe.tradable_symbols, *swing.U80_EXTRA),
+        "X60": swing.X60,
+        "Y60": swing.Y60,
+    }[universe]
     _, daily = _read_intraday_caches(settings.data_dir, config, (), daily_symbols=(*symbols, index))
     absent = [sym for sym in (*symbols, index) if sym not in daily]
     if absent:
@@ -1053,6 +1055,7 @@ def _cmd_backtest_swing(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0
             "FIVE CANDIDATES SCREENED: a development result alone is not evidence of an edge",
         ],
         "index_buy_and_hold_pct": swing.index_buy_and_hold(panel, index, start, end),
+        "mean_daily_range_pct": swing.mean_daily_range_pct(panel, symbols, start, end),
         "results": results,
     }
     lines = [
@@ -1060,6 +1063,7 @@ def _cmd_backtest_swing(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0
         f"{start}..{end}; decision cost {key} bps a side; start equity {args.equity:,.0f}",
         *(f"LABEL: {label}" for label in report["labels"]),
         f"{index} buy and hold: {report['index_buy_and_hold_pct']}%",
+        f"mean daily range (ATR14 / C): {report['mean_daily_range_pct']}%",
     ]
     for name, res in results.items():
         st, pf, mc = res["study"][key], res["portfolio"], res["account_paths"]
@@ -1780,7 +1784,11 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - one flat parse
         parents=[common],
         help="swing_v1 on cached daily bars (spec samples only)",
     )
-    btw.add_argument("--sample", choices=("development", "holdout", "unseen"), required=True)
+    btw.add_argument(
+        "--sample",
+        choices=("development", "holdout", "unseen", "unseen-growth"),
+        required=True,
+    )
     btw.add_argument(
         "--candidates", nargs="+", choices=("R1", "R2", "R3", "T1", "T2"), help="confirmation"
     )

@@ -1,0 +1,8 @@
+# Modelling assumptions fixed before results; not estimates of broker execution quality.
+initial_equity: 100000.0 # Research reference capital, matching config/app.yaml scanner equity.
+costs:
+  slippage_bps: 10.0 # Conservative research assumption: adverse 0.10% market fills.
+  commission_per_share: 0.0 # Spec §3.7: avoid split-scale dependence of per-share fees.
+  commission_per_order: 0.0 # Research assumption, excludes broker-specific commissions.
+  sell_fee_rate: 0.0 # Research assumption, not a current regulatory fee schedule.
+earnings_policy: waive_unavailable # §19: no verified point-in-time earnings source yet.

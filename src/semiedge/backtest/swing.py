@@ -36,13 +36,22 @@ X60: tuple[str, ...] = (
     "NKE", "DIS", "CMCSA", "T", "VZ", "KO", "PEP", "PG", "PM", "MO", "LIN", "NEE", "DUK", "SO",
     "AMT", "PLD", "SPG", "BKNG", "GM", "F",
 )  # fmt: skip
+Y60: tuple[str, ...] = (
+    "ROKU", "PYPL", "ZM", "DOCU", "TWLO", "OKTA", "SPOT", "PINS", "SNAP", "RBLX", "U", "COIN",
+    "HOOD", "SOFI", "AFRM", "UPST", "DKNG", "ABNB", "DASH", "LYFT", "ETSY", "EBAY", "MELI",
+    "SE", "BABA", "JD", "PDD", "BIDU", "NIO", "RIVN", "ENPH", "FSLR", "ISRG", "DXCM", "MRNA",
+    "VRTX", "REGN", "ILMN", "ALGN", "TTD", "HUBS", "VEEV", "BILL", "GTLB", "PATH", "ESTC",
+    "CFLT", "S", "FTNT", "AKAM", "ADSK", "EA", "TTWO", "RDDT", "CVNA", "W", "CHWY", "Z", "EXPE",
+    "MSTR",
+)  # fmt: skip
 U80_EXTRA = U80_ADDED
 
-Sample = Literal["development", "holdout", "unseen"]
+Sample = Literal["development", "holdout", "unseen", "unseen-growth"]
 SAMPLES: dict[str, tuple[str, str, date, date]] = {  # universe, index, start, end
     "development": ("U80", "QQQ", date(2016, 4, 1), date(2024, 12, 31)),
     "holdout": ("U80", "QQQ", date(2025, 1, 2), date(2026, 10, 23)),
     "unseen": ("X60", "SPY", date(2016, 4, 1), date(2026, 10, 23)),
+    "unseen-growth": ("Y60", "QQQ", date(2016, 4, 1), date(2026, 10, 23)),
 }
 
 SLIPPAGES = (5.0, 10.0, 20.0)
@@ -580,6 +589,23 @@ def account_paths(returns: np.ndarray, *, seed: int = 0) -> dict[str, Any]:
             "p95_worst": round(float(np.quantile(drawdowns, 0.05)) * 100, 2),
         },
     }
+
+
+def mean_daily_range_pct(
+    panel: DailyPanel, symbols: tuple[str, ...], start: date, end: date
+) -> float | None:
+    """Mean of ATR14 / C over the window, in percent (reported, not a gate)."""
+    rng = _window(panel, start, end)
+    if rng is None:
+        return None
+    parts = [
+        (panel.atr[s][rng[0] : rng[1] + 1] / panel.c[s][rng[0] : rng[1] + 1])
+        for s in symbols
+        if s in panel.c
+    ]
+    values = np.concatenate(parts) if parts else np.array([])
+    values = values[np.isfinite(values)]
+    return round(float(values.mean()) * 100, 3) if values.size else None
 
 
 def index_buy_and_hold(panel: DailyPanel, index: str, start: date, end: date) -> float | None:
