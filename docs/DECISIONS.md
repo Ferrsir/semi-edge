@@ -136,3 +136,13 @@ skill's rules are re-implemented from its documentation on Alpaca SIP bars; its 
 data stay out of SEMI-EDGE (ground rule 6). Candidates may hold overnight or for three sessions,
 which sets ADR-010's same-day rule aside for those candidates only. Risk limits are unchanged,
 and `config/universe.yaml` is unchanged until a candidate passes.
+
+ADR-018 (2026-11-15, #180): after `skill_follow_v1` and the `dip_v1` replication failed (#173),
+the owner dropped the same-day requirement: "find a strategy no matter if it's day trading,
+multi day ... as long as it works and is reproducible", checked with a Monte Carlo. The lead
+chose `swing_v1` (`docs/specifications/swing_v1.md`): three dip rules and two trend rules on
+daily bars, selected on U80 in 2016-2024 and confirmed once on U80 in 2025-2026 and on 60
+non-tech stocks no test has read (X60). The Monte Carlo checks and every gate are fixed in the
+spec. The 5% drawdown halt is modelled with an owner reset after 21 sessions for the gates and
+with no reset as a second report; the limit is unchanged. ADR-010's same-day rule no longer
+applies to new candidates. Risk limits and `config/universe.yaml` are unchanged.
