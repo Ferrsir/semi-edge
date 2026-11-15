@@ -575,7 +575,11 @@ def _cmd_backtest_dip(args: argparse.Namespace) -> int:
         raise CommandError(EXIT_CONFIG, "the holdout runs once, with the selected --variant")
     if args.output is not None and args.output.exists():
         raise CommandError(EXIT_DATA, "Backtest failed: output_path_exists.")
-    tradable = config.universe.tradable_symbols
+    tradable = tuple(config.universe.tradable_symbols)
+    if args.universe != "config":  # dip_v1_replication.md: the screen's added symbols
+        from semiedge.backtest.skill_follow import U80_ADDED  # noqa: PLC0415
+
+        tradable = U80_ADDED if args.universe == "u80-added" else (*tradable, *U80_ADDED)
     benchmark = config.universe.regime_benchmark
     _, end = dip.DEVELOPMENT if args.period == "development" else dip.HOLDOUT
     _, daily = _read_intraday_caches(
@@ -583,17 +587,23 @@ def _cmd_backtest_dip(args: argparse.Namespace) -> int:
     )
     if benchmark not in daily:
         raise CommandError(EXIT_DATA, f"No cached daily bars for {benchmark}.")
+    absent = [sym for sym in tradable if sym not in daily]
+    if args.universe != "config" and absent:
+        raise CommandError(EXIT_DATA, f"No cached daily bars for {len(absent)} symbol(s).")
     panel = dip.prepare_panel(daily, tradable=tradable, benchmark=benchmark, end=end)
     body = _dip_report(args, panel, limits)
     command = (
         f"semiedge backtest-dip --period {args.period}"
         + (f" --variant {args.variant}" if args.variant else "")
+        + (f" --universe {args.universe}" if args.universe != "config" else "")
         + f" --equity {args.equity:g} --risk-profile {args.risk_profile or 'default'}"
     )
     holdout_label = ["HOLDOUT RUN: run once with the pre-selected variant"]
     report = {
         "strategy": "dip_v1",
         "period": args.period,
+        "universe": args.universe,
+        "symbols": len(tradable),
         "command": command,
         "start_equity": args.equity,
         "risk_profile": args.risk_profile or "default",
@@ -1541,6 +1551,12 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - one flat parse
     )
     btd.add_argument("--period", choices=("development", "holdout"), required=True)
     btd.add_argument("--variant", choices=("S1", "S2"), help="required for the holdout")
+    btd.add_argument(
+        "--universe",
+        choices=("config", "u80-added", "u80"),
+        default="config",
+        help="config universe (default), or the dip_v1_replication.md symbol sets",
+    )
     btd.add_argument("--equity", type=float, default=5000.0)
     btd.add_argument("--risk-profile", default="5k", help="risk_<name>.yaml; 'default' = risk.yaml")
     btd.add_argument("--output", type=Path, help="new output directory (existing paths refused)")

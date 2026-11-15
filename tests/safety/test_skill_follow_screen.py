@@ -406,3 +406,23 @@ def test_cli_holdout_reports_only_the_requested_pair(
     assert "A1:U16" in report["holdout"]
     assert "selection" not in report
     assert "HOLDOUT signal study A1:U16" in capsys.readouterr().out
+
+
+def test_dip_replication_universe_needs_every_added_symbol(
+    config_dir: Path, tmp_path: Path, monkeypatch
+):
+    seen: dict[str, tuple[str, ...]] = {}
+
+    def fake(_dir: object, _config: object, _symbols: object, *, daily_symbols: tuple[str, ...]):
+        seen["daily"] = daily_symbols
+        frame = _daily(np.linspace(100, 130, 120))
+        return {}, {"SMH": frame, "QCOM": frame}
+
+    monkeypatch.setattr(cli, "_read_intraday_caches", fake)
+    monkeypatch.setenv("SEMIEDGE_DATA_DIR", str(tmp_path / "data"))
+    base = ["backtest-dip", "--config-dir", str(config_dir), "--period", "development"]
+    assert cli.main([*base, "--universe", "u80-added"]) != 0  # 63 symbols have no bars
+    assert seen["daily"] == (*sf.U80_ADDED, "SMH")
+    assert cli.main([*base, "--universe", "u80"]) != 0
+    assert len(seen["daily"]) == 16 + 64 + 1
+    assert seen["daily"][16:80] == sf.U80_ADDED
