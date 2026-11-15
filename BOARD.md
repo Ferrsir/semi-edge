@@ -21,7 +21,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | T6 | #16 | Performance metrics, SMH/QQQ benchmark comparison | codex | DONE (PR #81, merged 700d90d; Claude PASS c613da9; P3 F-154 → #79) | T5 |
 | T7 | #17 | Walk-forward + parameter sensitivity | claude | READY | T5, T6 |
 | T8 | #19 | Deterministic independent risk manager (exposure incl. pending, halts) | claude | DONE (PR #69, merged f79a496; Codex PASS a87d30c) | T2 |
-| T9 | #21 | Paper order lifecycle: idempotent client IDs, partial fills, brackets | claude | IN PROGRESS (claude): part 1 DONE (#78); part 2 slice in REVIEW as #164 (client IDs, gateway contract, SimGateway at 8346e7a); OrderManager, sim run mode and SIM DB next | T3, T8 |
+| T9 | #21 | Paper order lifecycle: idempotent client IDs, partial fills, brackets | claude | IN PROGRESS (claude): #164 review FAIL F-183..F-187; OrderManager/runner await corrected contracts | T3, T8 |
 | T10 | #22 | Broker reconciliation + restart recovery | codex | READY | T9 |
 | T11 | #23 | Position management, stop/target, time exits | claude | READY | T9 |
 | T12 | #24 | Exchange-calendar scheduler / trading loop | codex | READY | T9, T10, T11 |
@@ -43,18 +43,18 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | A98 | #98 | Remaining free-text credential forms (F-102) | codex | DONE (PR #101 merged 32128fd; 2150 passed/two skips) | T16 |
 | A103 | #103 | Equity-chart observation/session handling | codex | DONE (superseded by dashboard redesign #108 and price Charts #117; #105 closed) | T13 |
 | A122 | #122 | Dashboard status truthfulness and current strategy label (F-177/F-178) | codex | DONE (PR #125 merged after Claude PASS) | T13 |
-| I128 | #128 | $5k risk profile, decoupled defaults, account models in the spec | claude | REVIEW (PR #129; restricted, owner approval) | T8 |
+| I128 | #128 | $5k risk profile, decoupled defaults, account models in the spec | claude | REVIEW (PR #129: Codex PASS; conflicts and Ferrsir code-owner review remain) | T8 |
 | I131 | #131 | Intraday backtest: intraday_v1 at $5k, 3 account models x 3 slippages | claude | REVIEW (PR #130; code-owned, owner approval; stacked on #129) | I128, #118 |
 | I133 | #133 | dip_v1: pre-registered swing dip-buying (spec #134 merged; backtest PR #135) | claude | REVIEW (PR #135; code-owned, owner approval; stacked on #129/#130) | I128, I131 |
 | I137 | #137 | intraday_dip_v1: same-day dip-buying, main strategy (spec #138 merged; backtest PR #139) | claude | REVIEW (PR #139: development FAIL, holdout unused; code-owned, owner approval) | I133 |
-| I145 | #145 | orb_inplay_v1: 5-minute ORB in stocks in play, current regime (spec+engine+result) | claude | REVIEW (PR #160: development FAIL, holdout unused; code-owned, owner approval; Codex review requested) | A154 |
-| I162 | #162 | Same-day execution + SIM mode spec (amends phase2-4 §6/§9/§10/§12) | claude | REVIEW (PR #163, docs; Codex review requested) | — |
-| I169 | #169 | closing_momentum_v2 (Codex #150 + F-181/F-182), current regime | claude | REVIEW (PR #170: development FAIL, holdout unused; code-owned, owner approval) | I145 |
-| A146 | #146 | F-179: cap intraday fill quantity by actual entry-to-stop risk | codex | REVIEW (PR #152 at 05feb09; Claude review requested; 2257 passed/two skips; CI green) | I131 |
+| I145 | #145 | orb_inplay_v1: 5-minute ORB in stocks in play, current regime (spec+engine+result) | claude | REVIEW (PR #160: whole-PR FAIL inherited F-179; development FAIL, holdout unused) | A154 |
+| I162 | #162 | Same-day execution + SIM mode spec (amends phase2-4 §6/§9/§10/§12) | claude | REVIEW (PR #163 FAIL F-188; #166/#167 Codex PASS, code-owner review required) | — |
+| I169 | #169 | closing_momentum_v2 (Codex #150 + F-181/F-182), current regime | claude | REVIEW (PR #170: whole-PR FAIL inherited F-179; development FAIL, holdout unused) | I145 |
+| A146 | #146 | F-179: cap intraday fill quantity by actual entry-to-stop risk | codex | REVIEW (PR #152 at 05feb09: Claude PASS; Ferrsir code-owner review required) | I131 |
 | I141 | #141 | gap_reversal_v1 spec and backtest | claude | REVIEW (spec #142 merged; backtest #144 needs shared portfolio sizing follow-up #154) | I137 |
-| I149 | #149 | Closing momentum preregistered same-day strategy spec | codex | REVIEW (PR #150 at 2ae9347; Claude cross-provider review required; no results) | — |
-| A154 | #154 | F-180: actual-fill risk cap in dip portfolio replays | codex | REVIEW (PR #158 at 0e89335; 2330 passed/two skips; Claude review requested) | I133, I137, I141 |
-| T155 | #155 | Refresh and republish the project-status dashboard | codex | REVIEW (source PR #157 at 7ae406c; private Site republished successfully; DOM/snapshot checks pass) | T47 |
+| I149 | #149 | Closing momentum preregistered same-day strategy spec | codex | DONE (PR #150 closed superseded by #170 preregistration; no strategy approval) | — |
+| A154 | #154 | F-180: actual-fill risk cap in dip portfolio replays | codex | REVIEW (PR #158: F-180 correction Claude PASS; whole-PR FAIL inherited F-179) | I133, I137, I141 |
+| T155 | #155 | Refresh and republish the project-status dashboard | codex | REVIEW (source PR #157 at 04888ca awaits Claude; private publication separate) | T47 |
 | A172 | #172 | Independent review of open Claude PRs and safe merges | codex | REVIEW (audit PR #176 at 3169558; Claude review requested; fixes tracked #172) | — |
 | H1 | #20 | Verified earnings calendar source (owner chose Finnhub primary + Alpha Vantage cross-check) | claude | DONE (#88; #115 isolates Finnhub parse failure to TSM; R16 still blocks uncovered symbols and MRVL/MU date disagreements) | T8 |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | DONE (owner supplied local file; paper prefix checked; read-only SIP daily/5-minute fetch succeeded on this PC; orders disabled) | — |
