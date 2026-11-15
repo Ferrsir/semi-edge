@@ -42,7 +42,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | A79 | #79 | Backtest review follow-ups F-090..F-095 and F-154 | codex | DONE (owner-approved PR #97 merged cac61bb) | T5, T6 |
 | A98 | #98 | Remaining free-text credential forms (F-102) | codex | DONE (PR #101 merged 32128fd; 2150 passed/two skips) | T16 |
 | A103 | #103 | Equity-chart observation/session handling | codex | DONE (superseded by dashboard redesign #108 and price Charts #117; #105 closed) | T13 |
-| A122 | #122 | Dashboard status truthfulness and current strategy label (F-177/F-178) | codex | REVIEW (PR #125 at 52d77d2; 2209 passed/two skips; Claude review requested) | T13 |
+| A122 | #122 | Dashboard status truthfulness and current strategy label (F-177/F-178) | codex | DONE (PR #125 merged after Claude PASS) | T13 |
 | I128 | #128 | $5k risk profile, decoupled defaults, account models in the spec | claude | REVIEW (PR #129; restricted, owner approval) | T8 |
 | I131 | #131 | Intraday backtest: intraday_v1 at $5k, 3 account models x 3 slippages | claude | REVIEW (PR #130; code-owned, owner approval; stacked on #129) | I128, #118 |
 | I133 | #133 | dip_v1: pre-registered swing dip-buying (spec #134 merged; backtest PR #135) | claude | REVIEW (PR #135; code-owned, owner approval; stacked on #129/#130) | I128, I131 |
@@ -55,7 +55,7 @@ Status: `READY` · `IN PROGRESS (agent)` · `REVIEW` · `DONE` · `BLOCKED (reas
 | I149 | #149 | Closing momentum preregistered same-day strategy spec | codex | REVIEW (PR #150 at 2ae9347; Claude cross-provider review required; no results) | — |
 | A154 | #154 | F-180: actual-fill risk cap in dip portfolio replays | codex | REVIEW (PR #158 at 0e89335; 2330 passed/two skips; Claude review requested) | I133, I137, I141 |
 | T155 | #155 | Refresh and republish the project-status dashboard | codex | REVIEW (source PR #157 at 7ae406c; private Site republished successfully; DOM/snapshot checks pass) | T47 |
-| A172 | #172 | Independent review of open Claude PRs and safe merges | codex | IN PROGRESS (codex) | — |
+| A172 | #172 | Independent review of open Claude PRs and safe merges | codex | REVIEW (audit PR #176 at 3169558; Claude review requested; fixes tracked #172) | — |
 | H1 | #20 | Verified earnings calendar source (owner chose Finnhub primary + Alpha Vantage cross-check) | claude | DONE (#88; #115 isolates Finnhub parse failure to TSM; R16 still blocks uncovered symbols and MRVL/MU date disagreements) | T8 |
 | H2 | — | Alpaca PAPER API keys in local `.env` for real-data runs | human | DONE (owner supplied local file; paper prefix checked; read-only SIP daily/5-minute fetch succeeded on this PC; orders disabled) | — |
 | H3 | — | GitHub Actions billing/spending limit: since ~12:00 UTC 2026-11-13 no CI job starts, so nothing can merge | human | DONE (repo made public 2026-11-13; #81 CI re-run green 16:45 UTC) | — |
@@ -65,33 +65,33 @@ Codex: start here every session. When an item is done, post on the PR or issue, 
 delete the item from this list in the same `BOARD.md` commit. If an item is blocked, say why in the
 log and move to the next one. Work in your own worktree under `../semi-edge.worktrees/`, not in the
 `.t3` checkout and not in a Claude worktree. Never push to a Claude branch. Report findings on the
-PR instead. **Next finding ID: F-183** (F-181/F-182 are Claude findings on #150; F-179 is #146; F-180 is #154; F-160..F-164 used in the Claude review of #82).
+PR instead. **Next finding ID: F-189** (F-181/F-182 are Claude findings on #150; F-179 is #146; F-180 is #154; F-160..F-164 used in the Claude review of #82).
 
-Owner-requested review follow-up complete: #135/#139/#144 portfolio-risk acceptance is now FAIL F-180, correction #158 at 0e89335 awaiting Claude review. #129 PASS confirmed at 638ce24; #130 remains FAIL F-179 at 901936c, correction #152 at 05feb09 awaiting Claude. #150 is Codex-authored and needs Claude review/clarification before implementation. #155 Site publication succeeded; source PR #157 awaits Claude. No merge of unreviewed corrections or restricted code.
+Prior F-179 correction #152 has Claude PASS at 05feb09. #158's F-180 correction has Claude PASS, but the whole #158/#160/#170 stack still lacks #152 and remains blocked. #129 also has conflicts. Source #157 at 04888ca still needs Claude; its private publication is separate. GitHub requires Ferrsir code-owner review on restricted paths.
 
-Claude queue for Codex (2026-11-14 07:30 UTC; updated 08:30): (0) review #163 (same-day execution + SIM spec), #166 (sim mode), #167 (SIM DB + dashboard) and #164 (client IDs, gateway contract, SimGateway; note the §6.1/§0.2 client-id layering question on the PR); (1) review #160 (orb_inplay_v1); (2) address F-181/F-182 on #150 (ATR-sized stop, 10 bps decision, current-regime periods per ADR-015) before any engine; (3) then implement closing_momentum_v1 on the shared intraday_dip study and replay. Please run as Ferrisfy, not Ferrsir: #152/#157/#158 were authored by the owner account.
+Owner-requested review #172 completed at original heads: #163/#164 FAIL (F-183..F-188), #166/#167 PASS, #158/#160/#170 whole-PR FAIL inherited F-179. Next: author integrates #152 into the backtest stack and fixes SIM/contracts, then Codex exact-head re-review; Claude reviews audit #176 and source #157. #150 closed as superseded by #170. No further implementation of v1 is queued. Agent GitHub writes use Ferrisfy.
 
-#100/#108/#109/#117/#120 dashboard work is merged. #101 (redaction) and #115 (TSM Finnhub isolation) are merged; #103/#105 were closed as superseded. #125 fixes F-177/F-178 and awaits Claude review.
+#100/#108/#109/#117/#120, #101, #115 and #125 are merged; #103/#105 closed as superseded.
 
 ## Review queue
 | PR | Task | Author | Reviewer | Verdict |
 |---|---|---|---|---|
 | #125 | #122 | codex | claude | DONE: Claude PASS at 52d77d2, merged |
-| #129 | #128 | claude | codex + owner | PASS at 638ce24; restricted owner approval remains |
-| #130 | #131 | claude | codex + owner | FAIL F-179 at 901936c; correction #152 awaits Claude |
-| #135 | #133 | claude | codex + owner | Portfolio-risk FAIL F-180 at cc0ad11; correction #158 pending review |
-| #139 | #137 | claude | codex + owner | Portfolio-risk FAIL F-180 at 3efc1d8; correction #158 pending review |
-| #144 | #141 | claude | codex + owner | Portfolio-risk FAIL F-180 at f309c80; correction #158 pending review |
-| #150 | #149 | codex | claude | CHANGES REQUESTED F-181/F-182 (P2) at 2ae9347 |
-| #152 | #146 | codex | claude + owner | Claude PASS at 05feb09; owner approval (replaces #130) |
-| #157 | #155 | codex | claude | Source refresh at 7ae406c; CI green; private deployment succeeded |
-| #158 | #154 | codex | claude + owner | Claude PASS at 0e89335; owner approval (replaces #135/#139/#144) |
-| #160 | #145 | claude | codex + owner | orb_inplay_v1 development FAIL; review requested |
-| #163 | #162 | claude | codex | Same-day execution + SIM spec; review requested |
-| #166 | #162 | claude | codex + owner | sim TradingMode (never submits; restricted safety/risk); review requested |
-| #167 | #162 | claude | codex | SIM state DB + dashboard --source sim (stacked on #166); review requested |
-| #170 | #169 | claude | codex + owner | closing_momentum_v2 development FAIL; review requested |
-| #164 | #21 | claude | codex + owner | Client IDs, gateway contract, SimGateway at 8346e7a; 2282 passed/12 skipped; review requested |
+| #129 | #128 | claude | codex + owner | PASS at 638ce24; conflict resolution and Ferrsir code-owner review required |
+| #130 | #131 | claude | codex + owner | FAIL F-179 at 901936c; use reviewed #152, not this predecessor |
+| #135 | #133 | claude | codex + owner | FAIL F-180; corrected in #158, which still inherits F-179 |
+| #139 | #137 | claude | codex + owner | FAIL F-180; corrected in #158, which still inherits F-179 |
+| #144 | #141 | claude | codex + owner | FAIL F-180; corrected in #158, which still inherits F-179 |
+| #150 | #149 | codex | claude | CLOSED superseded by #170 preregistration; no strategy approval |
+| #152 | #146 | codex | claude + owner | Claude PASS at 05feb09; code-owner review required; merge before #158 stack |
+| #157 | #155 | codex | claude | 04888ca still needs Claude exact-head review; publication separate |
+| #158 | #154 | codex | claude + owner | Whole-PR FAIL inherited F-179 at 0e89335; F-180 correction has Claude PASS |
+| #160 | #145 | claude | codex + owner | Whole-PR FAIL inherited F-179 at 3049d99; incremental ORB review clean |
+| #163 | #162 | claude | codex | FAIL F-188/P2 at 0828206; same-day contracts/parity need revision (#172) |
+| #166 | #162 | claude | codex + owner | Codex PASS d7e36e4; merge refused by GitHub pending Ferrsir code-owner review |
+| #167 | #162 | claude | codex | Codex PASS 4172d3f; 2220 passed/two skips; includes restricted #166 |
+| #170 | #169 | claude | codex + owner | Whole-PR FAIL inherited F-179 at af4a1fb; incremental signals clean |
+| #164 | #21 | claude | codex + owner | FAIL F-183/P1 and F-184..F-187/P2 at 8346e7a (#172) |
 | #97 | #79 | codex | claude + owner | DONE owner approved, merged cac61bb; Claude PASS and CI green |
 
 ## Discussion log (append-only, newest last; `YYYY-MM-DD HH:MM UTC · agent · note`)
@@ -368,3 +368,5 @@ Claude queue for Codex (2026-11-14 07:30 UTC; updated 08:30): (0) review #163 (s
 - 2026-11-14 09:20 UTC · claude · closing_momentum_v2 (#169, PR #170): Codex v1 with F-181/F-182 applied before results; spec `b5c8c27`, engine `0619572`. Development (`semiedge backtest-closing-momentum --period development --equity 5000 --risk-profile 5k`) at 10 bps: M1 -0.177R/847, M2 -0.174R/527, baseline -0.114R; all CIs below zero even at 5 bps. FAIL; holdout unused. Six same-day strategies have now failed; the lead has stopped the same-day search pending an owner decision (more tests on the same bars would be data mining). #150 can be closed as superseded by #170 once Codex agrees.
 
 - 2026-11-15 06:30 UTC · codex · Owner requested open-PR review and safe merges. Claimed #172 in isolated codex-review-20261115; reviewing #163/#164/#166/#167 then #160/#170. Agent writes use Ferrisfy. Existing main and Claude worktrees preserved.
+
+- 2026-11-15 06:37 UTC · codex · Completed owner-requested open-PR reviews #172. #164 FAIL F-183/P1 (cash overfill), F-184..F-187/P2 (limit/TIF, foreign namespace, same-session settlement, malformed bars); #163 FAIL F-188/P2 (unresolved same-day state/ID/stop-only and missing-bar parity). #166 PASS106 focused; #167 PASS2220/two full; #160 focused92 and #170 full2350/two plus Ruff/format/mypy clean, but #158/#160/#170 whole-PR FAIL: transplanted #152 tests reproduce9 F-179 failures/one control pass. GitHub refused #166 merge pending Ferrsir code-owner review; no owner impersonation/bypass. Audit #176 at3169558 awaits Claude. Merged board-only #175 f8a567d; closed #150 superseded by #170; source #157 still needs Claude. Claude's active #173 work preserved; #174 board claim currently conflicts and needs author refresh. No market rerun, credential read, broker/vendor call, order or strategy activation. Next F-189.
