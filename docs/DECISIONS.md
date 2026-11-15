@@ -125,3 +125,14 @@ in stocks in play from Zarattini, Barbon and Aziz (2024), long-only. Periods: de
 2026-01..06, holdout 2026-07-01..10-23, with the inspected 10-26..11-13 window excluded. The
 decision cost is 10 bps a side for this spec only; the rationale is in the spec. Risk limits are
 unchanged.
+
+ADR-017 (2026-11-15, #173): owner decision after six failed same-day tests: test the rules in
+the `day-trader-skill` pack and a sector-follow idea ("when one tech company goes up the others
+usually follow"), on the current 16 names and on a wider tech universe, and report what works.
+The lead chose one pre-registered screen, `skill_follow_v1`
+(`docs/specifications/skill_follow_v1.md`): 19 candidates on two universes, selection on
+2024-12-16..2026-06-30, at most two pairs carried to a holdout on 2026-07-01..2026-10-23. The
+skill's rules are re-implemented from its documentation on Alpaca SIP bars; its code and Yahoo
+data stay out of SEMI-EDGE (ground rule 6). Candidates may hold overnight or for three sessions,
+which sets ADR-010's same-day rule aside for those candidates only. Risk limits are unchanged,
+and `config/universe.yaml` is unchanged until a candidate passes.
