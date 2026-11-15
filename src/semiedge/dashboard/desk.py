@@ -564,13 +564,15 @@ def render_desk(desk: Desk) -> str:
     """The full desk as one escaped HTML fragment."""
     status, tone = _status(desk)
     synthetic = ""
+    mode_label = "SIM" if desk.source == "sim" else "PAPER"
     session = _t(desk.scan_session) if desk.scan_session else "no scan yet"
     return (
         f"<style>{DESK_CSS}</style>"
         '<div class="se-desk">'
         '<header class="top"><div class="brand"><span class="mark">SE</span><div>'
         "<b>SEMI-EDGE</b><small>trading desk</small></div></div>"
-        f'<div class="pills">{synthetic}<span class="pill {tone}">PAPER · {status}</span></div>'
+        f'<div class="pills">{synthetic}'
+        f'<span class="pill {tone}">{mode_label} · {status}</span></div>'
         "</header>"
         f'<div class="rule"><span class="chip">SESSION {session}</span>'
         f"<span>Mode {_t(desk.mode)} · "

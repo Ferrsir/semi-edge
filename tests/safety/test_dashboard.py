@@ -400,3 +400,43 @@ def test_auto_refresh_reruns_pages_but_never_the_halt_form(tmp_path, monkeypatch
     render(ui, source="cache", now=NOW)
     assert ui.fragments == ([60] if timed else [])
     assert any(line.startswith("Updated ") for line in ui.output)
+
+
+def _sim_db(tmp_path):
+    path = source_root(tmp_path, "sim") / "state" / "semiedge.sqlite3"
+    store = StateStore(path, data_source="sim", now=NOW)
+    store.start_run("sim-run", "monitor", TradingMode.SIM, "f" * 64, None, NOW)
+    store.heartbeat("engine", "ok", "sim tick", NOW - timedelta(seconds=20))
+    store.finish_run("sim-run", "ok", "sim", NOW)
+    store.close()
+    return path
+
+
+@pytest.mark.parametrize("page", PAGES)
+def test_sim_database_renders_with_the_sim_banner(tmp_path, monkeypatch, page):
+    from semiedge.dashboard.viewmodel import SIM_BANNER
+
+    _sim_db(tmp_path)
+    monkeypatch.setenv("SEMIEDGE_DATA_DIR", str(tmp_path))
+    ui = FakeUI(page)
+    render(ui, source="sim", now=NOW)
+    text = "\n".join(ui.output)
+    assert SIM_BANNER in text
+    assert SYNTHETIC_BANNER not in text
+    if page == "Overview":
+        assert "SIM · " in text
+        assert "PAPER · " not in text
+
+
+def test_sim_and_paper_databases_never_cross(tmp_path):
+    from semiedge.state.store import StateStoreError
+
+    path = _sim_db(tmp_path)
+    assert source_root(tmp_path, "sim") == tmp_path / "sim"
+    with pytest.raises(ValueError, match="does not match"):
+        load_view(path, source="cache", now=NOW)
+    with pytest.raises(StateStoreError):
+        StateStore(path, data_source="real", now=NOW)
+    paper = fixture_db(tmp_path, "cache")
+    with pytest.raises(ValueError, match="does not match"):
+        load_view(paper, source="sim", now=NOW)

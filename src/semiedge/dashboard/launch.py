@@ -7,8 +7,8 @@ from pathlib import Path
 
 
 def launch(source: str) -> int:
-    if source not in {"cache", "synthetic"}:
-        raise ValueError("source must be cache or synthetic")
+    if source not in {"cache", "synthetic", "sim"}:
+        raise ValueError("source must be cache, synthetic or sim")
     if importlib.util.find_spec("streamlit") is None:
         raise ValueError("Dashboard requires: uv sync --locked --extra dashboard")
     app = Path(__file__).with_name("app.py")

@@ -21,13 +21,15 @@ from semiedge.state.models import TERMINAL_STATUSES
 from semiedge.state.readonly import ReadOnlyStateStore
 from semiedge.strategy.exits import held_sessions
 
-Source = Literal["cache", "synthetic"]
+Source = Literal["cache", "synthetic", "sim"]
+_DB_SOURCE: dict[str, str] = {"cache": "real", "synthetic": "synthetic", "sim": "sim"}
+SIM_BANNER = "SIM — NO ORDERS SENT. Fills are simulated on live 5-minute bars."
 
 
 def source_root(data_dir: Path, source: Source) -> Path:
-    if source not in {"cache", "synthetic"}:
-        raise ValueError("source must be cache or synthetic")
-    return data_dir / "synthetic" if source == "synthetic" else data_dir
+    if source not in _DB_SOURCE:
+        raise ValueError("source must be cache, synthetic or sim")
+    return data_dir if source == "cache" else data_dir / source
 
 
 def display(value: object) -> str:
@@ -65,16 +67,16 @@ def heartbeat_freshness(detail: str, age: float) -> str:
 def load_view(path: Path, *, source: Source, now: datetime) -> DashboardView:
     if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
-    if source not in {"cache", "synthetic"}:
-        raise ValueError("source must be cache or synthetic")
+    if source not in _DB_SOURCE:
+        raise ValueError("source must be cache, synthetic or sim")
     store = ReadOnlyStateStore(path)
     try:
         actual = store.data_source()
-        if actual != ("synthetic" if source == "synthetic" else "real"):
+        if actual != _DB_SOURCE[source]:
             raise ValueError("database source does not match selected source")
         runs = _records(store.recent_runs())
         mode = str(runs[0]["mode"]).upper() if runs else "UNAVAILABLE: no recorded run"
-        if runs and mode not in {"SCANNER", "BACKTEST", "PAPER"}:
+        if runs and mode not in {"SCANNER", "BACKTEST", "PAPER", "SIM"}:
             raise ValueError("unsupported persisted run mode")
         scan = store.latest_signal_run_id()
         equity = _records(store.equity_snapshots())

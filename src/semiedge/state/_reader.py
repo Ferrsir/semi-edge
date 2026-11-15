@@ -40,7 +40,7 @@ __all__ = ["StateReaderBase", "StateStoreError"]
 
 ORDER_KINDS: Final[frozenset[str]] = frozenset(get_args(OrderKind))
 ORDER_STATUSES: Final[frozenset[str]] = frozenset(get_args(OrderStatus))
-DATA_SOURCES: Final = ("real", "synthetic")
+DATA_SOURCES: Final = ("real", "synthetic", "sim")  # "sim": SIM mode (#162), never paper
 
 
 class StateStoreError(RuntimeError):
@@ -377,7 +377,7 @@ def decode_reconciliation(row: Sequence[Any]) -> ReconciliationReport:
 # ------------------------------------------------------------------ schema / identity checks
 
 
-def read_identity(conn: sqlite3.Connection) -> tuple[str, Literal["real", "synthetic"]]:
+def read_identity(conn: sqlite3.Connection) -> tuple[str, Literal["real", "synthetic", "sim"]]:
     """Check the schema version is one this binary knows and return (store_id, data_source)."""
     try:
         versions = [row[0] for row in conn.execute("SELECT version FROM schema_version")]
@@ -397,7 +397,7 @@ def read_identity(conn: sqlite3.Connection) -> tuple[str, Literal["real", "synth
         raise StateStoreError("state database meta.store_id is missing or malformed")
     if source not in DATA_SOURCES:
         raise StateStoreError("state database meta.data_source is missing or malformed")
-    return store_id, cast(Literal["real", "synthetic"], source)
+    return store_id, cast(Literal["real", "synthetic", "sim"], source)
 
 
 # ------------------------------------------------------------------ argument validation (reads)
@@ -434,7 +434,7 @@ class StateReaderBase:
 
     _conn: sqlite3.Connection
     _store_id: str
-    _data_source: Literal["real", "synthetic"]
+    _data_source: Literal["real", "synthetic", "sim"]
 
     def _connection(self) -> sqlite3.Connection:
         conn: sqlite3.Connection | None = getattr(self, "_conn", None)
@@ -447,7 +447,7 @@ class StateReaderBase:
         self._connection()
         return self._store_id
 
-    def data_source(self) -> Literal["real", "synthetic"]:
+    def data_source(self) -> Literal["real", "synthetic", "sim"]:
         self._connection()
         return self._data_source
 

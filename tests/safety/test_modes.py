@@ -92,3 +92,29 @@ def test_non_enum_mode_rejected() -> None:
             enable_order_submission=True,
             allow_live_trading=False,
         )
+
+
+def test_sim_mode_is_supported_but_can_never_submit_orders():
+    from semiedge.safety.modes import (
+        SUPPORTED_MODES,
+        assert_order_submission_allowed,
+        order_submission_permitted,
+    )
+
+    assert TradingMode("sim") is TradingMode.SIM
+    assert TradingMode.SIM in SUPPORTED_MODES
+    assert not order_submission_permitted(
+        TradingMode.SIM, enable_order_submission=False, allow_live_trading=False
+    )
+    with pytest.raises(SafetyViolation):
+        order_submission_permitted(
+            TradingMode.SIM, enable_order_submission=True, allow_live_trading=False
+        )
+    with pytest.raises(SafetyViolation):
+        assert_order_submission_allowed(
+            TradingMode.SIM, enable_order_submission=False, allow_live_trading=False
+        )
+    with pytest.raises(SafetyViolation):
+        order_submission_permitted(
+            TradingMode.SIM, enable_order_submission=False, allow_live_trading=True
+        )

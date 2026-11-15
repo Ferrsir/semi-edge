@@ -931,7 +931,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - one flat parse
     parser = argparse.ArgumentParser(prog="semiedge", description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     dashboard = commands.add_parser("dashboard", help="local read-only PAPER dashboard")
-    dashboard.add_argument("--source", choices=("cache", "synthetic"), default="cache")
+    dashboard.add_argument("--source", choices=("cache", "synthetic", "sim"), default="cache")
     dashboard.set_defaults(handler=_cmd_dashboard)
 
     diagnostic = commands.add_parser(
