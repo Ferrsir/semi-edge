@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -65,6 +66,32 @@ def _read_yaml(path: Path) -> dict[str, Any]:
 def read_strict_yaml(path: Path) -> dict[str, Any]:
     """Public strict reader (duplicate keys, non-string keys, non-mapping top level rejected)."""
     return _read_yaml(path)
+
+
+_PROFILE = re.compile(r"[a-z0-9][a-z0-9_]{0,31}")
+
+
+def load_risk_profile(config_dir: Path, profile: str | None) -> RiskLimits:
+    """``risk.yaml`` when ``profile`` is ``None``, else ``risk_<profile>.yaml`` (#128).
+
+    The same ceiling checks apply; a missing or malformed profile is a ``ConfigError``, never a
+    fallback to the default file.
+    """
+    if profile is None:
+        name = RISK_FILE
+    elif _PROFILE.fullmatch(profile):
+        name = f"risk_{profile}.yaml"
+    else:
+        raise ConfigError("risk profile names are lower-case letters, digits and underscores")
+    path = config_dir / name
+    if not path.is_file():
+        raise ConfigError(f"risk profile file {name} does not exist")
+    try:
+        return RiskLimits.model_validate(_read_yaml(path))
+    except ConfigError:
+        raise
+    except (ValueError, yaml.YAMLError, OSError) as exc:
+        raise ConfigError(str(exc)) from exc
 
 
 def load_app_config(config_dir: Path) -> AppConfig:

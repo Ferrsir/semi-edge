@@ -103,9 +103,9 @@ def test_strategy_param_cross_validation() -> None:
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("max_risk_per_trade_pct", 0.003),
-        ("max_position_pct", 0.10),
-        ("max_gross_exposure_pct", 0.5),
+        ("max_risk_per_trade_pct", 0.011),  # ceilings raised for the $5k profile (#128)
+        ("max_position_pct", 0.26),
+        ("max_gross_exposure_pct", 0.76),
         ("max_positions", 5),
         ("daily_loss_halt_pct", 0.02),
         ("drawdown_halt_pct", 0.10),
@@ -167,3 +167,49 @@ def test_missing_app_sections_fail_closed(config_dir: Path, tmp_path: Path, text
     (cfg_dir / "app.yaml").write_text(text, encoding="utf-8")
     with pytest.raises(ConfigError, match="missing sections"):
         load_app_config(cfg_dir)
+
+
+# ------------------------------------------------------------------ #128 $5k profile
+
+
+def test_default_limits_did_not_loosen_when_the_ceilings_rose() -> None:
+    from semiedge.config.models import RiskLimits
+
+    r = RiskLimits()
+    assert (r.max_risk_per_trade_pct, r.max_position_pct, r.max_gross_exposure_pct) == (
+        0.0025,
+        0.05,
+        0.20,
+    )
+    assert (r.max_positions, r.daily_loss_halt_pct, r.drawdown_halt_pct) == (4, 0.01, 0.05)
+
+
+def test_repository_risk_files(config_dir: Path) -> None:
+    from semiedge.config.loader import load_risk_profile
+
+    default = load_risk_profile(config_dir, None)
+    assert default.max_risk_per_trade_pct == 0.0025  # config/risk.yaml unchanged
+    small = load_risk_profile(config_dir, "5k")
+    assert (small.max_risk_per_trade_pct, small.max_position_pct) == (0.01, 0.25)
+    assert (small.max_gross_exposure_pct, small.max_positions) == (0.75, 3)
+    assert (small.daily_loss_halt_pct, small.drawdown_halt_pct) == (0.01, 0.05)
+
+
+@pytest.mark.parametrize("name", ["../risk", "5K", "", "a" * 40, "risk.yaml"])
+def test_malformed_profile_names_are_refused(name: str, config_dir: Path) -> None:
+    from semiedge.config.loader import ConfigError, load_risk_profile
+
+    with pytest.raises(ConfigError):
+        load_risk_profile(config_dir, name)
+
+
+def test_unknown_profile_and_over_ceiling_profile_are_refused(
+    tmp_path: Path, config_dir: Path
+) -> None:
+    from semiedge.config.loader import ConfigError, load_risk_profile
+
+    with pytest.raises(ConfigError, match="does not exist"):
+        load_risk_profile(config_dir, "nope")
+    (tmp_path / "risk_big.yaml").write_text("max_risk_per_trade_pct: 0.02\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="ceiling"):
+        load_risk_profile(tmp_path, "big")
