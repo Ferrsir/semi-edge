@@ -11,12 +11,13 @@ import pytest
 
 from semiedge.config.loader import load_app_config
 from semiedge.risk import SizingResult, propose_position_size
-from semiedge.safety.limits import RISK_LIMIT_CEILINGS
+from semiedge.safety.limits import DEFAULT_RISK_LIMITS, RISK_LIMIT_CEILINGS
 
 pytestmark = pytest.mark.safety
 
-RISK = RISK_LIMIT_CEILINGS.max_risk_per_trade_pct  # 0.0025
-ALLOC = RISK_LIMIT_CEILINGS.max_position_pct  # 0.05
+# The default limits (#128 decoupled them from the ceilings, which rose for the $5k profile).
+RISK = DEFAULT_RISK_LIMITS.max_risk_per_trade_pct  # 0.0025
+ALLOC = DEFAULT_RISK_LIMITS.max_position_pct  # 0.05
 
 
 def _size(
@@ -132,9 +133,9 @@ def test_wide_stop_gives_zero_risk_shares() -> None:
         {"risk": math.nan},
         {"alloc": 0.0},
         {"alloc": math.inf},
-        {"risk": math.nextafter(RISK, 1.0)},  # one ulp above the ceiling
-        {"alloc": math.nextafter(ALLOC, 1.0)},
-        {"risk": 0.01},
+        {"risk": math.nextafter(RISK_LIMIT_CEILINGS.max_risk_per_trade_pct, 1.0)},  # 1 ulp over
+        {"alloc": math.nextafter(RISK_LIMIT_CEILINGS.max_position_pct, 1.0)},
+        {"risk": 0.02},
         {"alloc": 0.5},
         {"equity": True},
         {"entry": "100"},
