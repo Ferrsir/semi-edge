@@ -14,7 +14,7 @@ from typing import Literal, get_args
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 from semiedge.data.schema import Adjustment, DataFeed
-from semiedge.safety.limits import RISK_LIMIT_CEILINGS
+from semiedge.safety.limits import DEFAULT_RISK_LIMITS, RISK_LIMIT_CEILINGS
 
 
 class _Frozen(BaseModel):
@@ -168,12 +168,12 @@ class RiskLimits(_Frozen):
     Values may be tightened below the pre-approved ceilings, never raised above them.
     """
 
-    max_risk_per_trade_pct: float = Field(RISK_LIMIT_CEILINGS.max_risk_per_trade_pct, gt=0)
-    max_position_pct: float = Field(RISK_LIMIT_CEILINGS.max_position_pct, gt=0)
-    max_gross_exposure_pct: float = Field(RISK_LIMIT_CEILINGS.max_gross_exposure_pct, gt=0)
-    max_positions: int = Field(RISK_LIMIT_CEILINGS.max_positions, ge=1)
-    daily_loss_halt_pct: float = Field(RISK_LIMIT_CEILINGS.daily_loss_halt_pct, gt=0)
-    drawdown_halt_pct: float = Field(RISK_LIMIT_CEILINGS.drawdown_halt_pct, gt=0)
+    max_risk_per_trade_pct: float = Field(DEFAULT_RISK_LIMITS.max_risk_per_trade_pct, gt=0)
+    max_position_pct: float = Field(DEFAULT_RISK_LIMITS.max_position_pct, gt=0)
+    max_gross_exposure_pct: float = Field(DEFAULT_RISK_LIMITS.max_gross_exposure_pct, gt=0)
+    max_positions: int = Field(DEFAULT_RISK_LIMITS.max_positions, ge=1)
+    daily_loss_halt_pct: float = Field(DEFAULT_RISK_LIMITS.daily_loss_halt_pct, gt=0)
+    drawdown_halt_pct: float = Field(DEFAULT_RISK_LIMITS.drawdown_halt_pct, gt=0)
     allow_leverage: Literal[False] = False
     allow_short_selling: Literal[False] = False
     allow_options: Literal[False] = False

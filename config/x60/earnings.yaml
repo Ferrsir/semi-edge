@@ -1,0 +1,12 @@
+# Earnings calendar for R16 (#20; docs/specifications/earnings-calendar.md §5). Every field is
+# required. These settings control data freshness only; the blackout length and the fail-closed
+# rule live in risk.yaml and are unchanged.
+lookahead_days: 60                  # Finnhub query window from today
+min_forward_coverage_days: 21       # a source must cover at least this far past the query date
+max_age_hours: 30                   # snapshots older than this are stale (blocks entries)
+max_attempts_per_day: 3             # per source; Alpha Vantage free tier allows 25 requests/day
+retry_interval_minutes: 60          # wait between failed attempts
+request_timeout_seconds: 20
+finnhub_min_interval_seconds: 1.1   # Finnhub free tier: 60 requests/minute
+override_file: earnings_overrides.yaml
+override_max_age_days: 14           # a hand check from an investor-relations page stays valid this long

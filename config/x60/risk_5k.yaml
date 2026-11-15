@@ -1,0 +1,18 @@
+# $5k day-trading profile (owner decision 2026-11-14, #128). Selected explicitly by the backtest,
+# the local simulator and paper runs; config/risk.yaml (the $100k defaults) is unchanged.
+# Values are fractions of account equity and may never exceed src/semiedge/safety/limits.py.
+
+max_risk_per_trade_pct: 0.01     # 1% of equity at risk (entry - stop) per trade: $50 on $5,000
+max_position_pct: 0.25           # 25% of equity notional per position: $1,250 on $5,000
+max_gross_exposure_pct: 0.75     # 75% aggregate long exposure incl. pending orders
+max_positions: 3
+daily_loss_halt_pct: 0.01        # halt new entries after a 1% daily loss
+drawdown_halt_pct: 0.05          # halt new entries after a 5% peak-to-trough drawdown
+
+allow_leverage: false
+allow_short_selling: false
+allow_options: false
+allow_extended_hours: false
+
+earnings_blackout_sessions: 3
+require_verified_earnings_data: true

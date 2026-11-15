@@ -19,11 +19,11 @@ import shlex
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import UTC, date, datetime
 from html import escape
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pandas as pd
 from pydantic import SecretStr, TypeAdapter, ValidationError
@@ -443,6 +443,856 @@ def _cmd_data_status(args: argparse.Namespace) -> int:
     _print_json(
         {"last_completed_session": last.isoformat(), "series": series, "intraday_5min": intraday}
     )
+    return EXIT_OK
+
+
+def _read_intraday_caches(
+    data_dir: Path,
+    config: AppConfig,
+    symbols: tuple[str, ...],
+    *,
+    daily_symbols: tuple[str, ...] | None = None,
+) -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
+    """Read the cached 5-minute and daily frames; a corrupt file is an error, never skipped."""
+    feed, adjustment = config.data.daily_feed, config.data.adjustment
+    intraday_store = IntradayBarStore(data_dir)
+    daily_store = ParquetBarStore(data_dir)
+    intraday: dict[str, pd.DataFrame] = {}
+    daily: dict[str, pd.DataFrame] = {}
+    try:
+        for symbol in symbols:
+            series = intraday_store.read(symbol, feed=feed, adjustment=adjustment)
+            if series is not None:
+                intraday[symbol] = series.frame
+        for symbol in symbols if daily_symbols is None else daily_symbols:
+            stored = daily_store.read(symbol, feed=feed, adjustment=adjustment)
+            if stored is not None:
+                daily[symbol] = stored.frame
+    except (OSError, ValueError) as exc:
+        raise CommandError(EXIT_DATA, f"Cache rejected: {type(exc).__name__}") from None
+    return intraday, daily
+
+
+def _intraday_summary_lines(
+    args: argparse.Namespace, sessions: int, labels: list[str], runs: list[Any]
+) -> list[str]:
+    lines = [
+        f"intraday_v1 backtest {args.start}..{args.end}, {sessions} sessions, "
+        f"start equity {args.equity:,.0f}, profile {args.risk_profile or 'default'}",
+        *labels,
+        "",
+        f"{'account':<13}{'slip':>5}{'trades':>8}{'win%':>7}{'exp R':>8}{'net $':>11}"
+        f"{'net %':>8}{'maxDD %':>9}{'w/o best5':>11}   A / B / C net $",
+    ]
+    for r in runs:
+        s_all = r.summary()
+        a = s_all["all"]
+        per = " / ".join(
+            f"{s_all[x].get('net_pnl', 0):,.0f}({s_all[x].get('trades', 0)})"
+            for x in ("A", "B", "C")
+        )
+        lines.append(
+            f"{r.account:<13}{r.slippage_bps:>5.0f}{a.get('trades', 0):>8}"
+            f"{a.get('win_rate', 0) * 100:>7.1f}{a.get('expectancy_r', 0):>8.3f}"
+            f"{a.get('net_pnl', 0):>11,.0f}{a.get('net_return_pct', 0):>8.2f}"
+            f"{s_all['max_drawdown_pct']:>9.2f}"
+            f"{s_all['net_without_best_5_sessions']:>11,.0f}   {per}"
+        )
+    return lines
+
+
+def _risk_limits(args: argparse.Namespace, config_dir: Path) -> Any:
+    from semiedge.config.loader import load_risk_profile  # noqa: PLC0415
+
+    try:
+        profile = None if args.risk_profile in (None, "default") else args.risk_profile
+        return load_risk_profile(config_dir, profile)
+    except ConfigError as exc:
+        raise CommandError(EXIT_CONFIG, f"Risk profile rejected: {exc}") from None
+
+
+def _dip_report(args: argparse.Namespace, panel: Any, limits: Any) -> dict[str, Any]:
+    from semiedge.backtest import dip  # noqa: PLC0415
+
+    start, end = dip.DEVELOPMENT if args.period == "development" else dip.HOLDOUT
+    variants = list(dip.VARIANTS) if args.variant is None else [args.variant]
+    study: dict[str, dict[str, Any]] = {}
+    for slip in dip.SLIPPAGES:
+        for v in (*variants, "baseline"):
+            trades = dip.signal_study(panel, v, start=start, end=end, slippage_bps=slip)
+            study[f"{v}@{slip:g}"] = dip.study_stats(trades)
+    at20 = {v: study[f"{v}@20"] for v in (*variants, "baseline")}
+    runs = [
+        dip.replay(
+            panel,
+            variant=v,
+            start=start,
+            end=end,
+            start_equity=args.equity,
+            limits=limits,
+            account=a,
+            slippage_bps=slip,
+        )
+        for v in variants
+        for a in dip.ACCOUNT_MODELS
+        for slip in dip.SLIPPAGES
+    ]
+    report: dict[str, Any] = {"study": study}
+    if args.period == "development":
+        chosen, notes = dip.select_variant(at20)
+        report["selection"] = {"selected": chosen, "notes": notes}
+    else:
+        net = next(
+            r.summary()["net_pnl"]
+            for r in runs
+            if r.account == "unrestricted" and r.slippage_bps == dip.SELECTION_SLIPPAGE
+        )
+        failed = dip.holdout_pass(at20, args.variant, net)
+        report["holdout"] = {"variant": args.variant, "passed": not failed, "failed": failed}
+    report["runs"] = [r.to_dict() for r in runs]
+    report["smh_buy_and_hold_pct"] = dip.smh_buy_and_hold(panel, start, end)
+    report["window"] = [start.isoformat(), end.isoformat()]
+    return report
+
+
+_DIP_LABELS = [
+    "SURVIVORSHIP-BIASED UNIVERSE: current hand-picked list, not point-in-time",
+    "EARNINGS BLACKOUT NOT APPLIED: no point-in-time earnings history",
+    "PRICE RETURNS ONLY: dividends excluded",
+    "DAILY BARS: an intraday stop fill assumes the stop price traded",
+]
+
+
+def _cmd_backtest_dip(args: argparse.Namespace) -> int:
+    """dip_v1 on cached daily bars: signal study and $5k portfolio runs (#133)."""
+    from semiedge.backtest import dip  # noqa: PLC0415
+
+    settings, config, _ = _load(args)
+    limits = _risk_limits(args, args.config_dir or settings.config_dir)
+    if not (args.equity > 0 and math.isfinite(args.equity)):
+        raise CommandError(EXIT_CONFIG, "--equity must be a positive number")
+    if args.period == "holdout" and args.variant is None:
+        raise CommandError(EXIT_CONFIG, "the holdout runs once, with the selected --variant")
+    if args.output is not None and args.output.exists():
+        raise CommandError(EXIT_DATA, "Backtest failed: output_path_exists.")
+    tradable = tuple(config.universe.tradable_symbols)
+    if args.universe != "config":  # dip_v1_replication.md: the screen's added symbols
+        from semiedge.backtest.skill_follow import U80_ADDED  # noqa: PLC0415
+
+        tradable = U80_ADDED if args.universe == "u80-added" else (*tradable, *U80_ADDED)
+    benchmark = config.universe.regime_benchmark
+    _, end = dip.DEVELOPMENT if args.period == "development" else dip.HOLDOUT
+    _, daily = _read_intraday_caches(
+        settings.data_dir, config, (), daily_symbols=(*tradable, benchmark)
+    )
+    if benchmark not in daily:
+        raise CommandError(EXIT_DATA, f"No cached daily bars for {benchmark}.")
+    absent = [sym for sym in tradable if sym not in daily]
+    if args.universe != "config" and absent:
+        raise CommandError(EXIT_DATA, f"No cached daily bars for {len(absent)} symbol(s).")
+    panel = dip.prepare_panel(daily, tradable=tradable, benchmark=benchmark, end=end)
+    body = _dip_report(args, panel, limits)
+    command = (
+        f"semiedge backtest-dip --period {args.period}"
+        + (f" --variant {args.variant}" if args.variant else "")
+        + (f" --universe {args.universe}" if args.universe != "config" else "")
+        + f" --equity {args.equity:g} --risk-profile {args.risk_profile or 'default'}"
+    )
+    holdout_label = ["HOLDOUT RUN: run once with the pre-selected variant"]
+    report = {
+        "strategy": "dip_v1",
+        "period": args.period,
+        "universe": args.universe,
+        "symbols": len(tradable),
+        "command": command,
+        "start_equity": args.equity,
+        "risk_profile": args.risk_profile or "default",
+        "limits": limits.model_dump(mode="json"),
+        "labels": [*_DIP_LABELS, *(holdout_label if args.period == "holdout" else [])],
+        **body,
+    }
+    if args.output is not None:
+        args.output.mkdir(parents=True, exist_ok=False)
+        path = args.output / "dip_backtest.json"
+        path.write_text(json.dumps(report, indent=1, default=str), encoding="utf-8")
+    sys.stdout.write("\n".join(_dip_summary_lines(report)) + "\n")
+    return EXIT_OK
+
+
+def _dip_summary_lines(report: dict[str, Any]) -> list[str]:
+    w = report["window"]
+    lines = [
+        f"{report.get('strategy_title', 'dip_v1')} {report['period']} {w[0]}..{w[1]}, start equity "
+        f"{report['start_equity']:,.0f}, profile {report['risk_profile']}",
+        *report["labels"],
+        "",
+        "Signal study (one-share trades, no limits):",
+        f"{'variant@bps':<16}{'trades':>8}{'win%':>7}{'mean R':>9}{'95% CI':>20}",
+    ]
+    for key, s in report["study"].items():
+        ci = s.get("mean_r_95ci", ["", ""])
+        trimmed = s.get("mean_r_without_top5")
+        lines.append(
+            f"{key:<16}{s.get('trades', 0):>8}{s.get('win_rate', 0) * 100:>7.1f}"
+            f"{s.get('mean_r', 0):>9.3f}{ci!s:>20}"
+            + (
+                f"   median {s.get('median_r', 0):+.3f}, w/o top5 {trimmed:+.3f}"
+                if trimmed is not None
+                else ""
+            )
+        )
+    if "selection" in report:
+        sel = report["selection"]
+        bps = report.get("decision_bps", 20)
+        lines += [
+            "",
+            f"Selection ({bps:g} bps): {sel['selected'] or 'none qualifies'}",
+            *sel["notes"],
+        ]
+    if "holdout" in report:
+        h = report["holdout"]
+        lines += ["", f"Holdout pass test: {'PASS' if h['passed'] else 'FAIL'}", *h["failed"]]
+    lines += [
+        "",
+        f"Portfolio runs (SMH buy-and-hold {report['smh_buy_and_hold_pct']}%):",
+        f"{'variant':<9}{'account':<13}{'slip':>5}{'trades':>8}{'win%':>7}{'mean R':>8}"
+        f"{'net $':>10}{'net %':>8}{'maxDD %':>9}  halted",
+    ]
+    for r in report["runs"]:
+        s = r["summary"]
+        lines.append(
+            f"{r['variant']:<9}{r['account']:<13}{r['slippage_bps']:>5.0f}{s['trades']:>8}"
+            f"{s.get('win_rate', 0) * 100:>7.1f}{s.get('mean_r', 0):>8.3f}"
+            f"{s['net_pnl']:>10,.0f}{s['net_return_pct']:>8.2f}"
+            f"{s['max_drawdown_pct']:>9.2f}  {s['drawdown_halt_on'] or '-'}"
+        )
+    lines += ["", f"Command: {report['command']}"]
+    return lines
+
+
+def _idip_report(
+    args: argparse.Namespace,
+    sessions: Any,
+    limits: Any,
+    *,
+    intraday: Any,
+    benchmark: str,
+    idip: Any,
+) -> dict[str, Any]:
+    start, end = idip.DEVELOPMENT if args.period == "development" else idip.HOLDOUT
+    variants = list(idip.VARIANTS) if args.variant is None else [args.variant]
+    study: dict[str, dict[str, Any]] = {}
+    for slip in idip.SLIPPAGES:
+        for v in (*variants, "baseline"):
+            trades = idip.signal_study(sessions, v, slippage_bps=slip)
+            study[f"{v}@{slip:g}"] = idip.study_stats(trades)
+    at20 = {v: study[f"{v}@{idip.SELECTION_SLIPPAGE:g}"] for v in (*variants, "baseline")}
+    runs = [
+        idip.replay(
+            sessions,
+            variant=v,
+            start_equity=args.equity,
+            limits=limits,
+            account=a,
+            slippage_bps=slip,
+        )
+        for v in variants
+        for a in idip.ACCOUNT_MODELS
+        for slip in idip.SLIPPAGES
+    ]
+    report: dict[str, Any] = {"study": study}
+    if args.period == "development":
+        chosen, notes = idip.select_variant(at20)
+        report["selection"] = {"selected": chosen, "notes": notes}
+    else:
+        net = next(
+            r.summary()["net_pnl"]
+            for r in runs
+            if r.account == "unrestricted" and r.slippage_bps == idip.SELECTION_SLIPPAGE
+        )
+        failed = idip.holdout_pass(at20, args.variant, net)
+        report["holdout"] = {"variant": args.variant, "passed": not failed, "failed": failed}
+    report["runs"] = [r.to_dict() for r in runs]
+    report["smh_buy_and_hold_pct"] = idip.smh_change_pct(intraday, benchmark, start, end)
+    report["window"] = [start.isoformat(), end.isoformat()]
+    report["decision_bps"] = idip.SELECTION_SLIPPAGE
+    return report
+
+
+def _cmd_backtest_intraday_dip(args: argparse.Namespace) -> int:
+    """intraday_dip_v1 on cached 5-minute bars: signal study and $5k runs (#137)."""
+    from semiedge.backtest import intraday_dip  # noqa: PLC0415
+
+    return _run_intraday_family(args, intraday_dip, "intraday_dip_v1", "backtest-intraday-dip")
+
+
+def _cmd_backtest_gap_reversal(args: argparse.Namespace) -> int:
+    """gap_reversal_v1 on cached 5-minute bars: signal study and $5k runs (#141)."""
+    from semiedge.backtest import gap_reversal  # noqa: PLC0415
+
+    return _run_intraday_family(args, gap_reversal, "gap_reversal_v1", "backtest-gap-reversal")
+
+
+def _cmd_backtest_orb_inplay(args: argparse.Namespace) -> int:
+    """orb_inplay_v1 on cached 5-minute bars: signal study and $5k runs (#145)."""
+    from semiedge.backtest import orb_inplay  # noqa: PLC0415
+
+    return _run_intraday_family(args, orb_inplay, "orb_inplay_v1", "backtest-orb-inplay")
+
+
+def _cmd_backtest_closing_momentum(args: argparse.Namespace) -> int:
+    """closing_momentum_v2 on cached 5-minute bars: signal study and $5k runs (#169)."""
+    from semiedge.backtest import closing_momentum  # noqa: PLC0415
+
+    return _run_intraday_family(
+        args, closing_momentum, "closing_momentum_v2", "backtest-closing-momentum"
+    )
+
+
+def _run_intraday_family(args: argparse.Namespace, idip: Any, strategy: str, prog: str) -> int:
+    settings, config, _ = _load(args)
+    limits = _risk_limits(args, args.config_dir or settings.config_dir)
+    if not (args.equity > 0 and math.isfinite(args.equity)):
+        raise CommandError(EXIT_CONFIG, "--equity must be a positive number")
+    if args.period == "holdout" and args.variant is None:
+        raise CommandError(EXIT_CONFIG, "the holdout runs once, with the selected --variant")
+    if args.output is not None and args.output.exists():
+        raise CommandError(EXIT_DATA, "Backtest failed: output_path_exists.")
+    tradable = config.universe.tradable_symbols
+    benchmark = config.universe.regime_benchmark
+    start, end = idip.DEVELOPMENT if args.period == "development" else idip.HOLDOUT
+    intraday, daily = _read_intraday_caches(settings.data_dir, config, (*tradable, benchmark))
+    if benchmark not in intraday:
+        raise CommandError(EXIT_DATA, f"No cached 5-minute bars for {benchmark}.")
+    sessions = idip.prepare_sessions(
+        intraday,
+        daily,
+        tradable=tradable,
+        benchmark=benchmark,
+        start=start,
+        end=end,
+        calendar=TradingCalendar(config.data.calendar),
+    )
+    body = _idip_report(args, sessions, limits, intraday=intraday, benchmark=benchmark, idip=idip)
+    command = (
+        f"semiedge {prog} --period {args.period}"
+        + (f" --variant {args.variant}" if args.variant else "")
+        + f" --equity {args.equity:g} --risk-profile {args.risk_profile or 'default'}"
+    )
+    labels = [
+        "SURVIVORSHIP-BIASED UNIVERSE: current hand-picked list, not point-in-time",
+        "EARNINGS BLACKOUT NOT APPLIED: no point-in-time earnings history",
+        "5-MINUTE SIP BARS: fills at the next bar's open plus slippage; flat at 15:55",
+        *(
+            ["HOLDOUT RUN: run once with the pre-selected variant"]
+            if args.period == "holdout"
+            else []
+        ),
+    ]
+    report = {
+        "strategy": strategy,
+        "period": args.period,
+        "command": command,
+        "start_equity": args.equity,
+        "risk_profile": args.risk_profile or "default",
+        "limits": limits.model_dump(mode="json"),
+        "labels": labels,
+        **body,
+    }
+    if args.output is not None:
+        args.output.mkdir(parents=True, exist_ok=False)
+        path = args.output / f"{strategy}_backtest.json"
+        path.write_text(json.dumps(report, indent=1, default=str), encoding="utf-8")
+    report["strategy_title"] = strategy
+    sys.stdout.write("\n".join(_dip_summary_lines(report)) + "\n")
+    return EXIT_OK
+
+
+def _cmd_backtest_skill_follow(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915
+    """skill_follow_v1 screen: signal studies of 19 candidates on two universes (#173)."""
+    from semiedge.backtest import skill_follow as sf  # noqa: PLC0415
+
+    settings, config, _ = _load(args)
+    if args.output is not None and args.output.exists():
+        raise CommandError(EXIT_DATA, "Backtest failed: output_path_exists.")
+    pairs: list[tuple[str, str]] = []
+    if args.period == "holdout":
+        if not args.pairs:
+            raise CommandError(EXIT_CONFIG, "the holdout runs once, with the selected --pairs")
+        for raw in args.pairs:
+            cand, _, universe = raw.partition(":")
+            if cand not in sf.CANDIDATES or universe not in sf.INDEX:
+                raise CommandError(EXIT_CONFIG, f"unknown pair {raw!r}; use CANDIDATE:U16 or :U80")
+            pairs.append((cand, universe))
+        if len(pairs) > sf.MAX_SELECTED:
+            raise CommandError(EXIT_CONFIG, f"at most {sf.MAX_SELECTED} pairs go to the holdout")
+    elif args.pairs:
+        raise CommandError(EXIT_CONFIG, "--pairs is for the holdout only")
+    u16 = tuple(config.universe.tradable_symbols)
+    universes = {"U16": u16, "U80": (*u16, *sf.U80_ADDED)}
+    everything = tuple(dict.fromkeys((*universes["U80"], *sf.INDEX.values())))
+    intraday, daily = _read_intraday_caches(settings.data_dir, config, everything)
+    absent = sorted(s for s in everything if s not in daily or s not in intraday)
+    if any(i in absent for i in sf.INDEX.values()):
+        raise CommandError(EXIT_DATA, "No cached bars for a sector index.")
+    calendar = TradingCalendar(config.data.calendar)
+    start, end = sf.PERIODS[args.period]
+    wanted = {u: [c for c, pu in pairs if pu == u] for u in universes} if pairs else None
+    results: dict[str, Any] = {}
+    history: dict[str, Any] = {}
+    for universe, symbols in universes.items():
+        if wanted is not None and not wanted[universe]:
+            continue
+        index = sf.INDEX[universe]
+        panel = sf.prepare_daily(daily, (*symbols, index), end=end, calendar=calendar)
+        bars = sf.prepare_intraday(
+            intraday, (*symbols, index), start=start, end=end, calendar=calendar
+        )
+        inp = sf.Inputs(
+            panel, symbols, index, calendar, bars, sf.prepare_sessions(bars, panel, symbols, index)
+        )
+        names = (
+            (*sf.BASELINES, *sf.CANDIDATES)
+            if wanted is None
+            else tuple(dict.fromkeys(n for c in wanted[universe] for n in _sf_chain(sf, c)))
+        )
+        results[universe] = {
+            name: {
+                f"{bps:g}": sf.stats(
+                    sf.r_multiples(sf.study(inp, name, start=start, end=end, slippage_bps=bps))
+                )
+                for bps in sf.SLIPPAGES
+            }
+            for name in names
+        }
+        if args.period == "development":
+            h0, h1 = sf.HISTORY
+            history[universe] = {
+                name: sf.stats(
+                    sf.r_multiples(
+                        sf.study(inp, name, start=h0, end=h1, slippage_bps=sf.DECISION_SLIPPAGE)
+                    )
+                )
+                for name in names
+                if name[0] in "DS"
+            }
+    key = f"{sf.DECISION_SLIPPAGE:g}"
+    at_decision = {u: {n: r[key] for n, r in by.items()} for u, by in results.items()}
+    report: dict[str, Any] = {
+        "strategy": "skill_follow_v1",
+        "period": args.period,
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "command": f"semiedge backtest-skill-follow --period {args.period}"
+        + (f" --pairs {' '.join(args.pairs)}" if args.pairs else ""),
+        "symbols_without_bars": absent,
+        "labels": [
+            "SURVIVORSHIP-BIASED UNIVERSES: today's lists, not point-in-time",
+            "EARNINGS BLACKOUT NOT APPLIED: no point-in-time earnings history",
+            "PRICE RETURNS ONLY; daily-bar candidates assume stop and close fills",
+            "38 TESTS: a development result alone is not evidence of an edge",
+        ],
+        "results": results,
+    }
+    lines = [
+        f"skill_follow_v1 {args.period} {start}..{end}; decision cost {key} bps a side",
+        *(f"LABEL: {label}" for label in report["labels"]),
+    ]
+    if absent:
+        lines.append(f"no cached bars: {', '.join(absent)}")
+    for universe, by in at_decision.items():
+        lines.append(f"-- {universe} --")
+        for name, s in by.items():
+            if not s.get("trades"):
+                lines.append(f"{name:>3}: no trades")
+                continue
+            low, high = s["mean_r_95ci"]
+            extra = ""
+            if name in history.get(universe, {}):
+                h = history[universe][name]
+                extra = f" | history {h.get('mean_r', float('nan')):+.3f}R/{h.get('trades', 0)}"
+            lines.append(
+                f"{name:>3}: {s['trades']:>6} trades, win {s['win_rate']:.1%}, mean "
+                f"{s['mean_r']:+.3f}R [{low:+.3f}, {high:+.3f}], "
+                f"ex-top5 {s['mean_r_without_top5']}{extra}"
+            )
+    if args.period == "development":
+        selected, notes = sf.select(at_decision, history)
+        report["history_check"] = history
+        report["selection"] = {"selected": selected, "failures": notes}
+        lines.append(f"SELECTED for the holdout: {', '.join(selected) if selected else 'none'}")
+        for pair, fails in notes.items():
+            lines.append(f"  {pair}: {'qualifies' if not fails else '; '.join(fails)}")
+    else:
+        verdicts = {}
+        for cand, universe in pairs:
+            by = at_decision[universe]
+            fails = sf.holdout_failures(by[cand], by[sf.baseline_of(cand)])
+            verdicts[f"{cand}:{universe}"] = fails
+            lines.append(
+                f"HOLDOUT signal study {cand}:{universe}: "
+                + ("PASS (portfolio replay still required)" if not fails else "; ".join(fails))
+            )
+        report["holdout"] = verdicts
+    if args.output is not None:
+        args.output.mkdir(parents=True, exist_ok=False)
+        path = args.output / "skill_follow_v1_screen.json"
+        path.write_text(json.dumps(report, indent=1, default=str), encoding="utf-8")
+    sys.stdout.write("\n".join(lines) + "\n")
+    return EXIT_OK
+
+
+def _sf_chain(sf: Any, candidate: str) -> list[str]:
+    """A candidate and every baseline its gates read (A1..A5 -> A0 -> B0)."""
+    out = [candidate]
+    while out[-1] not in sf.BASELINES:
+        out.append(sf.baseline_of(out[-1]))
+    return out
+
+
+def _cmd_backtest_swing(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915
+    """swing_v1 and trend_v1: signal studies, $5k runs and Monte Carlo checks (#180)."""
+    from semiedge.backtest import swing  # noqa: PLC0415
+
+    trend = getattr(args, "trend", False)
+    strategy = "trend_v1" if trend else "swing_v1"
+    settings, config, _ = _load(args)
+    limits = _risk_limits(args, args.config_dir or settings.config_dir)
+    if not (args.equity > 0 and math.isfinite(args.equity)):
+        raise CommandError(EXIT_CONFIG, "--equity must be a positive number")
+    if args.output is not None and args.output.exists():
+        raise CommandError(EXIT_DATA, "Backtest failed: output_path_exists.")
+    names: tuple[str, ...]
+    if trend:
+        names = swing.TREND_CANDIDATES
+    elif args.sample == "development":
+        if args.candidates:
+            raise CommandError(EXIT_CONFIG, "--candidates is for the confirmation samples only")
+        names = swing.CANDIDATES
+    else:
+        if not args.candidates:
+            raise CommandError(EXIT_CONFIG, "confirmation runs once, with --candidates")
+        if len(args.candidates) > swing.MAX_SELECTED:
+            raise CommandError(EXIT_CONFIG, f"at most {swing.MAX_SELECTED} candidates")
+        names = tuple(dict.fromkeys(args.candidates))
+    universe, index, start, end = swing.SAMPLES[args.sample]
+    symbols = {
+        "U80": (*config.universe.tradable_symbols, *swing.U80_EXTRA),
+        "X60": swing.X60,
+        "Y60": swing.Y60,
+    }[universe]
+    _, daily = _read_intraday_caches(settings.data_dir, config, (), daily_symbols=(*symbols, index))
+    absent = [sym for sym in (*symbols, index) if sym not in daily]
+    if absent:
+        raise CommandError(EXIT_DATA, f"No cached daily bars for {len(absent)} symbol(s).")
+    panel = swing.panel_for(
+        daily, symbols, index, end=end, calendar=TradingCalendar(config.data.calendar)
+    )
+    key = f"{swing.DECISION_SLIPPAGE:g}"
+    studies: dict[str, dict[str, Any]] = {}
+    trades_at_decision: dict[str, Any] = {}
+    books = {
+        n: swing.build(panel, symbols, index, n)
+        for n in dict.fromkeys(
+            (*names, *(swing.RULES[c].baseline for c in names), *(("Tn",) if trend else ()))
+        )
+    }
+    for name, book in books.items():
+        studies[name] = {}
+        for bps in swing.SLIPPAGES:
+            trades = swing.signal_study(panel, book, start=start, end=end, slippage_bps=bps)
+            studies[name][f"{bps:g}"] = swing.study_stats(trades)
+            if bps == swing.DECISION_SLIPPAGE:
+                trades_at_decision[name] = trades
+    results: dict[str, dict[str, Any]] = {}
+    curves: dict[str, Any] = {}
+    for name in names:
+        base = swing.TREND_NULL if trend else swing.RULES[name].baseline
+        runs = {}
+        plan: tuple[tuple[float, Literal["reset", "strict"]], ...] = (
+            (swing.DECISION_SLIPPAGE, "reset"),
+            (swing.DECISION_SLIPPAGE, "strict"),
+            (5.0, "reset"),
+            (20.0, "reset"),
+        )
+        for bps, model in plan:
+            run = swing.replay(
+                panel, books[name], start=start, end=end, start_equity=args.equity,
+                limits=limits, slippage_bps=bps, halt_model=model,
+            )  # fmt: skip
+            runs[f"{model}@{bps:g}"] = run
+        main = runs[f"reset@{key}"]
+        paths = swing.account_paths(main.daily_returns())
+        edge = swing.edge_over_baseline(trades_at_decision[name], trades_at_decision[base])
+        study, portfolio = studies[name][key], main.summary()
+        if trend:
+            fails = swing.trend_failures(
+                args.sample, study, studies[base][key], edge, portfolio, paths
+            )
+        elif args.sample != "holdout":
+            fails = swing.selection_failures(study, edge, portfolio, paths)
+        else:
+            fails = swing.holdout_failures(study, studies[base][key], portfolio)
+        results[name] = {
+            "study": studies[name],
+            "baseline": {base: studies[base]},
+            "reference": {"Tb": studies["Tb"]} if trend else {},
+            "edge_over_baseline": edge,
+            "portfolio": portfolio,
+            "other_runs": {k: r.summary() for k, r in runs.items() if r is not main},
+            "account_paths": paths,
+            "failures": fails,
+        }
+        curves[name] = {"sessions": main.sessions, "equity": main.equity}
+    command = (
+        f"semiedge {'backtest-trend' if trend else 'backtest-swing'} --sample {args.sample}"
+        + (f" --candidates {' '.join(names)}" if getattr(args, "candidates", None) else "")
+        + f" --equity {args.equity:g} --risk-profile {args.risk_profile or 'default'}"
+    )
+    report: dict[str, Any] = {
+        "strategy": strategy,
+        "sample": args.sample,
+        "universe": universe,
+        "symbols": len(symbols),
+        "index": index,
+        "window": [start.isoformat(), end.isoformat()],
+        "command": command,
+        "start_equity": args.equity,
+        "limits": limits.model_dump(mode="json"),
+        "labels": [
+            "SURVIVORSHIP-BIASED UNIVERSE: today's list, not point-in-time",
+            "EARNINGS BLACKOUT NOT APPLIED: no point-in-time earnings history",
+            "PRICE RETURNS ONLY; DAILY BARS: a stop fill assumes the stop price traded",
+            (
+                "TWO RULES ON THREE SAMPLES; 2016-2026 was mostly a rising market"
+                if trend
+                else "FIVE CANDIDATES SCREENED: a development result alone is not evidence"
+            ),
+        ],
+        "index_buy_and_hold_pct": swing.index_buy_and_hold(panel, index, start, end),
+        "mean_daily_range_pct": swing.mean_daily_range_pct(panel, symbols, start, end),
+        "results": results,
+    }
+    lines = [
+        f"{strategy} {args.sample}: {universe} ({len(symbols)} symbols, index {index}) "
+        f"{start}..{end}; decision cost {key} bps a side; start equity {args.equity:,.0f}",
+        *(f"LABEL: {label}" for label in report["labels"]),
+        f"{index} buy and hold: {report['index_buy_and_hold_pct']}%",
+        f"mean daily range (ATR14 / C): {report['mean_daily_range_pct']}%",
+    ]
+    for name, res in results.items():
+        st, pf, mc = res["study"][key], res["portfolio"], res["account_paths"]
+        base = swing.TREND_NULL if trend else swing.RULES[name].baseline
+        bs = res["baseline"][base][key]
+        if trend:
+            tb = res["reference"]["Tb"][key]
+            lines.append(f"  reference Tb: {tb.get('trades', 0)} trades, mean {tb.get('mean_r')}R")
+        lines.append(f"-- {name} --")
+        if st.get("trades"):
+            lines.append(
+                f"  study: {st['trades']} trades, win {st['win_rate']:.1%}, mean "
+                f"{st['mean_r']:+.3f}R {st['mean_r_95ci']}, ex-top5 {st['mean_r_without_top5']}; "
+                f"5 bps {res['study']['5'].get('mean_r')}, "
+                f"20 bps {res['study']['20'].get('mean_r')}"
+            )
+        else:
+            lines.append("  study: no trades")
+        lines.append(
+            f"  baseline {base}: {bs.get('trades', 0)} trades, mean {bs.get('mean_r')}R; edge "
+            f"{res['edge_over_baseline']['difference']} {res['edge_over_baseline']['ci95']}"
+        )
+        lines.append(
+            f"  $ run (reset): {pf['trades']} trades, net {pf['net_pnl']:+,.0f} "
+            f"({pf['net_pct']:+.1f}%), CAGR {pf['cagr_pct']:+.1f}%, maxDD "
+            f"{pf['max_drawdown_pct']:.1f}%, exposure {pf['avg_gross_exposure_pct']}%, "
+            f"halts {len(pf['drawdown_halts'])}"
+        )
+        for k, other in res["other_runs"].items():
+            lines.append(
+                f"  $ run {k}: net {other['net_pct']:+.1f}%, maxDD {other['max_drawdown_pct']:.1f}%"
+                f", halts {len(other['drawdown_halts'])}"
+            )
+        if mc.get("paths"):
+            lines.append(
+                f"  MC3: {mc['share_positive']:.1%} of paths positive; final "
+                f"{mc['final_return_pct']}; maxDD {mc['max_drawdown_pct']}"
+            )
+        lines.append(f"  gates: {'all met' if not res['failures'] else '; '.join(res['failures'])}")
+    if args.sample == "development" and not trend:
+        selected, _ = swing.select(results)
+        report["selection"] = {"selected": selected}
+        lines.append(f"SELECTED for confirmation: {', '.join(selected) if selected else 'none'}")
+    if args.output is not None:
+        args.output.mkdir(parents=True, exist_ok=False)
+        report["equity_curves"] = curves
+        path = args.output / f"{strategy}_backtest.json"
+        path.write_text(json.dumps(report, indent=1, default=str), encoding="utf-8")
+    sys.stdout.write("\n".join(lines) + "\n")
+    return EXIT_OK
+
+
+def _cmd_forward_trend(args: argparse.Namespace) -> int:
+    """trend_v1 forward ledger: frozen T1 on bars after 2026-11-13; never places orders (#180)."""
+    from semiedge.backtest import swing  # noqa: PLC0415
+
+    settings, config, _ = _load(args)
+    limits = _risk_limits(args, args.config_dir or settings.config_dir)
+    if not (args.equity > 0 and math.isfinite(args.equity)):
+        raise CommandError(EXIT_CONFIG, "--equity must be a positive number")
+    symbols = (*config.universe.tradable_symbols, *swing.U80_EXTRA, *swing.Y60)
+    index = swing.FORWARD_INDEX
+    _, daily = _read_intraday_caches(settings.data_dir, config, (), daily_symbols=(*symbols, index))
+    absent = [sym for sym in (*symbols, index) if sym not in daily]
+    if absent:
+        raise CommandError(EXIT_DATA, f"No cached daily bars for {len(absent)} symbol(s).")
+    last = max(pd.Timestamp(daily[index].index[-1]).date(), swing.FORWARD_START)
+    end = min(last, args.as_of) if args.as_of is not None else last
+    if end < swing.FORWARD_START:
+        raise CommandError(EXIT_CONFIG, f"--as-of is before {swing.FORWARD_START}")
+    panel = swing.panel_for(
+        daily, symbols, index, end=end, calendar=TradingCalendar(config.data.calendar)
+    )
+    run = swing.replay(
+        panel,
+        swing.build(panel, symbols, index, swing.FORWARD_RULE),
+        start=swing.FORWARD_START,
+        end=end,
+        start_equity=args.equity,
+        limits=limits,
+        slippage_bps=swing.DECISION_SLIPPAGE,
+        plan_last=True,
+    )
+    if not run.sessions:
+        raise CommandError(EXIT_DATA, "No cached session in the forward window.")
+    summary = run.summary()
+    stop_early = summary["net_pct"] <= -swing.FORWARD_STOP_LOSS * 100
+    report = {
+        "strategy": "trend_v1 forward (frozen T1)",
+        "labels": [
+            "SIM LEDGER: no order is placed, simulated at a broker, or authorized",
+            "trend_v1 FAILED its pre-registered backtest; this is a forward check, not approval",
+        ],
+        "window": [swing.FORWARD_START.isoformat(), run.sessions[-1]],
+        "sessions": len(run.sessions),
+        "symbols": len(symbols),
+        "equity": run.equity[-1],
+        "summary": summary,
+        "index_buy_and_hold_pct": swing.index_buy_and_hold(panel, index, swing.FORWARD_START, end),
+        "stop_early": stop_early,
+        "trades": [asdict(t) for t in run.trades],
+        "open_positions": run.open_positions,
+        "entries_blocked": run.entries_blocked,
+        "planned_entries_next_open": run.planned_entries,
+    }
+    if args.output is not None:
+        if args.output.exists():
+            raise CommandError(EXIT_DATA, "Report failed: output_path_exists.")
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(report, indent=1, default=str), encoding="utf-8")
+    lines = [
+        f"trend_v1 forward ledger (frozen T1, {len(symbols)} symbols, index {index}): "
+        f"{swing.FORWARD_START}..{run.sessions[-1]}, {len(run.sessions)} session(s)",
+        *(f"LABEL: {label}" for label in report["labels"]),
+        f"equity {run.equity[-1]:,.2f} ({summary['net_pct']:+.2f}%), max drawdown "
+        f"{summary['max_drawdown_pct']:.2f}%, closed trades {summary['trades']}, "
+        f"{index} {report['index_buy_and_hold_pct']}%",
+    ]
+    if stop_early:
+        lines.append("STOP EARLY: forward equity is 15% or more below its start (spec).")
+    lines.append("open positions:" if run.open_positions else "open positions: none")
+    for pos in run.open_positions:
+        lines.append(
+            f"  {pos['symbol']:<6} {pos['shares']:>4} sh, entered {pos['entry_session']} at "
+            f"{pos['fill']:.2f}, stop {pos['stop']:.2f}, last close {pos['last_close']:.2f}"
+            + (
+                f", EXIT at next open ({pos['exit_at_next_open']})"
+                if pos["exit_at_next_open"]
+                else ""
+            )
+        )
+    if run.entries_blocked:
+        lines.append(f"planned entries for the next open: none ({run.entries_blocked})")
+    elif not run.planned_entries:
+        lines.append("planned entries for the next open: none")
+    else:
+        lines.append("planned entries for the next open (SIM, not orders):")
+        for plan in run.planned_entries:
+            lines.append(
+                f"  {plan['symbol']:<6} {plan['shares']:>4} sh (about ${plan['notional']:,.0f}), "
+                f"signal close {plan['signal_close']:.2f}, stop {plan['stop']:.2f}"
+            )
+    sys.stdout.write("\n".join(lines) + "\n")
+    return EXIT_OK
+
+
+def _cmd_backtest_intraday(args: argparse.Namespace) -> int:
+    """Replay intraday_v1 on cached 5-minute bars: 3 account models x 3 slippages (#130)."""
+    from semiedge.backtest.intraday import prepare_sessions, run_matrix  # noqa: PLC0415
+    from semiedge.config.loader import load_risk_profile  # noqa: PLC0415
+
+    settings, config, _ = _load(args)
+    config_dir = args.config_dir or settings.config_dir
+    try:
+        profile = None if args.risk_profile in (None, "default") else args.risk_profile
+        limits = load_risk_profile(config_dir, profile)
+    except ConfigError as exc:
+        raise CommandError(EXIT_CONFIG, f"Risk profile rejected: {exc}") from None
+    if not (args.equity > 0 and math.isfinite(args.equity)):
+        raise CommandError(EXIT_CONFIG, "--equity must be a positive number")
+    if args.start > args.end:
+        raise CommandError(EXIT_CONFIG, "--start must not be after --end")
+    if args.output is not None and args.output.exists():
+        raise CommandError(EXIT_DATA, "Backtest failed: output_path_exists.")
+    calendar = TradingCalendar(config.data.calendar)
+    tradable = config.universe.tradable_symbols
+    benchmark = config.universe.regime_benchmark
+    intraday, daily = _read_intraday_caches(settings.data_dir, config, (*tradable, benchmark))
+    if benchmark not in intraday:
+        raise CommandError(EXIT_DATA, f"No cached 5-minute bars for {benchmark}.")
+    prepared = prepare_sessions(
+        intraday,
+        daily,
+        tradable=tradable,
+        benchmark=benchmark,
+        start=args.start,
+        end=args.end,
+        calendar=calendar,
+    )
+    if not prepared:
+        raise CommandError(EXIT_DATA, "No sessions in the requested window.")
+    runs = run_matrix(prepared, start_equity=args.equity, limits=limits)
+    gaps = sum(len(p.gap_symbols) for p in prepared)
+    command = (
+        f"semiedge backtest-intraday --start {args.start} --end {args.end} "
+        f"--equity {args.equity:g} --risk-profile {args.risk_profile or 'default'}"
+    )
+    report = {
+        "strategy": "intraday_v1",
+        "command": command,
+        "start": args.start.isoformat(),
+        "end": args.end.isoformat(),
+        "sessions": len(prepared),
+        "start_equity": args.equity,
+        "risk_profile": args.risk_profile or "default",
+        "limits": limits.model_dump(mode="json"),
+        "labels": [
+            "SURVIVORSHIP-BIASED UNIVERSE: current hand-picked list, not point-in-time",
+            "EARNINGS BLACKOUT NOT APPLIED: no point-in-time earnings history",
+            f"DATA GAPS: {gaps} symbol-sessions with a missing 5-minute bar "
+            "(no trades after a gap)",
+            "5-MINUTE SIP BARS, split-adjusted; fills at the next bar's open plus slippage",
+        ],
+        "runs": [r.to_dict() for r in runs],
+    }
+    path = args.output / "intraday_backtest.json" if args.output else None
+    if path is not None:
+        args.output.mkdir(parents=True, exist_ok=False)
+        path.write_text(json.dumps(report, indent=1, default=str), encoding="utf-8")
+    lines = _intraday_summary_lines(args, len(prepared), report["labels"], runs)
+    lines += ["", f"Command: {command}"]
+    if path is not None:
+        lines.append(f"Report: {path}")
+    sys.stdout.write("\n".join(lines) + "\n")
     return EXIT_OK
 
 
@@ -962,6 +1812,122 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - one flat parse
     data_commands.add_parser(
         "status", parents=[common], help="cache summary and freshness per symbol"
     ).set_defaults(handler=_cmd_data_status)
+    bti = commands.add_parser(
+        "backtest-intraday", parents=[common], help="replay intraday_v1 on cached 5-minute bars"
+    )
+    bti.add_argument("--start", type=_iso_date, metavar="YYYY-MM-DD", required=True)
+    bti.add_argument("--end", type=_iso_date, metavar="YYYY-MM-DD", required=True)
+    bti.add_argument("--equity", type=float, default=5000.0)
+    bti.add_argument("--risk-profile", default="5k", help="risk_<name>.yaml; 'default' = risk.yaml")
+    bti.add_argument("--output", type=Path, help="new output directory (existing paths refused)")
+    bti.set_defaults(handler=_cmd_backtest_intraday)
+    btd = commands.add_parser(
+        "backtest-dip", parents=[common], help="dip_v1 on cached daily bars (spec periods only)"
+    )
+    btd.add_argument("--period", choices=("development", "holdout"), required=True)
+    btd.add_argument("--variant", choices=("S1", "S2"), help="required for the holdout")
+    btd.add_argument(
+        "--universe",
+        choices=("config", "u80-added", "u80"),
+        default="config",
+        help="config universe (default), or the dip_v1_replication.md symbol sets",
+    )
+    btd.add_argument("--equity", type=float, default=5000.0)
+    btd.add_argument("--risk-profile", default="5k", help="risk_<name>.yaml; 'default' = risk.yaml")
+    btd.add_argument("--output", type=Path, help="new output directory (existing paths refused)")
+    btd.set_defaults(handler=_cmd_backtest_dip)
+    btid = commands.add_parser(
+        "backtest-intraday-dip",
+        parents=[common],
+        help="intraday_dip_v1 on cached 5-minute bars (spec periods only)",
+    )
+    btid.add_argument("--period", choices=("development", "holdout"), required=True)
+    btid.add_argument("--variant", choices=("V1", "V2"), help="required for the holdout")
+    btid.add_argument("--equity", type=float, default=5000.0)
+    btid.add_argument(
+        "--risk-profile", default="5k", help="risk_<name>.yaml; 'default' = risk.yaml"
+    )
+    btid.add_argument("--output", type=Path, help="new output directory (existing paths refused)")
+    btid.set_defaults(handler=_cmd_backtest_intraday_dip)
+    btg = commands.add_parser(
+        "backtest-gap-reversal",
+        parents=[common],
+        help="gap_reversal_v1 on cached 5-minute bars (spec periods only)",
+    )
+    btg.add_argument("--period", choices=("development", "holdout"), required=True)
+    btg.add_argument("--variant", choices=("G1", "G2"), help="required for the holdout")
+    btg.add_argument("--equity", type=float, default=5000.0)
+    btg.add_argument("--risk-profile", default="5k", help="risk_<name>.yaml; 'default' = risk.yaml")
+    btg.add_argument("--output", type=Path, help="new output directory (existing paths refused)")
+    btg.set_defaults(handler=_cmd_backtest_gap_reversal)
+    bto = commands.add_parser(
+        "backtest-orb-inplay",
+        parents=[common],
+        help="orb_inplay_v1 on cached 5-minute bars (spec periods only)",
+    )
+    bto.add_argument("--period", choices=("development", "holdout"), required=True)
+    bto.add_argument("--variant", choices=("O1", "O2"), help="required for the holdout")
+    bto.add_argument("--equity", type=float, default=5000.0)
+    bto.add_argument("--risk-profile", default="5k", help="risk_<name>.yaml; 'default' = risk.yaml")
+    bto.add_argument("--output", type=Path, help="new output directory (existing paths refused)")
+    bto.set_defaults(handler=_cmd_backtest_orb_inplay)
+    btc = commands.add_parser(
+        "backtest-closing-momentum",
+        parents=[common],
+        help="closing_momentum_v2 on cached 5-minute bars (spec periods only)",
+    )
+    btc.add_argument("--period", choices=("development", "holdout"), required=True)
+    btc.add_argument("--variant", choices=("M1", "M2"), help="required for the holdout")
+    btc.add_argument("--equity", type=float, default=5000.0)
+    btc.add_argument("--risk-profile", default="5k", help="risk_<name>.yaml; 'default' = risk.yaml")
+    btc.add_argument("--output", type=Path, help="new output directory (existing paths refused)")
+    btc.set_defaults(handler=_cmd_backtest_closing_momentum)
+    bts = commands.add_parser(
+        "backtest-skill-follow",
+        parents=[common],
+        help="skill_follow_v1 screen on cached daily and 5-minute bars (spec periods only)",
+    )
+    bts.add_argument("--period", choices=("development", "holdout"), required=True)
+    bts.add_argument("--pairs", nargs="+", metavar="CANDIDATE:UNIVERSE", help="holdout only")
+    bts.add_argument("--output", type=Path, help="new output directory (existing paths refused)")
+    bts.set_defaults(handler=_cmd_backtest_skill_follow)
+    btw = commands.add_parser(
+        "backtest-swing",
+        parents=[common],
+        help="swing_v1 on cached daily bars (spec samples only)",
+    )
+    btw.add_argument(
+        "--sample",
+        choices=("development", "holdout", "unseen", "unseen-growth"),
+        required=True,
+    )
+    btw.add_argument(
+        "--candidates", nargs="+", choices=("R1", "R2", "R3", "T1", "T2"), help="confirmation"
+    )
+    btw.add_argument("--equity", type=float, default=5000.0)
+    btw.add_argument("--risk-profile", default="5k", help="risk_<name>.yaml; 'default' = risk.yaml")
+    btw.add_argument("--output", type=Path, help="new output directory (existing paths refused)")
+    btw.set_defaults(handler=_cmd_backtest_swing)
+    btt = commands.add_parser(
+        "backtest-trend",
+        parents=[common],
+        help="trend_v1 (T1, T2 against the Tn null) on cached daily bars (spec samples only)",
+    )
+    btt.add_argument("--sample", choices=("holdout", "unseen", "unseen-growth"), required=True)
+    btt.add_argument("--equity", type=float, default=5000.0)
+    btt.add_argument("--risk-profile", default="5k", help="risk_<name>.yaml; 'default' = risk.yaml")
+    btt.add_argument("--output", type=Path, help="new output directory (existing paths refused)")
+    btt.set_defaults(handler=_cmd_backtest_swing, trend=True, candidates=None)
+    fwd = commands.add_parser(
+        "forward-trend",
+        parents=[common],
+        help="trend_v1 forward SIM ledger (frozen T1); prints planned entries, places nothing",
+    )
+    fwd.add_argument("--as-of", type=_iso_date, metavar="YYYY-MM-DD", help="cut the ledger here")
+    fwd.add_argument("--equity", type=float, default=5000.0)
+    fwd.add_argument("--risk-profile", default="5k", help="risk_<name>.yaml; 'default' = risk.yaml")
+    fwd.add_argument("--output", type=Path, help="write the ledger to a new JSON file")
+    fwd.set_defaults(handler=_cmd_forward_trend)
     intraday = data_commands.add_parser(
         "fetch-intraday",
         parents=[common],

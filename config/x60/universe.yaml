@@ -1,0 +1,70 @@
+# X60: the swing_v1 confirmation universe (docs/specifications/swing_v1.md, #180).
+# 60 large US stocks outside technology, fixed in the spec before any of their bars was
+# fetched. Used only with --config-dir config/x60 to fetch data. NOT the trading universe.
+
+regime_benchmark: SPY
+comparison_benchmarks: [SPY, QQQ]
+
+members:
+  - {symbol: "JPM", name: "JPM", group: x60, role: tradable}
+  - {symbol: "BAC", name: "BAC", group: x60, role: tradable}
+  - {symbol: "GS", name: "GS", group: x60, role: tradable}
+  - {symbol: "MS", name: "MS", group: x60, role: tradable}
+  - {symbol: "WFC", name: "WFC", group: x60, role: tradable}
+  - {symbol: "C", name: "C", group: x60, role: tradable}
+  - {symbol: "V", name: "V", group: x60, role: tradable}
+  - {symbol: "MA", name: "MA", group: x60, role: tradable}
+  - {symbol: "AXP", name: "AXP", group: x60, role: tradable}
+  - {symbol: "BLK", name: "BLK", group: x60, role: tradable}
+  - {symbol: "SCHW", name: "SCHW", group: x60, role: tradable}
+  - {symbol: "UNH", name: "UNH", group: x60, role: tradable}
+  - {symbol: "JNJ", name: "JNJ", group: x60, role: tradable}
+  - {symbol: "LLY", name: "LLY", group: x60, role: tradable}
+  - {symbol: "PFE", name: "PFE", group: x60, role: tradable}
+  - {symbol: "MRK", name: "MRK", group: x60, role: tradable}
+  - {symbol: "ABBV", name: "ABBV", group: x60, role: tradable}
+  - {symbol: "TMO", name: "TMO", group: x60, role: tradable}
+  - {symbol: "ABT", name: "ABT", group: x60, role: tradable}
+  - {symbol: "AMGN", name: "AMGN", group: x60, role: tradable}
+  - {symbol: "XOM", name: "XOM", group: x60, role: tradable}
+  - {symbol: "CVX", name: "CVX", group: x60, role: tradable}
+  - {symbol: "COP", name: "COP", group: x60, role: tradable}
+  - {symbol: "SLB", name: "SLB", group: x60, role: tradable}
+  - {symbol: "CAT", name: "CAT", group: x60, role: tradable}
+  - {symbol: "DE", name: "DE", group: x60, role: tradable}
+  - {symbol: "BA", name: "BA", group: x60, role: tradable}
+  - {symbol: "GE", name: "GE", group: x60, role: tradable}
+  - {symbol: "HON", name: "HON", group: x60, role: tradable}
+  - {symbol: "LMT", name: "LMT", group: x60, role: tradable}
+  - {symbol: "RTX", name: "RTX", group: x60, role: tradable}
+  - {symbol: "UPS", name: "UPS", group: x60, role: tradable}
+  - {symbol: "FDX", name: "FDX", group: x60, role: tradable}
+  - {symbol: "WMT", name: "WMT", group: x60, role: tradable}
+  - {symbol: "COST", name: "COST", group: x60, role: tradable}
+  - {symbol: "HD", name: "HD", group: x60, role: tradable}
+  - {symbol: "LOW", name: "LOW", group: x60, role: tradable}
+  - {symbol: "TGT", name: "TGT", group: x60, role: tradable}
+  - {symbol: "MCD", name: "MCD", group: x60, role: tradable}
+  - {symbol: "SBUX", name: "SBUX", group: x60, role: tradable}
+  - {symbol: "NKE", name: "NKE", group: x60, role: tradable}
+  - {symbol: "DIS", name: "DIS", group: x60, role: tradable}
+  - {symbol: "CMCSA", name: "CMCSA", group: x60, role: tradable}
+  - {symbol: "T", name: "T", group: x60, role: tradable}
+  - {symbol: "VZ", name: "VZ", group: x60, role: tradable}
+  - {symbol: "KO", name: "KO", group: x60, role: tradable}
+  - {symbol: "PEP", name: "PEP", group: x60, role: tradable}
+  - {symbol: "PG", name: "PG", group: x60, role: tradable}
+  - {symbol: "PM", name: "PM", group: x60, role: tradable}
+  - {symbol: "MO", name: "MO", group: x60, role: tradable}
+  - {symbol: "LIN", name: "LIN", group: x60, role: tradable}
+  - {symbol: "NEE", name: "NEE", group: x60, role: tradable}
+  - {symbol: "DUK", name: "DUK", group: x60, role: tradable}
+  - {symbol: "SO", name: "SO", group: x60, role: tradable}
+  - {symbol: "AMT", name: "AMT", group: x60, role: tradable}
+  - {symbol: "PLD", name: "PLD", group: x60, role: tradable}
+  - {symbol: "SPG", name: "SPG", group: x60, role: tradable}
+  - {symbol: "BKNG", name: "BKNG", group: x60, role: tradable}
+  - {symbol: "GM", name: "GM", group: x60, role: tradable}
+  - {symbol: "F", name: "F", group: x60, role: tradable}
+  - {symbol: SPY, name: SPDR S&P 500 ETF, group: benchmark, role: benchmark}
+  - {symbol: QQQ, name: Invesco QQQ Trust, group: benchmark, role: benchmark}
