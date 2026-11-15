@@ -105,3 +105,11 @@ bought only after a reclaim (of VWAP, or of the 15-minute high), with a half-gap
 day's-low stop, flat by 15:55. The idea came from inspecting 2026-10-26..2026-11-13, so that
 window is excluded from both test periods and the disclosure is in the spec. R16 is unchanged:
 live trading skips earnings gaps that the backtest includes.
+
+ADR-016 (2026-11-14, #162): same-day strategies need intraday entries, same-day protection and a
+15:55 flatten, which the opg-only order lifecycle (phase2-4 §6.3) cannot express. The owner also
+wants the dashboard to show paper trading. Decision: one execution path with two gateways, a
+`SimGateway` (new `sim` mode: live 5-minute bars, simulated fills, zero broker calls, its own state
+DB) and `AlpacaPaperGateway`, both writing the same state rows so the dashboard shows them the same
+way (`docs/specifications/intraday_execution.md`). A strategy enters SIM or PAPER only after a
+passing pre-registered backtest or an explicit owner ADR.
