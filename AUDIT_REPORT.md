@@ -558,3 +558,148 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **F-113 / P3:** split/reverse-split constructors now require supported exchange-session ex-dates, including ledger loading. Four holiday/weekend regressions fail on 96d6c65 and pass now.
 - Validation after rebasing: `pytest -q -p no:cacheprovider` passed1666 tests/two skips (Windows symlink and opt-in paper smoke), with13 pandas deprecation warnings. Ruff check/format, mypy (66 source files) and Bandit passed. Focused suite74 passed; all nine review regressions failed on the original head. No strategy/risk-ceiling change, real data, network request, credential or consumer activation. #18 remains open for verified coverage/source provisioning and integration. Claude exact-head re-review is required; publishing awaits the bot connection.
 
+
+## 2026-11-15 — owner-requested open-PR review (#172, Codex)
+
+Reviewed in isolated `../semi-edge.worktrees/codex-review-20261115`; GitHub writes as Ferrisfy.
+No credentials read, broker/vendor requests, orders, strategy tuning or market-data reruns.
+Existing market-result documents were checked for preregistration/order and labeling, not independently reproduced.
+
+| PR | Exact head | Whole-PR verdict |
+|---|---|---|
+| #163 | 0828206d66541905fa3f1ac54df756cf5abfa176 | FAIL F-188 (contract incomplete) |
+| #164 | 8346e7a419da1a1c85389ccefa766ebaeeafbde3 | FAIL F-183..F-187 |
+| #166 | d7e36e48bfdb7debf13447169040a57bc5331aa0 | PASS; GitHub refused merge pending Ferrsir code-owner review |
+| #167 | 4172d3fe61a056220dd68e80ccb0b910ecfe1abe | PASS; inherits restricted #166 |
+| #158 | 0e893353df872ec48430317f1a6af992090c13f5 | FAIL inherited F-179; prior Claude PASS covers the F-180 correction |
+| #160 | 3049d996498efaae08d73024d3c0733788cf706c | FAIL inherited F-179; no additional ORB defect found |
+| #170 | af4a1fb3aa8cf27ba8d31e47ab3f872e2bf1bced | FAIL inherited F-179; no additional closing-momentum defect found |
+
+### F-183 — SIM pending buys can overdraw a cash account (P1, OPEN, #164/#172)
+
+`src/semiedge/broker/sim.py:send_order/_fill/_buying_power`: pending BUYs reserve nothing;
+actual fills do not recheck affordability. At $1,000 settled cash, two pending 8-share BUYs,
+each estimated and filled at $100, are accepted and produce cash **-$600**. A gap can also
+overdraw a single order. Reserve pending exposure and enforce affordability at actual fill,
+with explicit rejection/capping semantics and deterministic multi-symbol/gap tests.
+
+### F-184 — SIM ignores simple limit prices and time-in-force (P2, OPEN, #164/#172)
+
+`sim.py:on_bar` fills every simple order at the next open. A $90 BUY limit fills at $100 on a
+bar whose OHLC are all $100. TIF is never applied, so DAY/OPG can survive into later sessions.
+Reject unsupported shapes or implement limit and expiration semantics; never silently treat
+a limit as market.
+
+### F-185 — SIM accepts canonical foreign namespaces (P2, OPEN, #164/#172)
+
+`sim.py:send_order` checks only whether the injected parser returns non-None. The canonical
+parser deliberately parses every namespace, and the gateway has no expected-namespace field.
+With the same constructor/parser as the PR tests, an ID for `namespace("foreign-store")` is
+accepted. Bind/check the expected namespace and define consistent read/adoption handling.
+Parser injection itself preserves the broker/execution import boundary and is acceptable.
+
+### F-186 — same-session calls prematurely settle sale proceeds (P2, OPEN, #164/#172)
+
+`sim.py:start_session` discards its date. Sell 10 shares at $100 after a $1,000 purchase from
+$5,000; settled cash is $4,000 and unsettled proceeds $1,000. Calling `start_session(DAY)`
+again for that same day yields $5,000 settled and zero unsettled. Track real session
+transitions and reject or safely ignore repeated/backward/non-session settlement calls.
+
+### F-187 — invalid bars corrupt SIM accounting (P2, OPEN, #164/#172)
+
+`sim.py:SimBar/on_bar` has no input validation. An accepted pending BUY on a NaN-open bar
+is filled at NaN and turns cash into NaN. Validate aware timestamps, finite positive consistent
+OHLC and nonnegative volume before changing the cursor, marks, orders, cash or positions.
+A rejected batch must leave all state unchanged.
+
+### Synthetic SIM reproduction
+
+At #164's exact head after `uv sync --locked --extra dashboard --system-certs`, run this
+Python in the checkout (the helper module uses only hand-built bars and a frozen clock):
+
+```python
+from tests.safety.test_sim_gateway import DAY, _bar, _cid, _entered, _gw, _k
+from semiedge.broker.gateway import OrderRequest
+from semiedge.execution.client_ids import make_client_order_id, namespace
+from semiedge.risk.types import OrderSide
+
+gw, _ = _gw()
+gw.on_bar(_k(0), {"NVDA": _bar(100.0)})
+req = OrderRequest(_cid("entry"), "NVDA", OrderSide.BUY, 1,
+                   "limit", "day", limit_price=90.0)
+gw.send_order(req)
+gw.on_bar(_k(1), {"NVDA": _bar(100.0)})
+assert gw.lookup_order(req.client_order_id).filled_avg_price == 100.0
+
+gw, _ = _gw(model="cash", cash=1000.0)
+gw.on_bar(_k(0), {"NVDA": _bar(100.0), "AMD": _bar(100.0)})
+for sym in ("NVDA", "AMD"):
+    gw.send_order(OrderRequest(_cid("entry", sym), sym, OrderSide.BUY,
+                               8, "market", "day"))
+gw.on_bar(_k(1), {"NVDA": _bar(100.0), "AMD": _bar(100.0)})
+assert gw.cash == -600.0
+
+gw, _ = _gw()
+gw.on_bar(_k(0), {"NVDA": _bar(100.0)})
+foreign = make_client_order_id(namespace("foreign-store"), "entry", DAY, "NVDA", 1)
+assert gw.send_order(OrderRequest(foreign, "NVDA", OrderSide.BUY,
+                                  1, "market", "day")).status == "accepted"
+
+gw, _ = _entered(model="cash")
+gw.send_order(OrderRequest(_cid("flatten"), "NVDA", OrderSide.SELL,
+                           10, "market", "day"))
+gw.on_bar(_k(2), {"NVDA": _bar(100.0)})
+gw.start_session(DAY)
+assert (gw.cash, gw.unsettled) == (5000.0, 0.0)
+
+gw, _ = _gw()
+gw.on_bar(_k(0), {"NVDA": _bar(100.0)})
+gw.send_order(OrderRequest(_cid("entry"), "NVDA", OrderSide.BUY,
+                           1, "market", "day"))
+gw.on_bar(_k(1), {"NVDA": _bar(float("nan"))})
+assert gw.cash != gw.cash
+```
+
+All assertions describe reproduced faulty behavior, not the required fixed behavior.
+
+### F-188 — same-day execution contracts and parity remain unresolved (P2, OPEN, #163/#172)
+
+`docs/specifications/intraday_execution.md` requires repeated same-session decisions and
+stop-only protection, but the session-only ID/store invariant and finite-target/order schema
+cannot represent these. The author's PR comment acknowledges all three gaps; the amendment
+needs explicit interfaces, compatibility/migration rules and acceptance tests before a runner.
+Acceptance also simultaneously requires exact backtest parity and a missing-last-bar exit
+at the next available price; the current shared study/replay instead substitutes the last
+known close. State the normative behavior and report implications. Define a clock-triggered
+flatten that still runs when the final feed bar never arrives, including bounded cancel,
+confirmation, re-read and halt paths.
+
+### F-179 — inherited risk-cap blocker reproduced on newest stack (P1, OPEN, #146/#172)
+
+#158 fixes dip/intraday_dip; it does not contain #152's intraday_v1 fix. The unfixed
+`src/semiedge/backtest/intraday.py` is identical in #158/#160/#170, all targeting main.
+At #170, copying `tests/safety/test_intraday_backtest.py` from
+`05feb093403bda31a1a70e2ef90127908ec5d5fc` to a separate test module and running
+`uv run pytest -q tests/safety/test_review_f179.py -k "gap_up_fill or favorable_fill"`
+gives **9 failed, 1 passed**: $110 fill/$99 stop buys 11 shares ($121 risk vs $50 budget);
+$160 fill buys 7 shares even though one share risks $61. All three account models fail.
+Integrate #152, reconcile the stack with main, and re-review exact heads before merge.
+Scope-only PASS on F-180 or new signals does not clear this whole-PR blocker.
+
+### Validation and disposition
+
+- #164: 84 existing client-ID/gateway/SIM tests pass; five synthetic defect probes above reproduce.
+- #166: 106 mode/risk-manager tests pass.
+- #167: full `uv run pytest -q`: 2220 passed, two expected skips.
+- #160: ORB/dip/intraday-dip/gap-reversal focused suite: 92 passed.
+- #170: full `uv run pytest -q`: 2350 passed, two expected skips; transplanted F-179 tests fail separately.
+- `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy` pass on each reviewed code head.
+- Expected skips: Windows symlink privilege and opt-in paper account smoke; the smoke was not enabled.
+- GitHub required CI aggregates were green on all original open heads. GitHub rejected #166 merge
+  with "Waiting on code owner review from Ferrsir"; no bypass or owner-account approval was attempted.
+- #152 already has Claude PASS at 05feb09; #129 needs conflict resolution and code-owner review.
+  #130/#135/#139/#144 remain unmerged predecessors; #157 is Codex-authored and still needs Claude.
+- #150 closed as superseded by #170's preregistration; no strategy eligibility or trading approval.
+- Claude's new #173 screen is active work; its uncommitted implementation was not touched.
+
+Next finding ID: **F-189**.
