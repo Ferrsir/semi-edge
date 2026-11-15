@@ -19,7 +19,7 @@ import shlex
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import UTC, date, datetime
 from html import escape
 from pathlib import Path
@@ -1131,6 +1131,100 @@ def _cmd_backtest_swing(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0
     return EXIT_OK
 
 
+def _cmd_forward_trend(args: argparse.Namespace) -> int:
+    """trend_v1 forward ledger: frozen T1 on bars after 2026-11-13; never places orders (#180)."""
+    from semiedge.backtest import swing  # noqa: PLC0415
+
+    settings, config, _ = _load(args)
+    limits = _risk_limits(args, args.config_dir or settings.config_dir)
+    if not (args.equity > 0 and math.isfinite(args.equity)):
+        raise CommandError(EXIT_CONFIG, "--equity must be a positive number")
+    symbols = (*config.universe.tradable_symbols, *swing.U80_EXTRA, *swing.Y60)
+    index = swing.FORWARD_INDEX
+    _, daily = _read_intraday_caches(settings.data_dir, config, (), daily_symbols=(*symbols, index))
+    absent = [sym for sym in (*symbols, index) if sym not in daily]
+    if absent:
+        raise CommandError(EXIT_DATA, f"No cached daily bars for {len(absent)} symbol(s).")
+    last = max(pd.Timestamp(daily[index].index[-1]).date(), swing.FORWARD_START)
+    end = min(last, args.as_of) if args.as_of is not None else last
+    if end < swing.FORWARD_START:
+        raise CommandError(EXIT_CONFIG, f"--as-of is before {swing.FORWARD_START}")
+    panel = swing.panel_for(
+        daily, symbols, index, end=end, calendar=TradingCalendar(config.data.calendar)
+    )
+    run = swing.replay(
+        panel,
+        swing.build(panel, symbols, index, swing.FORWARD_RULE),
+        start=swing.FORWARD_START,
+        end=end,
+        start_equity=args.equity,
+        limits=limits,
+        slippage_bps=swing.DECISION_SLIPPAGE,
+        plan_last=True,
+    )
+    if not run.sessions:
+        raise CommandError(EXIT_DATA, "No cached session in the forward window.")
+    summary = run.summary()
+    stop_early = summary["net_pct"] <= -swing.FORWARD_STOP_LOSS * 100
+    report = {
+        "strategy": "trend_v1 forward (frozen T1)",
+        "labels": [
+            "SIM LEDGER: no order is placed, simulated at a broker, or authorized",
+            "trend_v1 FAILED its pre-registered backtest; this is a forward check, not approval",
+        ],
+        "window": [swing.FORWARD_START.isoformat(), run.sessions[-1]],
+        "sessions": len(run.sessions),
+        "symbols": len(symbols),
+        "equity": run.equity[-1],
+        "summary": summary,
+        "index_buy_and_hold_pct": swing.index_buy_and_hold(panel, index, swing.FORWARD_START, end),
+        "stop_early": stop_early,
+        "trades": [asdict(t) for t in run.trades],
+        "open_positions": run.open_positions,
+        "entries_blocked": run.entries_blocked,
+        "planned_entries_next_open": run.planned_entries,
+    }
+    if args.output is not None:
+        if args.output.exists():
+            raise CommandError(EXIT_DATA, "Report failed: output_path_exists.")
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(report, indent=1, default=str), encoding="utf-8")
+    lines = [
+        f"trend_v1 forward ledger (frozen T1, {len(symbols)} symbols, index {index}): "
+        f"{swing.FORWARD_START}..{run.sessions[-1]}, {len(run.sessions)} session(s)",
+        *(f"LABEL: {label}" for label in report["labels"]),
+        f"equity {run.equity[-1]:,.2f} ({summary['net_pct']:+.2f}%), max drawdown "
+        f"{summary['max_drawdown_pct']:.2f}%, closed trades {summary['trades']}, "
+        f"{index} {report['index_buy_and_hold_pct']}%",
+    ]
+    if stop_early:
+        lines.append("STOP EARLY: forward equity is 15% or more below its start (spec).")
+    lines.append("open positions:" if run.open_positions else "open positions: none")
+    for pos in run.open_positions:
+        lines.append(
+            f"  {pos['symbol']:<6} {pos['shares']:>4} sh, entered {pos['entry_session']} at "
+            f"{pos['fill']:.2f}, stop {pos['stop']:.2f}, last close {pos['last_close']:.2f}"
+            + (
+                f", EXIT at next open ({pos['exit_at_next_open']})"
+                if pos["exit_at_next_open"]
+                else ""
+            )
+        )
+    if run.entries_blocked:
+        lines.append(f"planned entries for the next open: none ({run.entries_blocked})")
+    elif not run.planned_entries:
+        lines.append("planned entries for the next open: none")
+    else:
+        lines.append("planned entries for the next open (SIM, not orders):")
+        for plan in run.planned_entries:
+            lines.append(
+                f"  {plan['symbol']:<6} {plan['shares']:>4} sh (about ${plan['notional']:,.0f}), "
+                f"signal close {plan['signal_close']:.2f}, stop {plan['stop']:.2f}"
+            )
+    sys.stdout.write("\n".join(lines) + "\n")
+    return EXIT_OK
+
+
 def _cmd_backtest_intraday(args: argparse.Namespace) -> int:
     """Replay intraday_v1 on cached 5-minute bars: 3 account models x 3 slippages (#130)."""
     from semiedge.backtest.intraday import prepare_sessions, run_matrix  # noqa: PLC0415
@@ -1824,6 +1918,16 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - one flat parse
     btt.add_argument("--risk-profile", default="5k", help="risk_<name>.yaml; 'default' = risk.yaml")
     btt.add_argument("--output", type=Path, help="new output directory (existing paths refused)")
     btt.set_defaults(handler=_cmd_backtest_swing, trend=True, candidates=None)
+    fwd = commands.add_parser(
+        "forward-trend",
+        parents=[common],
+        help="trend_v1 forward SIM ledger (frozen T1); prints planned entries, places nothing",
+    )
+    fwd.add_argument("--as-of", type=_iso_date, metavar="YYYY-MM-DD", help="cut the ledger here")
+    fwd.add_argument("--equity", type=float, default=5000.0)
+    fwd.add_argument("--risk-profile", default="5k", help="risk_<name>.yaml; 'default' = risk.yaml")
+    fwd.add_argument("--output", type=Path, help="write the ledger to a new JSON file")
+    fwd.set_defaults(handler=_cmd_forward_trend)
     intraday = data_commands.add_parser(
         "fetch-intraday",
         parents=[common],

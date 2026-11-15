@@ -428,3 +428,61 @@ def test_cli_trend_run_uses_the_null_and_both_rules(
         assert set(res["reference"]) == {"Tb"}
     assert "selection" not in report
     assert "trend_v1 unseen-growth: Y60" in capsys.readouterr().out
+
+
+# ------------------------------------------------------------------ forward ledger
+
+
+def test_plan_last_reports_positions_and_next_open_entries_without_changing_the_run(limits):
+    panel, symbols = _market()
+    book = swing.build(panel, symbols, "IDX", "Tb")
+    kw = {
+        "start": panel.sessions[300], "end": panel.sessions[-1], "start_equity": 5000.0,
+        "limits": limits, "slippage_bps": 10.0,
+    }  # fmt: skip
+    plain = swing.replay(panel, book, **kw)
+    planned = swing.replay(panel, book, plan_last=True, **kw)
+    assert plain.equity == planned.equity
+    assert plain.trades == planned.trades
+    assert plain.planned_entries == []
+    assert plain.open_positions == planned.open_positions
+    held = {p["symbol"] for p in planned.open_positions}
+    assert len(held) + len(planned.planned_entries) <= limits.max_positions
+    for plan in planned.planned_entries:
+        assert plan["symbol"] not in held
+        assert plan["shares"] >= 1
+        assert plan["stop"] < plan["signal_close"]
+        assert plan["notional"] <= limits.max_position_pct * planned.equity[-1] + 1e-6
+
+
+def test_forward_ledger_starts_in_cash_and_never_reads_before_its_start(
+    config_dir: Path, tmp_path: Path, monkeypatch, capsys
+):
+    rng = np.random.default_rng(21)
+    n = len(CAL.sessions_in_range(START, swing.FORWARD_START))
+    names = (*swing.U80_EXTRA, *swing.Y60, "QQQ")
+    daily = {s: _walk(rng, n, drift=0.0, vol=0.012) for s in names}  # prices stay near 100
+    daily["QQQ"] = _frame(np.linspace(100, 300, n))
+    seen: dict[str, tuple[str, ...]] = {}
+
+    def fake(_dir: object, _config: object, _symbols: object, *, daily_symbols: tuple[str, ...]):
+        seen["daily"] = daily_symbols
+        return {}, {**dict.fromkeys(daily_symbols, daily["QQQ"]), **daily}
+
+    monkeypatch.setattr(cli, "_read_intraday_caches", fake)
+    monkeypatch.setenv("SEMIEDGE_DATA_DIR", str(tmp_path / "data"))
+    out = tmp_path / "ledger.json"
+    base = ["forward-trend", "--config-dir", str(config_dir)]
+    assert cli.main([*base, "--output", str(out)]) == 0
+    ledger = json.loads(out.read_text(encoding="utf-8"))
+    assert len(seen["daily"]) == 16 + 64 + 60 + 1
+    assert ledger["window"] == [swing.FORWARD_START.isoformat(), swing.FORWARD_START.isoformat()]
+    assert ledger["equity"] == 5000.0  # in cash at the starting close
+    assert ledger["trades"] == []
+    assert ledger["open_positions"] == []
+    assert 1 <= len(ledger["planned_entries_next_open"]) <= 3
+    text = capsys.readouterr().out
+    assert "SIM LEDGER: no order is placed" in text
+    assert "planned entries for the next open (SIM, not orders):" in text
+    assert cli.main([*base, "--output", str(out)]) != 0  # an existing file is never overwritten
+    assert cli.main([*base, "--as-of", "2026-11-12"]) != 0

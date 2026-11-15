@@ -414,6 +414,9 @@ class RunResult:
     exposure: list[float] = field(default_factory=list)
     drawdown_halts: list[str] = field(default_factory=list)
     refused: Counter[str] = field(default_factory=Counter)
+    open_positions: list[dict[str, Any]] = field(default_factory=list)  # at the last close
+    planned_entries: list[dict[str, Any]] = field(default_factory=list)  # for the next open
+    entries_blocked: str | None = None  # why no entry is planned after the last close
 
     def daily_returns(self) -> np.ndarray:
         e = np.array([self.start_equity, *self.equity])
@@ -457,8 +460,13 @@ def replay(  # noqa: PLR0912, PLR0915 - one pass over the sessions keeps the eve
     limits: RiskLimits,
     slippage_bps: float,
     halt_model: Literal["reset", "strict"] = "reset",
+    plan_last: bool = False,
 ) -> RunResult:
-    """The spec's portfolio run under the given risk profile (unrestricted account)."""
+    """The spec's portfolio run under the given risk profile (unrestricted account).
+
+    ``plan_last`` also takes the signals of the final close and reports them as planned
+    entries (the forward ledger); a backtest leaves it off because no later open exists.
+    """
     rng = _window(panel, start, end)
     out = RunResult(start_equity, slippage_bps, halt_model, [], [])
     if rng is None:
@@ -536,7 +544,24 @@ def replay(  # noqa: PLR0912, PLR0915 - one pass over the sessions keeps the eve
         elif halted_at is not None and halt_model == "reset" and i - halted_at >= RESET_SESSIONS:
             halted_at = None
             peak = equity  # the drawdown is measured from equity at the reset
-        if i == i1 or daily_block or halted_at is not None:
+        if i == i1:
+            out.open_positions = [
+                {
+                    "symbol": q.symbol,
+                    "entry_session": panel.sessions[q.entry_i].isoformat(),
+                    "shares": q.shares,
+                    "fill": round(q.fill, 4),
+                    "stop": round(q.stop, 4),
+                    "last_close": round(_last_close(panel, q.symbol, i, q.fill), 4),
+                    "exit_at_next_open": q.pending,
+                }
+                for q in held.values()
+            ]
+            if daily_block:
+                out.entries_blocked = "daily loss halt"
+            elif halted_at is not None:
+                out.entries_blocked = "drawdown halt"
+        if (i == i1 and not plan_last) or daily_block or halted_at is not None:
             continue
         free = limits.max_positions - len(held)
         if free <= 0:
@@ -561,6 +586,16 @@ def replay(  # noqa: PLR0912, PLR0915 - one pass over the sessions keeps the eve
                 continue
             reserved += shares * close
             pending.append(_Pending(sym, close - risk, risk, shares, equity))
+            if i == i1:
+                out.planned_entries.append(
+                    {
+                        "symbol": sym,
+                        "signal_close": round(close, 4),
+                        "stop": round(close - risk, 4),
+                        "shares": shares,
+                        "notional": round(shares * close, 2),
+                    }
+                )
     return out
 
 
@@ -672,6 +707,10 @@ def holdout_failures(
     ]
 
 
+FORWARD_RULE = "T1"
+FORWARD_INDEX = "QQQ"
+FORWARD_START = date(2026, 11, 13)  # $5,000 in cash at this close; first fills the next open
+FORWARD_STOP_LOSS = 0.15
 TREND_CANDIDATES = ("T1", "T2")
 TREND_NULL = "Tn"
 TREND_MIN_TRADES = 150
