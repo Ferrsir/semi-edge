@@ -86,6 +86,15 @@ the alphabetically first symbol.
 
 ## Sizing, limits and accounts
 
+Prospective safety amendment (#154, F-180; 2026-11-14), before any new market-data
+run: at fill, additionally cap reserved quantity by
+`floor(signal_equity * max_risk_per_trade_pct / (slipped_fill - stop))` and refuse
+an entry if no share fits. A next-open gap must not widen entry-to-stop risk beyond
+the budget. The planned `R0` denominator for statistics, signals, stops, targets and
+selection gates remain unchanged. Exit slippage and subsequent stop gaps can still
+exceed planned risk. Existing result records use the old sizing rule; this safety
+amendment does not authorize holdout reuse or validate earlier portfolio results.
+
 - Profile `5k` (ADR-011), starting equity $5,000: shares are the minimum of the risk budget over
   `R0`, the position cap over `C_k`, the gross cap and the available cash. At the fill, shares
   are cut to the cap and to the cash.
