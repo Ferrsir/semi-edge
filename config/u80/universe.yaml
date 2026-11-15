@@ -1,0 +1,105 @@
+# U80: the skill_follow_v1 screen universe (docs/specifications/skill_follow_v1.md, #173).
+# U16 (config/universe.yaml) plus 64 liquid US technology names, fixed in the spec before any
+# of their bars was fetched. Used only with --config-dir config/u80 to fetch and screen data.
+# It is NOT the trading universe: config/universe.yaml is unchanged.
+
+regime_benchmark: SMH
+comparison_benchmarks: [SMH, QQQ]
+
+members:
+  # AI computing
+  - {symbol: NVDA, name: NVIDIA, group: ai_computing, role: tradable}
+  - {symbol: AMD, name: Advanced Micro Devices, group: ai_computing, role: tradable}
+  - {symbol: INTC, name: Intel, group: ai_computing, role: tradable}
+  # Networking and custom silicon
+  - {symbol: AVGO, name: Broadcom, group: networking_custom_silicon, role: tradable}
+  - {symbol: MRVL, name: Marvell Technology, group: networking_custom_silicon, role: tradable}
+  - {symbol: ANET, name: Arista Networks, group: networking_custom_silicon, role: tradable}
+  # Manufacturing and foundries
+  - {symbol: TSM, name: Taiwan Semiconductor (ADR), group: foundry_manufacturing, role: tradable}
+  - {symbol: ASML, name: ASML Holding (ADR), group: foundry_manufacturing, role: tradable}
+  # Memory
+  - {symbol: MU, name: Micron Technology, group: memory, role: tradable}
+  # Semiconductor equipment
+  - {symbol: AMAT, name: Applied Materials, group: semi_equipment, role: tradable}
+  - {symbol: LRCX, name: Lam Research, group: semi_equipment, role: tradable}
+  - {symbol: KLAC, name: KLA, group: semi_equipment, role: tradable}
+  # Electronic design automation
+  - {symbol: CDNS, name: Cadence Design Systems, group: eda, role: tradable}
+  - {symbol: SNPS, name: Synopsys, group: eda, role: tradable}
+  # AI infrastructure
+  - {symbol: VRT, name: Vertiv, group: ai_infrastructure, role: tradable}
+  - {symbol: SMCI, name: Super Micro Computer, group: ai_infrastructure, role: tradable}
+  # semis_added
+  - {symbol: "QCOM", name: "QCOM", group: semis_added, role: tradable}
+  - {symbol: "TXN", name: "TXN", group: semis_added, role: tradable}
+  - {symbol: "ADI", name: "ADI", group: semis_added, role: tradable}
+  - {symbol: "NXPI", name: "NXPI", group: semis_added, role: tradable}
+  - {symbol: "MCHP", name: "MCHP", group: semis_added, role: tradable}
+  - {symbol: "ON", name: "ON", group: semis_added, role: tradable}
+  - {symbol: "MPWR", name: "MPWR", group: semis_added, role: tradable}
+  - {symbol: "TER", name: "TER", group: semis_added, role: tradable}
+  - {symbol: "ENTG", name: "ENTG", group: semis_added, role: tradable}
+  - {symbol: "ARM", name: "ARM", group: semis_added, role: tradable}
+  - {symbol: "GFS", name: "GFS", group: semis_added, role: tradable}
+  - {symbol: "SWKS", name: "SWKS", group: semis_added, role: tradable}
+  - {symbol: "QRVO", name: "QRVO", group: semis_added, role: tradable}
+  - {symbol: "LSCC", name: "LSCC", group: semis_added, role: tradable}
+  - {symbol: "AMKR", name: "AMKR", group: semis_added, role: tradable}
+  - {symbol: "COHR", name: "COHR", group: semis_added, role: tradable}
+  - {symbol: "ONTO", name: "ONTO", group: semis_added, role: tradable}
+  - {symbol: "CRDO", name: "CRDO", group: semis_added, role: tradable}
+  - {symbol: "ALAB", name: "ALAB", group: semis_added, role: tradable}
+  - {symbol: "MTSI", name: "MTSI", group: semis_added, role: tradable}
+  - {symbol: "RMBS", name: "RMBS", group: semis_added, role: tradable}
+  - {symbol: "STM", name: "STM", group: semis_added, role: tradable}
+  - {symbol: "UMC", name: "UMC", group: semis_added, role: tradable}
+  - {symbol: "NVMI", name: "NVMI", group: semis_added, role: tradable}
+  # hardware_ai_infra
+  - {symbol: "AAPL", name: "AAPL", group: hardware_ai_infra, role: tradable}
+  - {symbol: "DELL", name: "DELL", group: hardware_ai_infra, role: tradable}
+  - {symbol: "HPE", name: "HPE", group: hardware_ai_infra, role: tradable}
+  - {symbol: "NTAP", name: "NTAP", group: hardware_ai_infra, role: tradable}
+  - {symbol: "PSTG", name: "PSTG", group: hardware_ai_infra, role: tradable}
+  - {symbol: "WDC", name: "WDC", group: hardware_ai_infra, role: tradable}
+  - {symbol: "STX", name: "STX", group: hardware_ai_infra, role: tradable}
+  - {symbol: "CIEN", name: "CIEN", group: hardware_ai_infra, role: tradable}
+  - {symbol: "LITE", name: "LITE", group: hardware_ai_infra, role: tradable}
+  - {symbol: "CLS", name: "CLS", group: hardware_ai_infra, role: tradable}
+  - {symbol: "FN", name: "FN", group: hardware_ai_infra, role: tradable}
+  - {symbol: "CSCO", name: "CSCO", group: hardware_ai_infra, role: tradable}
+  - {symbol: "IBM", name: "IBM", group: hardware_ai_infra, role: tradable}
+  - {symbol: "GLW", name: "GLW", group: hardware_ai_infra, role: tradable}
+  - {symbol: "APH", name: "APH", group: hardware_ai_infra, role: tradable}
+  - {symbol: "JBL", name: "JBL", group: hardware_ai_infra, role: tradable}
+  # platforms
+  - {symbol: "MSFT", name: "MSFT", group: platforms, role: tradable}
+  - {symbol: "GOOGL", name: "GOOGL", group: platforms, role: tradable}
+  - {symbol: "AMZN", name: "AMZN", group: platforms, role: tradable}
+  - {symbol: "META", name: "META", group: platforms, role: tradable}
+  - {symbol: "TSLA", name: "TSLA", group: platforms, role: tradable}
+  - {symbol: "NFLX", name: "NFLX", group: platforms, role: tradable}
+  - {symbol: "ORCL", name: "ORCL", group: platforms, role: tradable}
+  # software_cloud
+  - {symbol: "CRM", name: "CRM", group: software_cloud, role: tradable}
+  - {symbol: "ADBE", name: "ADBE", group: software_cloud, role: tradable}
+  - {symbol: "NOW", name: "NOW", group: software_cloud, role: tradable}
+  - {symbol: "PLTR", name: "PLTR", group: software_cloud, role: tradable}
+  - {symbol: "SNOW", name: "SNOW", group: software_cloud, role: tradable}
+  - {symbol: "PANW", name: "PANW", group: software_cloud, role: tradable}
+  - {symbol: "CRWD", name: "CRWD", group: software_cloud, role: tradable}
+  - {symbol: "NET", name: "NET", group: software_cloud, role: tradable}
+  - {symbol: "DDOG", name: "DDOG", group: software_cloud, role: tradable}
+  - {symbol: "MDB", name: "MDB", group: software_cloud, role: tradable}
+  - {symbol: "SHOP", name: "SHOP", group: software_cloud, role: tradable}
+  - {symbol: "UBER", name: "UBER", group: software_cloud, role: tradable}
+  - {symbol: "INTU", name: "INTU", group: software_cloud, role: tradable}
+  - {symbol: "WDAY", name: "WDAY", group: software_cloud, role: tradable}
+  - {symbol: "ZS", name: "ZS", group: software_cloud, role: tradable}
+  - {symbol: "TEAM", name: "TEAM", group: software_cloud, role: tradable}
+  - {symbol: "APP", name: "APP", group: software_cloud, role: tradable}
+  # Benchmarks
+  - {symbol: SMH, name: VanEck Semiconductor ETF, group: benchmark, role: benchmark}
+  - {symbol: SOXX, name: iShares Semiconductor ETF, group: benchmark, role: benchmark}
+  - {symbol: QQQ, name: Invesco QQQ Trust, group: benchmark, role: benchmark}
+  - {symbol: SPY, name: SPDR S&P 500 ETF, group: benchmark, role: benchmark}

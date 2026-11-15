@@ -798,6 +798,148 @@ def _run_intraday_family(args: argparse.Namespace, idip: Any, strategy: str, pro
     return EXIT_OK
 
 
+def _cmd_backtest_skill_follow(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915
+    """skill_follow_v1 screen: signal studies of 19 candidates on two universes (#173)."""
+    from semiedge.backtest import skill_follow as sf  # noqa: PLC0415
+
+    settings, config, _ = _load(args)
+    if args.output is not None and args.output.exists():
+        raise CommandError(EXIT_DATA, "Backtest failed: output_path_exists.")
+    pairs: list[tuple[str, str]] = []
+    if args.period == "holdout":
+        if not args.pairs:
+            raise CommandError(EXIT_CONFIG, "the holdout runs once, with the selected --pairs")
+        for raw in args.pairs:
+            cand, _, universe = raw.partition(":")
+            if cand not in sf.CANDIDATES or universe not in sf.INDEX:
+                raise CommandError(EXIT_CONFIG, f"unknown pair {raw!r}; use CANDIDATE:U16 or :U80")
+            pairs.append((cand, universe))
+        if len(pairs) > sf.MAX_SELECTED:
+            raise CommandError(EXIT_CONFIG, f"at most {sf.MAX_SELECTED} pairs go to the holdout")
+    elif args.pairs:
+        raise CommandError(EXIT_CONFIG, "--pairs is for the holdout only")
+    u16 = tuple(config.universe.tradable_symbols)
+    universes = {"U16": u16, "U80": (*u16, *sf.U80_ADDED)}
+    everything = tuple(dict.fromkeys((*universes["U80"], *sf.INDEX.values())))
+    intraday, daily = _read_intraday_caches(settings.data_dir, config, everything)
+    absent = sorted(s for s in everything if s not in daily or s not in intraday)
+    if any(i in absent for i in sf.INDEX.values()):
+        raise CommandError(EXIT_DATA, "No cached bars for a sector index.")
+    calendar = TradingCalendar(config.data.calendar)
+    start, end = sf.PERIODS[args.period]
+    wanted = {u: [c for c, pu in pairs if pu == u] for u in universes} if pairs else None
+    results: dict[str, Any] = {}
+    history: dict[str, Any] = {}
+    for universe, symbols in universes.items():
+        if wanted is not None and not wanted[universe]:
+            continue
+        index = sf.INDEX[universe]
+        panel = sf.prepare_daily(daily, (*symbols, index), end=end, calendar=calendar)
+        bars = sf.prepare_intraday(
+            intraday, (*symbols, index), start=start, end=end, calendar=calendar
+        )
+        inp = sf.Inputs(
+            panel, symbols, index, calendar, bars, sf.prepare_sessions(bars, panel, symbols, index)
+        )
+        names = (
+            (*sf.BASELINES, *sf.CANDIDATES)
+            if wanted is None
+            else tuple(dict.fromkeys(n for c in wanted[universe] for n in _sf_chain(sf, c)))
+        )
+        results[universe] = {
+            name: {
+                f"{bps:g}": sf.stats(
+                    sf.r_multiples(sf.study(inp, name, start=start, end=end, slippage_bps=bps))
+                )
+                for bps in sf.SLIPPAGES
+            }
+            for name in names
+        }
+        if args.period == "development":
+            h0, h1 = sf.HISTORY
+            history[universe] = {
+                name: sf.stats(
+                    sf.r_multiples(
+                        sf.study(inp, name, start=h0, end=h1, slippage_bps=sf.DECISION_SLIPPAGE)
+                    )
+                )
+                for name in names
+                if name[0] in "DS"
+            }
+    key = f"{sf.DECISION_SLIPPAGE:g}"
+    at_decision = {u: {n: r[key] for n, r in by.items()} for u, by in results.items()}
+    report: dict[str, Any] = {
+        "strategy": "skill_follow_v1",
+        "period": args.period,
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "command": f"semiedge backtest-skill-follow --period {args.period}"
+        + (f" --pairs {' '.join(args.pairs)}" if args.pairs else ""),
+        "symbols_without_bars": absent,
+        "labels": [
+            "SURVIVORSHIP-BIASED UNIVERSES: today's lists, not point-in-time",
+            "EARNINGS BLACKOUT NOT APPLIED: no point-in-time earnings history",
+            "PRICE RETURNS ONLY; daily-bar candidates assume stop and close fills",
+            "38 TESTS: a development result alone is not evidence of an edge",
+        ],
+        "results": results,
+    }
+    lines = [
+        f"skill_follow_v1 {args.period} {start}..{end}; decision cost {key} bps a side",
+        *(f"LABEL: {label}" for label in report["labels"]),
+    ]
+    if absent:
+        lines.append(f"no cached bars: {', '.join(absent)}")
+    for universe, by in at_decision.items():
+        lines.append(f"-- {universe} --")
+        for name, s in by.items():
+            if not s.get("trades"):
+                lines.append(f"{name:>3}: no trades")
+                continue
+            low, high = s["mean_r_95ci"]
+            extra = ""
+            if name in history.get(universe, {}):
+                h = history[universe][name]
+                extra = f" | history {h.get('mean_r', float('nan')):+.3f}R/{h.get('trades', 0)}"
+            lines.append(
+                f"{name:>3}: {s['trades']:>6} trades, win {s['win_rate']:.1%}, mean "
+                f"{s['mean_r']:+.3f}R [{low:+.3f}, {high:+.3f}], "
+                f"ex-top5 {s['mean_r_without_top5']}{extra}"
+            )
+    if args.period == "development":
+        selected, notes = sf.select(at_decision, history)
+        report["history_check"] = history
+        report["selection"] = {"selected": selected, "failures": notes}
+        lines.append(f"SELECTED for the holdout: {', '.join(selected) if selected else 'none'}")
+        for pair, fails in notes.items():
+            lines.append(f"  {pair}: {'qualifies' if not fails else '; '.join(fails)}")
+    else:
+        verdicts = {}
+        for cand, universe in pairs:
+            by = at_decision[universe]
+            fails = sf.holdout_failures(by[cand], by[sf.baseline_of(cand)])
+            verdicts[f"{cand}:{universe}"] = fails
+            lines.append(
+                f"HOLDOUT signal study {cand}:{universe}: "
+                + ("PASS (portfolio replay still required)" if not fails else "; ".join(fails))
+            )
+        report["holdout"] = verdicts
+    if args.output is not None:
+        args.output.mkdir(parents=True, exist_ok=False)
+        path = args.output / "skill_follow_v1_screen.json"
+        path.write_text(json.dumps(report, indent=1, default=str), encoding="utf-8")
+    sys.stdout.write("\n".join(lines) + "\n")
+    return EXIT_OK
+
+
+def _sf_chain(sf: Any, candidate: str) -> list[str]:
+    """A candidate and every baseline its gates read (A1..A5 -> A0 -> B0)."""
+    out = [candidate]
+    while out[-1] not in sf.BASELINES:
+        out.append(sf.baseline_of(out[-1]))
+    return out
+
+
 def _cmd_backtest_intraday(args: argparse.Namespace) -> int:
     """Replay intraday_v1 on cached 5-minute bars: 3 account models x 3 slippages (#130)."""
     from semiedge.backtest.intraday import prepare_sessions, run_matrix  # noqa: PLC0415
@@ -1449,6 +1591,15 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - one flat parse
     btc.add_argument("--risk-profile", default="5k", help="risk_<name>.yaml; 'default' = risk.yaml")
     btc.add_argument("--output", type=Path, help="new output directory (existing paths refused)")
     btc.set_defaults(handler=_cmd_backtest_closing_momentum)
+    bts = commands.add_parser(
+        "backtest-skill-follow",
+        parents=[common],
+        help="skill_follow_v1 screen on cached daily and 5-minute bars (spec periods only)",
+    )
+    bts.add_argument("--period", choices=("development", "holdout"), required=True)
+    bts.add_argument("--pairs", nargs="+", metavar="CANDIDATE:UNIVERSE", help="holdout only")
+    bts.add_argument("--output", type=Path, help="new output directory (existing paths refused)")
+    bts.set_defaults(handler=_cmd_backtest_skill_follow)
     intraday = data_commands.add_parser(
         "fetch-intraday",
         parents=[common],
