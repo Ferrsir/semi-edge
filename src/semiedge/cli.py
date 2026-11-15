@@ -23,7 +23,7 @@ from dataclasses import replace
 from datetime import UTC, date, datetime
 from html import escape
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pandas as pd
 from pydantic import SecretStr, TypeAdapter, ValidationError
@@ -950,6 +950,165 @@ def _sf_chain(sf: Any, candidate: str) -> list[str]:
     return out
 
 
+def _cmd_backtest_swing(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915
+    """swing_v1: signal studies, $5k portfolio runs and Monte Carlo checks (#180)."""
+    from semiedge.backtest import swing  # noqa: PLC0415
+
+    settings, config, _ = _load(args)
+    limits = _risk_limits(args, args.config_dir or settings.config_dir)
+    if not (args.equity > 0 and math.isfinite(args.equity)):
+        raise CommandError(EXIT_CONFIG, "--equity must be a positive number")
+    if args.output is not None and args.output.exists():
+        raise CommandError(EXIT_DATA, "Backtest failed: output_path_exists.")
+    if args.sample == "development":
+        if args.candidates:
+            raise CommandError(EXIT_CONFIG, "--candidates is for the confirmation samples only")
+        names: tuple[str, ...] = swing.CANDIDATES
+    else:
+        if not args.candidates:
+            raise CommandError(EXIT_CONFIG, "confirmation runs once, with --candidates")
+        if len(args.candidates) > swing.MAX_SELECTED:
+            raise CommandError(EXIT_CONFIG, f"at most {swing.MAX_SELECTED} candidates")
+        names = tuple(dict.fromkeys(args.candidates))
+    universe, index, start, end = swing.SAMPLES[args.sample]
+    symbols = (
+        (*config.universe.tradable_symbols, *swing.U80_EXTRA) if universe == "U80" else swing.X60
+    )
+    _, daily = _read_intraday_caches(settings.data_dir, config, (), daily_symbols=(*symbols, index))
+    absent = [sym for sym in (*symbols, index) if sym not in daily]
+    if absent:
+        raise CommandError(EXIT_DATA, f"No cached daily bars for {len(absent)} symbol(s).")
+    panel = swing.panel_for(
+        daily, symbols, index, end=end, calendar=TradingCalendar(config.data.calendar)
+    )
+    key = f"{swing.DECISION_SLIPPAGE:g}"
+    studies: dict[str, dict[str, Any]] = {}
+    trades_at_decision: dict[str, Any] = {}
+    books = {
+        n: swing.build(panel, symbols, index, n)
+        for n in dict.fromkeys((*names, *(swing.RULES[c].baseline for c in names)))
+    }
+    for name, book in books.items():
+        studies[name] = {}
+        for bps in swing.SLIPPAGES:
+            trades = swing.signal_study(panel, book, start=start, end=end, slippage_bps=bps)
+            studies[name][f"{bps:g}"] = swing.study_stats(trades)
+            if bps == swing.DECISION_SLIPPAGE:
+                trades_at_decision[name] = trades
+    results: dict[str, dict[str, Any]] = {}
+    curves: dict[str, Any] = {}
+    for name in names:
+        base = swing.RULES[name].baseline
+        runs = {}
+        plan: tuple[tuple[float, Literal["reset", "strict"]], ...] = (
+            (swing.DECISION_SLIPPAGE, "reset"),
+            (swing.DECISION_SLIPPAGE, "strict"),
+            (5.0, "reset"),
+            (20.0, "reset"),
+        )
+        for bps, model in plan:
+            run = swing.replay(
+                panel, books[name], start=start, end=end, start_equity=args.equity,
+                limits=limits, slippage_bps=bps, halt_model=model,
+            )  # fmt: skip
+            runs[f"{model}@{bps:g}"] = run
+        main = runs[f"reset@{key}"]
+        paths = swing.account_paths(main.daily_returns())
+        edge = swing.edge_over_baseline(trades_at_decision[name], trades_at_decision[base])
+        study, portfolio = studies[name][key], main.summary()
+        fails = (
+            swing.selection_failures(study, edge, portfolio, paths)
+            if args.sample != "holdout"
+            else swing.holdout_failures(study, studies[base][key], portfolio)
+        )
+        results[name] = {
+            "study": studies[name],
+            "baseline": {base: studies[base]},
+            "edge_over_baseline": edge,
+            "portfolio": portfolio,
+            "other_runs": {k: r.summary() for k, r in runs.items() if r is not main},
+            "account_paths": paths,
+            "failures": fails,
+        }
+        curves[name] = {"sessions": main.sessions, "equity": main.equity}
+    command = (
+        f"semiedge backtest-swing --sample {args.sample}"
+        + (f" --candidates {' '.join(names)}" if args.candidates else "")
+        + f" --equity {args.equity:g} --risk-profile {args.risk_profile or 'default'}"
+    )
+    report: dict[str, Any] = {
+        "strategy": "swing_v1",
+        "sample": args.sample,
+        "universe": universe,
+        "symbols": len(symbols),
+        "index": index,
+        "window": [start.isoformat(), end.isoformat()],
+        "command": command,
+        "start_equity": args.equity,
+        "limits": limits.model_dump(mode="json"),
+        "labels": [
+            "SURVIVORSHIP-BIASED UNIVERSE: today's list, not point-in-time",
+            "EARNINGS BLACKOUT NOT APPLIED: no point-in-time earnings history",
+            "PRICE RETURNS ONLY; DAILY BARS: a stop fill assumes the stop price traded",
+            "FIVE CANDIDATES SCREENED: a development result alone is not evidence of an edge",
+        ],
+        "index_buy_and_hold_pct": swing.index_buy_and_hold(panel, index, start, end),
+        "results": results,
+    }
+    lines = [
+        f"swing_v1 {args.sample}: {universe} ({len(symbols)} symbols, index {index}) "
+        f"{start}..{end}; decision cost {key} bps a side; start equity {args.equity:,.0f}",
+        *(f"LABEL: {label}" for label in report["labels"]),
+        f"{index} buy and hold: {report['index_buy_and_hold_pct']}%",
+    ]
+    for name, res in results.items():
+        st, pf, mc = res["study"][key], res["portfolio"], res["account_paths"]
+        base = swing.RULES[name].baseline
+        bs = res["baseline"][base][key]
+        lines.append(f"-- {name} --")
+        if st.get("trades"):
+            lines.append(
+                f"  study: {st['trades']} trades, win {st['win_rate']:.1%}, mean "
+                f"{st['mean_r']:+.3f}R {st['mean_r_95ci']}, ex-top5 {st['mean_r_without_top5']}; "
+                f"5 bps {res['study']['5'].get('mean_r')}, "
+                f"20 bps {res['study']['20'].get('mean_r')}"
+            )
+        else:
+            lines.append("  study: no trades")
+        lines.append(
+            f"  baseline {base}: {bs.get('trades', 0)} trades, mean {bs.get('mean_r')}R; edge "
+            f"{res['edge_over_baseline']['difference']} {res['edge_over_baseline']['ci95']}"
+        )
+        lines.append(
+            f"  $ run (reset): {pf['trades']} trades, net {pf['net_pnl']:+,.0f} "
+            f"({pf['net_pct']:+.1f}%), CAGR {pf['cagr_pct']:+.1f}%, maxDD "
+            f"{pf['max_drawdown_pct']:.1f}%, exposure {pf['avg_gross_exposure_pct']}%, "
+            f"halts {len(pf['drawdown_halts'])}"
+        )
+        for k, other in res["other_runs"].items():
+            lines.append(
+                f"  $ run {k}: net {other['net_pct']:+.1f}%, maxDD {other['max_drawdown_pct']:.1f}%"
+                f", halts {len(other['drawdown_halts'])}"
+            )
+        if mc.get("paths"):
+            lines.append(
+                f"  MC3: {mc['share_positive']:.1%} of paths positive; final "
+                f"{mc['final_return_pct']}; maxDD {mc['max_drawdown_pct']}"
+            )
+        lines.append(f"  gates: {'all met' if not res['failures'] else '; '.join(res['failures'])}")
+    if args.sample == "development":
+        selected, _ = swing.select(results)
+        report["selection"] = {"selected": selected}
+        lines.append(f"SELECTED for confirmation: {', '.join(selected) if selected else 'none'}")
+    if args.output is not None:
+        args.output.mkdir(parents=True, exist_ok=False)
+        report["equity_curves"] = curves
+        path = args.output / "swing_v1_backtest.json"
+        path.write_text(json.dumps(report, indent=1, default=str), encoding="utf-8")
+    sys.stdout.write("\n".join(lines) + "\n")
+    return EXIT_OK
+
+
 def _cmd_backtest_intraday(args: argparse.Namespace) -> int:
     """Replay intraday_v1 on cached 5-minute bars: 3 account models x 3 slippages (#130)."""
     from semiedge.backtest.intraday import prepare_sessions, run_matrix  # noqa: PLC0415
@@ -1616,6 +1775,19 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - one flat parse
     bts.add_argument("--pairs", nargs="+", metavar="CANDIDATE:UNIVERSE", help="holdout only")
     bts.add_argument("--output", type=Path, help="new output directory (existing paths refused)")
     bts.set_defaults(handler=_cmd_backtest_skill_follow)
+    btw = commands.add_parser(
+        "backtest-swing",
+        parents=[common],
+        help="swing_v1 on cached daily bars (spec samples only)",
+    )
+    btw.add_argument("--sample", choices=("development", "holdout", "unseen"), required=True)
+    btw.add_argument(
+        "--candidates", nargs="+", choices=("R1", "R2", "R3", "T1", "T2"), help="confirmation"
+    )
+    btw.add_argument("--equity", type=float, default=5000.0)
+    btw.add_argument("--risk-profile", default="5k", help="risk_<name>.yaml; 'default' = risk.yaml")
+    btw.add_argument("--output", type=Path, help="new output directory (existing paths refused)")
+    btw.set_defaults(handler=_cmd_backtest_swing)
     intraday = data_commands.add_parser(
         "fetch-intraday",
         parents=[common],
