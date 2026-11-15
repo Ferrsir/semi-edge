@@ -71,3 +71,32 @@ paths positive. SPY bought and held: +267%.
 R3 passed its selection sample and the time holdout on U80 and failed on 60 non-tech stocks. On
 those it still beat a random entry day, but not by enough to pay 10 bps a side.
 `docs/specifications/swing_v1_y60.md` tests one explanation on a further unseen list.
+
+## R3 on unseen high-volatility stocks: Y60, 2016-04-01..2026-10-23
+
+Spec `docs/specifications/swing_v1_y60.md`, committed at `cdd05e2` before any Y60 bar was
+fetched. All 60 symbols returned bars.
+
+`semiedge backtest-swing --sample unseen-growth --candidates R3 --equity 5000 --risk-profile 5k`
+
+| | 5 bps | 10 bps | 20 bps |
+|---|---|---|---|
+| study mean R (5,236 trades) | +0.020 | +0.010 [-0.003, +0.023] | -0.009 |
+| $5,000 net (reset model) | +1.4% | +0.7% | -11.5% |
+
+Baseline R3b: -0.001R over 59,671 trades. Edge +0.011 [-0.003, +0.024]. The $5,000 run at
+10 bps: 925 trades, +$33, maximum drawdown -17.7%, 6 drawdown halts. MC3: 54.5% of account
+paths positive. Mean daily range of Y60: 4.6% of price.
+
+**FAIL** (MC1, MC2, MC3). The volatility explanation is wrong: Y60 is the most volatile list
+tested and R3 is a coin flip on it. R3 is not reproducible on unseen symbols.
+
+## Final verdict: `swing_v1` FAIL, no candidate
+
+What the dip rules showed across every sample: buying after a short drop in an uptrend beats a
+random entry day by 0.01R to 0.05R a trade. After 10 bps a side that leaves about +0.01R to
++0.04R, which is too little for a $5,000 account that risks 1% a trade. The account results
+swing between -7% and +25% depending on the list, with drawdowns of 14% to 20% when the halt
+is reset. The good U80 numbers were the favourable end of that range.
+
+The trend rules are tested separately in `docs/specifications/trend_v1.md`.

@@ -357,3 +357,74 @@ def test_cli_confirmation_run_writes_the_report(
     )
     assert "selection" not in report
     assert "swing_v1 unseen: X60" in capsys.readouterr().out
+
+
+# ------------------------------------------------------------------ trend_v1
+
+
+def test_trend_null_enters_on_week_ends_without_trend_or_regime():
+    n = 420
+    falling = np.linspace(200, 100, n)
+    frames = {"X": _frame(falling), "IDX": _frame(falling)}
+    panel, symbols = _panel(frames)
+    tn = swing.build(panel, symbols, "IDX", "Tn")
+    weekly = swing.week_ends(panel.sessions)
+    late = np.arange(len(panel.sessions)) >= 300
+    np.testing.assert_array_equal(tn.entry["X"][late], weekly[late])  # a downtrend still enters
+    assert not swing.build(panel, symbols, "IDX", "Tb").entry["X"].any()
+    assert swing.RULES["Tn"].overlap is False
+
+
+def test_trend_gates():
+    study = {"trades": 150, "mean_r": 0.3, "mean_r_without_top5": 0.1, "mean_r_95ci": [0.05, 0.6]}
+    null = {"mean_r": 0.1}
+    ok = ({"ci95": [0.01, 0.4]}, {"net_pnl": 5.0}, {"share_positive": 0.9})
+    assert swing.trend_failures("unseen", study, null, *ok) == []
+    assert swing.trend_failures(
+        "unseen-growth",
+        {**study, "trades": 149},
+        null,
+        {"ci95": [-0.01, 0.4]},
+        {"net_pnl": 0.0},
+        {"share_positive": 0.5},
+    ) == [
+        "fewer than 150 trades",
+        "MC2 lower bound not above 0",
+        "portfolio net not positive",
+        "MC3 below 90% positive paths",
+    ]
+    short = {"trades": 30, "mean_r": 0.2}
+    weak = ({"ci95": [-1.0, 1.0]}, {"net_pnl": 1.0}, {"share_positive": 0.1})
+    assert swing.trend_failures("holdout", short, null, *weak) == []  # the short set only
+    assert swing.trend_failures("holdout", {"trades": 29, "mean_r": 0.05}, null, *weak) == [
+        "fewer than 30 trades",
+        "mean R not above the null",
+    ]
+
+
+def test_cli_trend_run_uses_the_null_and_both_rules(
+    config_dir: Path, tmp_path: Path, monkeypatch, capsys
+):
+    rng = np.random.default_rng(13)
+    n = len(CAL.sessions_in_range(START, date(2026, 10, 23)))
+    daily = {s: _walk(rng, n) for s in swing.Y60}
+    daily["QQQ"] = _frame(np.linspace(100, 300, n))
+    monkeypatch.setattr(cli, "_read_intraday_caches", lambda *_a, **_k: ({}, daily))
+    monkeypatch.setattr(swing, "MC_PATHS", 500)
+    monkeypatch.setattr(swing, "BOOTSTRAP_RESAMPLES", 200)
+    monkeypatch.setenv("SEMIEDGE_DATA_DIR", str(tmp_path / "data"))
+    out = tmp_path / "report"
+    code = cli.main(
+        ["backtest-trend", "--config-dir", str(config_dir), "--sample", "unseen-growth",
+         "--output", str(out)]
+    )  # fmt: skip
+    assert code == 0
+    report = json.loads((out / "trend_v1_backtest.json").read_text(encoding="utf-8"))
+    assert report["strategy"] == "trend_v1"
+    assert report["universe"] == "Y60"
+    assert set(report["results"]) == {"T1", "T2"}
+    for res in report["results"].values():
+        assert set(res["baseline"]) == {"Tn"}
+        assert set(res["reference"]) == {"Tb"}
+    assert "selection" not in report
+    assert "trend_v1 unseen-growth: Y60" in capsys.readouterr().out

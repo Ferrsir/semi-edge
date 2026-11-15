@@ -951,19 +951,24 @@ def _sf_chain(sf: Any, candidate: str) -> list[str]:
 
 
 def _cmd_backtest_swing(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0915
-    """swing_v1: signal studies, $5k portfolio runs and Monte Carlo checks (#180)."""
+    """swing_v1 and trend_v1: signal studies, $5k runs and Monte Carlo checks (#180)."""
     from semiedge.backtest import swing  # noqa: PLC0415
 
+    trend = getattr(args, "trend", False)
+    strategy = "trend_v1" if trend else "swing_v1"
     settings, config, _ = _load(args)
     limits = _risk_limits(args, args.config_dir or settings.config_dir)
     if not (args.equity > 0 and math.isfinite(args.equity)):
         raise CommandError(EXIT_CONFIG, "--equity must be a positive number")
     if args.output is not None and args.output.exists():
         raise CommandError(EXIT_DATA, "Backtest failed: output_path_exists.")
-    if args.sample == "development":
+    names: tuple[str, ...]
+    if trend:
+        names = swing.TREND_CANDIDATES
+    elif args.sample == "development":
         if args.candidates:
             raise CommandError(EXIT_CONFIG, "--candidates is for the confirmation samples only")
-        names: tuple[str, ...] = swing.CANDIDATES
+        names = swing.CANDIDATES
     else:
         if not args.candidates:
             raise CommandError(EXIT_CONFIG, "confirmation runs once, with --candidates")
@@ -988,7 +993,9 @@ def _cmd_backtest_swing(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0
     trades_at_decision: dict[str, Any] = {}
     books = {
         n: swing.build(panel, symbols, index, n)
-        for n in dict.fromkeys((*names, *(swing.RULES[c].baseline for c in names)))
+        for n in dict.fromkeys(
+            (*names, *(swing.RULES[c].baseline for c in names), *(("Tn",) if trend else ()))
+        )
     }
     for name, book in books.items():
         studies[name] = {}
@@ -1000,7 +1007,7 @@ def _cmd_backtest_swing(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0
     results: dict[str, dict[str, Any]] = {}
     curves: dict[str, Any] = {}
     for name in names:
-        base = swing.RULES[name].baseline
+        base = swing.TREND_NULL if trend else swing.RULES[name].baseline
         runs = {}
         plan: tuple[tuple[float, Literal["reset", "strict"]], ...] = (
             (swing.DECISION_SLIPPAGE, "reset"),
@@ -1018,14 +1025,18 @@ def _cmd_backtest_swing(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0
         paths = swing.account_paths(main.daily_returns())
         edge = swing.edge_over_baseline(trades_at_decision[name], trades_at_decision[base])
         study, portfolio = studies[name][key], main.summary()
-        fails = (
-            swing.selection_failures(study, edge, portfolio, paths)
-            if args.sample != "holdout"
-            else swing.holdout_failures(study, studies[base][key], portfolio)
-        )
+        if trend:
+            fails = swing.trend_failures(
+                args.sample, study, studies[base][key], edge, portfolio, paths
+            )
+        elif args.sample != "holdout":
+            fails = swing.selection_failures(study, edge, portfolio, paths)
+        else:
+            fails = swing.holdout_failures(study, studies[base][key], portfolio)
         results[name] = {
             "study": studies[name],
             "baseline": {base: studies[base]},
+            "reference": {"Tb": studies["Tb"]} if trend else {},
             "edge_over_baseline": edge,
             "portfolio": portfolio,
             "other_runs": {k: r.summary() for k, r in runs.items() if r is not main},
@@ -1034,12 +1045,12 @@ def _cmd_backtest_swing(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0
         }
         curves[name] = {"sessions": main.sessions, "equity": main.equity}
     command = (
-        f"semiedge backtest-swing --sample {args.sample}"
-        + (f" --candidates {' '.join(names)}" if args.candidates else "")
+        f"semiedge {'backtest-trend' if trend else 'backtest-swing'} --sample {args.sample}"
+        + (f" --candidates {' '.join(names)}" if getattr(args, "candidates", None) else "")
         + f" --equity {args.equity:g} --risk-profile {args.risk_profile or 'default'}"
     )
     report: dict[str, Any] = {
-        "strategy": "swing_v1",
+        "strategy": strategy,
         "sample": args.sample,
         "universe": universe,
         "symbols": len(symbols),
@@ -1052,14 +1063,18 @@ def _cmd_backtest_swing(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0
             "SURVIVORSHIP-BIASED UNIVERSE: today's list, not point-in-time",
             "EARNINGS BLACKOUT NOT APPLIED: no point-in-time earnings history",
             "PRICE RETURNS ONLY; DAILY BARS: a stop fill assumes the stop price traded",
-            "FIVE CANDIDATES SCREENED: a development result alone is not evidence of an edge",
+            (
+                "TWO RULES ON THREE SAMPLES; 2016-2026 was mostly a rising market"
+                if trend
+                else "FIVE CANDIDATES SCREENED: a development result alone is not evidence"
+            ),
         ],
         "index_buy_and_hold_pct": swing.index_buy_and_hold(panel, index, start, end),
         "mean_daily_range_pct": swing.mean_daily_range_pct(panel, symbols, start, end),
         "results": results,
     }
     lines = [
-        f"swing_v1 {args.sample}: {universe} ({len(symbols)} symbols, index {index}) "
+        f"{strategy} {args.sample}: {universe} ({len(symbols)} symbols, index {index}) "
         f"{start}..{end}; decision cost {key} bps a side; start equity {args.equity:,.0f}",
         *(f"LABEL: {label}" for label in report["labels"]),
         f"{index} buy and hold: {report['index_buy_and_hold_pct']}%",
@@ -1067,8 +1082,11 @@ def _cmd_backtest_swing(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0
     ]
     for name, res in results.items():
         st, pf, mc = res["study"][key], res["portfolio"], res["account_paths"]
-        base = swing.RULES[name].baseline
+        base = swing.TREND_NULL if trend else swing.RULES[name].baseline
         bs = res["baseline"][base][key]
+        if trend:
+            tb = res["reference"]["Tb"][key]
+            lines.append(f"  reference Tb: {tb.get('trades', 0)} trades, mean {tb.get('mean_r')}R")
         lines.append(f"-- {name} --")
         if st.get("trades"):
             lines.append(
@@ -1100,14 +1118,14 @@ def _cmd_backtest_swing(args: argparse.Namespace) -> int:  # noqa: PLR0912, PLR0
                 f"{mc['final_return_pct']}; maxDD {mc['max_drawdown_pct']}"
             )
         lines.append(f"  gates: {'all met' if not res['failures'] else '; '.join(res['failures'])}")
-    if args.sample == "development":
+    if args.sample == "development" and not trend:
         selected, _ = swing.select(results)
         report["selection"] = {"selected": selected}
         lines.append(f"SELECTED for confirmation: {', '.join(selected) if selected else 'none'}")
     if args.output is not None:
         args.output.mkdir(parents=True, exist_ok=False)
         report["equity_curves"] = curves
-        path = args.output / "swing_v1_backtest.json"
+        path = args.output / f"{strategy}_backtest.json"
         path.write_text(json.dumps(report, indent=1, default=str), encoding="utf-8")
     sys.stdout.write("\n".join(lines) + "\n")
     return EXIT_OK
@@ -1796,6 +1814,16 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915 - one flat parse
     btw.add_argument("--risk-profile", default="5k", help="risk_<name>.yaml; 'default' = risk.yaml")
     btw.add_argument("--output", type=Path, help="new output directory (existing paths refused)")
     btw.set_defaults(handler=_cmd_backtest_swing)
+    btt = commands.add_parser(
+        "backtest-trend",
+        parents=[common],
+        help="trend_v1 (T1, T2 against the Tn null) on cached daily bars (spec samples only)",
+    )
+    btt.add_argument("--sample", choices=("holdout", "unseen", "unseen-growth"), required=True)
+    btt.add_argument("--equity", type=float, default=5000.0)
+    btt.add_argument("--risk-profile", default="5k", help="risk_<name>.yaml; 'default' = risk.yaml")
+    btt.add_argument("--output", type=Path, help="new output directory (existing paths refused)")
+    btt.set_defaults(handler=_cmd_backtest_swing, trend=True, candidates=None)
     intraday = data_commands.add_parser(
         "fetch-intraday",
         parents=[common],

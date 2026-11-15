@@ -93,6 +93,7 @@ RULES: dict[str, Rule] = {
     "R2b": Rule("R2b", "dip", "R2b", 3.0, 7, True),
     "R3b": Rule("R3b", "dip", "R3b", 3.0, 7, True),
     "Tb": Rule("Tb", "trend", "Tb", 3.0, 120, False),
+    "Tn": Rule("Tn", "trend", "Tn", 3.0, 120, False),  # trend_v1: no trend, no regime
 }
 CANDIDATES = ("R1", "R2", "R3", "T1", "T2")
 BASELINES = ("R1b", "R2b", "R3b", "Tb")
@@ -167,12 +168,15 @@ def build(  # noqa: PLR0912, PLR0915 - one branch per candidate keeps the rules 
                         & (c.shift(2).to_numpy() < c.shift(3).to_numpy())
                     )
                     entry = entry & down3 & (cv < sma5)
+            elif name == "Tn":  # trend_v1 null: any week-end, same stop and exits
+                entry = ok & np.isfinite(m) & weekly
+                score = -m
             else:  # trend rules
                 entry = ok & up50 & regime200 & np.isfinite(m)
                 score = -m
                 if name == "T2":
                     entry = entry & (cv > c.shift(1).rolling(BREAKOUT_WINDOW).max().to_numpy())
-                else:  # T1 and Tb act on the last session of each week
+                elif name != "Tn":  # T1 and Tb act on the last session of each week
                     entry = entry & weekly
         entry = entry & np.isfinite(score)
         if rule.family == "dip" and name in CANDIDATES:
@@ -665,6 +669,59 @@ def holdout_failures(
             else []
         ),
         *(["portfolio net not positive"] if not run.get("net_pnl", 0) > 0 else []),
+    ]
+
+
+TREND_CANDIDATES = ("T1", "T2")
+TREND_NULL = "Tn"
+TREND_MIN_TRADES = 150
+TREND_HOLDOUT_MIN_TRADES = 30
+
+
+def trend_failures(  # noqa: PLR0917 - one argument per gate input
+    sample: str,
+    study: dict[str, Any],
+    null: dict[str, Any],
+    edge: dict[str, Any],
+    run: dict[str, Any],
+    paths: dict[str, Any],
+) -> list[str]:
+    """trend_v1 gates: the full set on X60 and Y60, the short set on the U80 holdout."""
+    m = study.get("mean_r", -math.inf)
+    net = [] if run.get("net_pnl", 0) > 0 else ["portfolio net not positive"]
+    if sample == "holdout":
+        return [
+            *(
+                [f"fewer than {TREND_HOLDOUT_MIN_TRADES} trades"]
+                if study.get("trades", 0) < TREND_HOLDOUT_MIN_TRADES
+                else []
+            ),
+            *(["mean R not above 0"] if not m > 0 else []),
+            *(["mean R not above the null"] if not m > null.get("mean_r", -math.inf) else []),
+            *net,
+        ]
+    low = (study.get("mean_r_95ci") or [-math.inf])[0]
+    edge_low = edge["ci95"][0]
+    return [
+        *(
+            [f"fewer than {TREND_MIN_TRADES} trades"]
+            if study.get("trades", 0) < TREND_MIN_TRADES
+            else []
+        ),
+        *(["mean R not above 0"] if not m > 0 else []),
+        *(
+            ["mean R without the five best trades not above 0"]
+            if not (study.get("mean_r_without_top5") or 0) > 0
+            else []
+        ),
+        *(["MC1 lower bound not above 0"] if not low > 0 else []),
+        *(["MC2 lower bound not above 0"] if not (edge_low is not None and edge_low > 0) else []),
+        *net,
+        *(
+            [f"MC3 below {MC_MIN_POSITIVE:.0%} positive paths"]
+            if not paths.get("share_positive", 0) >= MC_MIN_POSITIVE
+            else []
+        ),
     ]
 
 
