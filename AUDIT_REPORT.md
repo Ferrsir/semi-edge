@@ -558,3 +558,25 @@ Auditors: Claude Code (lead/integrator), Codex (independent auditor, issue #34).
 - **F-113 / P3:** split/reverse-split constructors now require supported exchange-session ex-dates, including ledger loading. Four holiday/weekend regressions fail on 96d6c65 and pass now.
 - Validation after rebasing: `pytest -q -p no:cacheprovider` passed1666 tests/two skips (Windows symlink and opt-in paper smoke), with13 pandas deprecation warnings. Ruff check/format, mypy (66 source files) and Bandit passed. Focused suite74 passed; all nine review regressions failed on the original head. No strategy/risk-ceiling change, real data, network request, credential or consumer activation. #18 remains open for verified coverage/source provisioning and integration. Claude exact-head re-review is required; publishing awaits the bot connection.
 
+## F-179 / P1: actual-fill risk sizing correction (#146)
+
+- Reproduced on #130 exact head `901936cf40bab7b92b86b7f8809c77e3065067b3`
+  with hand-built bars: a $100 signal, $99 stop and $110 next open reserves 12 shares,
+  fills 11 and risks $121 against a $50 budget. No market data or credentials used.
+- Before the fix, `uv run pytest -q tests/safety/test_intraday_backtest.py -k
+  'gap_up_fill or favorable_fill'` produced nine failures and one passing control.
+  Cases span unrestricted, margin PDT and cash accounts, zero/20 bps entry slippage,
+  and refusal when even one share exceeds the budget.
+- The fill now also caps reserved shares by the floor of the admission equity risk
+  budget divided by actual slipped entry minus stop. It never increases reserved
+  quantity; a zero quantity uses the existing `fill_over_cap` refusal. This caps
+  planned entry-to-stop risk, not losses from exit slippage or subsequent stop gaps.
+- After the fix: all 41 intraday tests and the full suite pass (2257 passed,
+  two skips); Ruff check/format and mypy pass. No strategy or ceiling changes.
+- #129 at `638ce2490196fb06acf0e6bead8d4ae29f81d9d9` was rechecked in an
+  isolated exact-head checkout: 75 config/sizing tests and 90 risk-manager tests
+  pass, as do Ruff check/format and mypy. Existing Codex PASS remains; owner
+  approval is separate. #130 retains FAIL at its unchanged head pending integration.
+- Historical #130 results were not rerun or revalidated. Claude cross-provider
+  review of this correction and owner approval of code-owned paths remain required.
+
